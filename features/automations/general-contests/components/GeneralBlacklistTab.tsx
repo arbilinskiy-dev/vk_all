@@ -4,9 +4,12 @@ import { ConfirmationModal } from '../../../../shared/components/modals/Confirma
 import { AddBlacklistModal } from './modals/AddBlacklistModal';
 import { useToast } from '../../../../shared/components/ToastProvider';
 
-interface Props { contestId?: string }
+interface Props { 
+    contestId?: string;
+    projectId: string;  // Добавлено: необходимо для бэкенда при добавлении в ЧС
+}
 
-export const GeneralBlacklistTab: React.FC<Props> = ({ contestId }) => {
+export const GeneralBlacklistTab: React.FC<Props> = ({ contestId, projectId }) => {
     const toast = useToast();
     const [items, setItems] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -96,8 +99,8 @@ export const GeneralBlacklistTab: React.FC<Props> = ({ contestId }) => {
                 <ConfirmationModal title="Удалить из чёрного списка?" message={`Разблокировать ${toDelete.user_name || toDelete.user_vk_id}?`} onConfirm={confirmDelete} onCancel={() => setToDelete(null)} confirmText="Разблокировать" isConfirming={!!deleting} />
             )}
 
-            {isAddOpen && contestId && (
-                <AddBlacklistModal contestId={contestId} onClose={() => setIsAddOpen(false)} onSuccess={() => { setIsAddOpen(false); load(); }} />
+            {isAddOpen && projectId && (
+                <AddBlacklistModal projectId={projectId} onClose={() => setIsAddOpen(false)} onSuccess={() => { setIsAddOpen(false); load(); }} />
             )}
         </div>
     );

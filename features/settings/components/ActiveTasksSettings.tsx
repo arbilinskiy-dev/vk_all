@@ -10,7 +10,7 @@ import { ConfirmationModal } from '../../../shared/components/modals/Confirmatio
 export const ActiveTasksSettings: React.FC = () => {
     const { state, actions, helpers } = useActiveTasks();
     const { 
-        tasks, isLoading, selectedIds, taskToDeleteId, deletingTaskId, 
+        tasks, isLoading, isRefreshing, selectedIds, taskToDeleteId, deletingTaskId, 
         showDeleteAllConfirm, showDeleteSelectedConfirm, isDeletingAll, isDeletingSelected 
     } = state;
 
@@ -26,7 +26,7 @@ export const ActiveTasksSettings: React.FC = () => {
                     <button 
                         type="button"
                         onClick={() => actions.setShowDeleteAllConfirm(true)}
-                        className="inline-flex items-center px-3 py-1.5 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 disabled:opacity-50" 
+                        className="inline-flex items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 disabled:opacity-50" 
                         title="Удалить все задачи из списка"
                         disabled={tasks.length === 0}
                     >
@@ -35,11 +35,12 @@ export const ActiveTasksSettings: React.FC = () => {
                     </button>
                     <button 
                         type="button"
-                        onClick={() => { actions.setIsLoading(true); actions.fetchTasks(); }} 
-                        className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50" 
+                        onClick={actions.handleRefresh} 
+                        className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50" 
                         title="Обновить принудительно"
+                        disabled={isRefreshing}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5m11 2a9 9 0 11-2.064-5.364M20 4v5h-5" /></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 mr-2 transition-transform ${isRefreshing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h5m11 2a9 9 0 11-2.064-5.364M20 4v5h-5" /></svg>
                         Обновить
                     </button>
                 </div>
@@ -54,7 +55,7 @@ export const ActiveTasksSettings: React.FC = () => {
                     type="button"
                     onClick={() => actions.setShowDeleteSelectedConfirm(true)}
                     disabled={selectedIds.size === 0 || isDeletingSelected}
-                    className="inline-flex items-center px-3 py-1 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                     Сбросить выбранные
@@ -65,11 +66,41 @@ export const ActiveTasksSettings: React.FC = () => {
             <div className="flex-grow overflow-auto custom-scrollbar bg-white p-4">
 
                  {isLoading && tasks.length === 0 ? (
-                    <div className="flex justify-center items-center h-40">
-                        <div className="loader border-t-indigo-500 w-8 h-8"></div>
+                    /* Скелетон-таблица при начальной загрузке */
+                    <div className="overflow-x-auto custom-scrollbar border border-gray-200 rounded-lg">
+                        <table className="min-w-[1000px] w-full text-sm text-left">
+                            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b">
+                                <tr>
+                                    <th className="w-12 px-4 py-3"><div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div></th>
+                                    <th className="px-4 py-3">Проект</th>
+                                    <th className="px-4 py-3">Тип</th>
+                                    <th className="px-4 py-3">Статус</th>
+                                    <th className="px-4 py-3">Прогресс</th>
+                                    <th className="px-4 py-3">Сообщение</th>
+                                    <th className="px-4 py-3">Длительность</th>
+                                    <th className="px-4 py-3">Обновлено</th>
+                                    <th className="px-4 py-3 text-right">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 bg-white">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                    <tr key={`skeleton-${i}`} className="opacity-0 animate-fade-in-up" style={{ animationDelay: `${i * 60}ms` }}>
+                                        <td className="w-12 px-4 py-2"><div className="h-4 w-4 bg-gray-200 rounded animate-pulse"></div></td>
+                                        <td className="px-4 py-2"><div className="h-4 w-28 bg-gray-200 rounded animate-pulse"></div></td>
+                                        <td className="px-4 py-2"><div className="h-4 w-16 bg-gray-200 rounded animate-pulse"></div></td>
+                                        <td className="px-4 py-2"><div className="h-5 w-20 bg-gray-200 rounded-full animate-pulse"></div></td>
+                                        <td className="px-4 py-2"><div className="h-3 w-32 bg-gray-200 rounded animate-pulse"></div></td>
+                                        <td className="px-4 py-2"><div className="h-4 w-40 bg-gray-200 rounded animate-pulse"></div></td>
+                                        <td className="px-4 py-2"><div className="h-4 w-20 bg-gray-200 rounded animate-pulse"></div></td>
+                                        <td className="px-4 py-2"><div className="h-4 w-16 bg-gray-200 rounded animate-pulse"></div></td>
+                                        <td className="px-4 py-2 text-right"><div className="h-5 w-5 bg-gray-200 rounded animate-pulse ml-auto"></div></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 ) : tasks.length === 0 ? (
-                    <div className="text-center text-gray-500 py-10 border border-dashed border-gray-300 rounded-lg">
+                    <div className="text-center text-gray-500 py-10 border border-dashed border-gray-300 rounded-lg opacity-0 animate-fade-in-up">
                         Нет активных или недавних задач.
                     </div>
                 ) : (
@@ -90,13 +121,14 @@ export const ActiveTasksSettings: React.FC = () => {
                                     <th className="px-4 py-3">Статус</th>
                                     <th className="px-4 py-3">Прогресс</th>
                                     <th className="px-4 py-3">Сообщение</th>
+                                    <th className="px-4 py-3">Длительность</th>
                                     <th className="px-4 py-3">Обновлено</th>
                                     <th className="px-4 py-3 text-right">Действия</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 bg-white">
-                                {tasks.map((task) => (
-                                    <tr key={task.taskId} className="hover:bg-gray-50">
+                                {tasks.map((task, index) => (
+                                    <tr key={task.taskId} className="hover:bg-gray-50 opacity-0 animate-fade-in-row" style={{ animationDelay: `${index * 20}ms` }}>
                                         <td className="w-12 px-4 py-2">
                                             <input
                                                 type="checkbox"
@@ -144,6 +176,14 @@ export const ActiveTasksSettings: React.FC = () => {
                                         <td className="px-4 py-2 max-w-xs truncate text-gray-600" title={task.error || task.message}>
                                             {task.error ? <span className="text-red-600">{task.error}</span> : task.message}
                                         </td>
+                                        <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">
+                                            <div className="flex items-center gap-1">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                {helpers.formatDuration(task)}
+                                            </div>
+                                        </td>
                                         <td className="px-4 py-2 text-xs text-gray-500">{helpers.formatTime(task.updated_at)}</td>
                                         <td className="px-4 py-2 text-right">
                                             <button 
@@ -187,7 +227,7 @@ export const ActiveTasksSettings: React.FC = () => {
             {showDeleteSelectedConfirm && (
                 <ConfirmationModal
                     title="Сбросить выбранные задачи?"
-                    message={`Вы собираетесь удалить ${selectedIds.size} выбранных задач из памяти сервера. Это действие не остановит уже запущенные процессы. Продолжить?`}
+                    message={`Вы собираетесь удалить ${helpers.pluralTasks(selectedIds.size)} из памяти сервера. Это действие не остановит уже запущенные процессы. Продолжить?`}
                     onConfirm={actions.handleDeleteSelected}
                     onCancel={() => actions.setShowDeleteSelectedConfirm(false)}
                     confirmText="Да, сбросить"

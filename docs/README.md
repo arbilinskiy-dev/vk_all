@@ -24,6 +24,13 @@
 - [features/schedule/](./frontend/features/schedule/) - Расписание
 - [features/tags/](./frontend/features/tags/) - Теги
 - [features/projects/](./frontend/features/projects/) - Проекты
+- [features/contest_v2/](./frontend/features/contest_v2/) - **НОВОЕ:** Конкурс 2.0
+- [features/emoji/](./frontend/features/emoji/) - **НОВОЕ:** Эмодзи
+
+**Shared (переиспользуемое):**
+- [shared/02_Global_Hooks.md](./frontend/shared/02_Global_Hooks.md) - Глобальные хуки
+- [shared/03_API_Clients.md](./frontend/shared/03_API_Clients.md) - API-клиенты
+- [shared/04_Shared_Components.md](./frontend/shared/04_Shared_Components.md) - Общие компоненты
 
 ---
 
@@ -47,7 +54,11 @@
 - [features/ai/](./backend/features/ai/) - AI сервисы
 - [features/auth/](./backend/features/auth/) - Аутентификация
 - [features/projects/](./backend/features/projects/) - Проекты
-- [features/automations/](./backend/features/automations/) - **Автоматизации** (сторис, конкурсы, AI-посты)
+- [features/automations/](./backend/features/automations/) - Автоматизации (сторис, конкурсы, AI-посты)
+- [features/bulk_edit/](./backend/features/bulk_edit/) - **НОВОЕ:** Массовое редактирование постов
+- [features/contest_v2/](./backend/features/contest_v2/) - **НОВОЕ:** Конкурс 2.0
+- [features/ai_tokens/](./backend/features/ai_tokens/) - **НОВОЕ:** Управление AI-токенами
+- [features/vk_test/](./backend/features/vk_test/) - **НОВОЕ:** Тестовая VK авторизация
 
 ---
 
@@ -151,4 +162,4 @@
 
 ---
 
-*Последнее обновление структуры: 23 января 2026*
+*Последнее обновление структуры: 5 февраля 2026*

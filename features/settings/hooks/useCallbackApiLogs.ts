@@ -1,22 +1,47 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import * as api from '../../../services/api';
-import { VkCallbackLog } from '../../../services/api/vk.api';
+import { VkCallbackLog, CallbackLogsResponse } from '../../../services/api/vk.api';
 import { useProjects } from '../../../contexts/ProjectsContext';
 
 // Типы для модального окна подтверждения
 export type ConfirmAction = 'deleteOne' | 'deleteSelected' | 'deleteAll' | null;
 
+/** Размер порции данных (аналог VK Логи — 50 шт.) */
+const PAGE_SIZE = 50;
+
+/**
+ * Утилита склонения числительных по правилам русского языка.
+ * @example plural(1, ['запись', 'записи', 'записей']) → 'запись'
+ * @example plural(3, ['запись', 'записи', 'записей']) → 'записи'
+ * @example plural(11, ['запись', 'записи', 'записей']) → 'записей'
+ */
+function plural(n: number, forms: [string, string, string]): string {
+    const abs = Math.abs(n) % 100;
+    const lastDigit = abs % 10;
+    if (abs > 10 && abs < 20) return forms[2];
+    if (lastDigit > 1 && lastDigit < 5) return forms[1];
+    if (lastDigit === 1) return forms[0];
+    return forms[2];
+}
+
 /**
  * Хук для управления логами Callback API.
  * Содержит всю логику работы с данными: загрузка, выбор, удаление, фильтрация.
+ * Поддерживает infinite scroll — подгрузка по PAGE_SIZE записей при прокрутке.
  */
 export const useCallbackApiLogs = () => {
     const { projects } = useProjects();
     const [logs, setLogs] = useState<VkCallbackLog[]>([]);
+    const [totalCount, setTotalCount] = useState<number>(0); // Общее кол-во записей в БД
     const [isLoading, setIsLoading] = useState(false);
+    const [isLoadingMore, setIsLoadingMore] = useState(false); // Загрузка следующей порции
+    const [hasMore, setHasMore] = useState(true); // Есть ли ещё данные на сервере
     const [isDeleting, setIsDeleting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+    
+    // Ref для scroll-контейнера (infinite scroll)
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
     
     // Состояние для модального окна подтверждения
     const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
@@ -27,13 +52,23 @@ export const useCallbackApiLogs = () => {
     const [selectedEventTypes, setSelectedEventTypes] = useState<Set<string>>(new Set());
     const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set());
 
-    // Загрузка логов
+    // Парсинг ответа бэкенда (совместимость со старым форматом)
+    const parseResponse = useCallback((data: CallbackLogsResponse | VkCallbackLog[]) => {
+        const logsArray = Array.isArray(data) ? data : (data.logs ?? []);
+        const total = Array.isArray(data) ? logsArray.length : (data.total_count ?? 0);
+        return { logsArray, total };
+    }, []);
+
+    // Первоначальная загрузка (или обновление)
     const fetchLogs = useCallback(async () => {
         setIsLoading(true);
         setError(null);
         try {
-            const data = await api.getCallbackLogs(200); // Загружаем больше для фильтрации
-            setLogs(data);
+            const data = await api.getCallbackLogs(PAGE_SIZE, 0);
+            const { logsArray, total } = parseResponse(data);
+            setLogs(logsArray);
+            setTotalCount(total);
+            setHasMore(logsArray.length < total);
             setSelectedIds(new Set()); // Сбрасываем выбор после обновления
         } catch (err) {
             console.error(err);
@@ -41,7 +76,44 @@ export const useCallbackApiLogs = () => {
         } finally {
             setIsLoading(false);
         }
-    }, []);
+    }, [parseResponse]);
+
+    // Подгрузка следующей порции (infinite scroll)
+    const loadMore = useCallback(async () => {
+        if (isLoadingMore || !hasMore) return;
+        setIsLoadingMore(true);
+        try {
+            const offset = logs.length;
+            const data = await api.getCallbackLogs(PAGE_SIZE, offset);
+            const { logsArray, total } = parseResponse(data);
+            setLogs(prev => [...prev, ...logsArray]);
+            setTotalCount(total);
+            setHasMore(offset + logsArray.length < total);
+        } catch (err) {
+            console.error(err);
+            // Не показываем ошибку при подгрузке — просто прекращаем загрузку
+        } finally {
+            setIsLoadingMore(false);
+        }
+    }, [isLoadingMore, hasMore, logs.length, parseResponse]);
+
+    // Обработчик прокрутки — когда до дна остаётся ≤200px, подгружаем ещё
+    const handleScroll = useCallback(() => {
+        const container = scrollContainerRef.current;
+        if (!container || isLoadingMore || !hasMore) return;
+        const { scrollTop, scrollHeight, clientHeight } = container;
+        if (scrollHeight - scrollTop - clientHeight <= 200) {
+            loadMore();
+        }
+    }, [loadMore, isLoadingMore, hasMore]);
+
+    // Навешиваем слушатель прокрутки
+    useEffect(() => {
+        const container = scrollContainerRef.current;
+        if (!container) return;
+        container.addEventListener('scroll', handleScroll);
+        return () => container.removeEventListener('scroll', handleScroll);
+    }, [handleScroll]);
 
     useEffect(() => {
         fetchLogs();
@@ -207,7 +279,8 @@ export const useCallbackApiLogs = () => {
                 window.showAppToast?.('Запись удалена', 'success');
             } else if (confirmAction === 'deleteSelected') {
                 await api.deleteBatchCallbackLogs(Array.from(selectedIds));
-                window.showAppToast?.(`Удалено ${selectedIds.size} записей`, 'success');
+                const count = selectedIds.size;
+                window.showAppToast?.(`Удалено ${count} ${plural(count, ['запись', 'записи', 'записей'])}`, 'success');
             } else if (confirmAction === 'deleteAll') {
                 await api.deleteAllCallbackLogs();
                 window.showAppToast?.('Все логи удалены', 'success');
@@ -236,7 +309,7 @@ export const useCallbackApiLogs = () => {
             case 'deleteOne':
                 return 'Удалить эту запись?';
             case 'deleteSelected':
-                return `Удалить выбранные записи (${selectedIds.size} шт.)?`;
+                return `Удалить выбранные ${plural(selectedIds.size, ['запись', 'записи', 'записей'])} - ${selectedIds.size} шт.?`;
             case 'deleteAll':
                 return 'Удалить ВСЕ логи? Это действие нельзя отменить.';
             default:
@@ -285,7 +358,10 @@ export const useCallbackApiLogs = () => {
         state: {
             logs,
             filteredLogs,
+            totalCount,
             isLoading,
+            isLoadingMore,
+            hasMore,
             isDeleting,
             error,
             selectedIds,
@@ -298,6 +374,7 @@ export const useCallbackApiLogs = () => {
         // Действия
         actions: {
             fetchLogs,
+            loadMore,
             toggleSelect,
             toggleSelectAll,
             handleDeleteOne,
@@ -325,5 +402,7 @@ export const useCallbackApiLogs = () => {
             availableGroups,
             allFilteredSelected,
         },
+        // Ref для scroll-контейнера (infinite scroll)
+        scrollContainerRef,
     };
 };

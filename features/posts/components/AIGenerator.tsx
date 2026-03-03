@@ -10,17 +10,20 @@ import { ChatTurn } from '../hooks/useAIGenerator';
 interface AIGeneratorProps {
     projectId: string;
     onTextGenerated: (text: string) => void;
+    onReplacePostText?: (text: string) => void;
     onEditPresets: () => void;
     refreshKey: number;
     postText: string; // Текст из основного поля ввода поста
     // Новые пропсы для режима мульти-генерации
     isMultiGenerationMode?: boolean;
     onSelectionChange?: (turn: ChatTurn | null) => void;
+    /** Растянуть на всю высоту родительского контейнера (для колоночного layout) */
+    fillParent?: boolean;
 }
 
-export const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onTextGenerated, onEditPresets, refreshKey, postText, isMultiGenerationMode, onSelectionChange }) => {
+export const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onTextGenerated, onReplacePostText, onEditPresets, refreshKey, postText, isMultiGenerationMode, onSelectionChange, fillParent }) => {
     // Вся логика теперь инкапсулирована в кастомном хуке
-    const { state, actions, refs } = useAIGenerator({ projectId, onTextGenerated, refreshKey, postText });
+    const { state, actions, refs } = useAIGenerator({ projectId, onTextGenerated, onReplacePostText, refreshKey, postText });
     
     // Общий класс для кнопок быстрых действий
     const quickActionButtonClass = "inline-flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium rounded-md bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 disabled:opacity-50";
@@ -47,8 +50,8 @@ export const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onTextGener
 
     return (
         <div 
-            className="relative p-4 bg-indigo-50 border border-indigo-200 rounded-lg flex flex-col overflow-hidden"
-            style={{ height: `${state.height}px` }}
+            className={`relative p-4 bg-indigo-50 flex flex-col overflow-hidden ${fillParent ? 'h-full' : 'border border-indigo-200 rounded-lg'}`}
+            style={fillParent ? undefined : { height: `${state.height}px` }}
         >
             
             {/* === ВЕРХНИЙ БЛОК: УПРАВЛЕНИЕ СИСТЕМНОЙ ИНСТРУКЦИЕЙ === */}
@@ -86,6 +89,7 @@ export const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onTextGener
                 turnRefs={refs.turnRefs}
                 highlightedTurnId={state.highlightedTurnId}
                 handleAddToPost={actions.handleAddToPost}
+                handleReplacePostText={actions.handleReplacePostText}
                 setReplyToTurn={actions.setReplyToTurn}
                 handleJumpToTurn={actions.handleJumpToTurn}
                 getRepliedTurnText={actions.getRepliedTurnText}
@@ -168,7 +172,8 @@ export const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onTextGener
                 />
             )}
 
-            {/* Ручка для изменения размера */}
+            {/* Ручка для изменения размера (скрыта в режиме fillParent) */}
+            {!fillParent && (
             <div 
                 className="absolute bottom-0 right-0 w-4 h-4 cursor-ns-resize z-10 flex items-end justify-end"
                 onMouseDown={actions.handleResizeStart}
@@ -177,6 +182,7 @@ export const AIGenerator: React.FC<AIGeneratorProps> = ({ projectId, onTextGener
                     <path d="M10 6a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM10 14a2 2 0 11-4 0 2 2 0 014 0z"/>
                 </svg>
             </div>
+            )}
         </div>
     );
 };

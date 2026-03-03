@@ -1,15 +1,18 @@
 
 import crud
 import models
+from models_library.dialogs_authors import ProjectAuthor
 from services import task_monitor
 from services.lists.list_sync_utils import get_all_project_tokens, fetch_users_smart_parallel
 from crud.lists.utils import deduplicate_users
+from crud.lists.authors import get_all_author_vk_ids, bulk_update_author_details
 from database import SessionLocal
 from services.post_helpers import get_rounded_timestamp
 
 def refresh_author_details_task(task_id: str, project_id: str, user_token: str):
     """
     Фоновая задача для обновления деталей авторов постов.
+    Использует ProjectAuthor + VkProfile (нормализованная архитектура).
     """
     # --- Phase 1: Read ---
     all_vk_ids = []
@@ -23,11 +26,10 @@ def refresh_author_details_task(task_id: str, project_id: str, user_token: str):
             return
             
         # 1. Удаляем дубликаты
-        deduplicate_users(db, models.SystemListAuthor, project_id)
+        deduplicate_users(db, ProjectAuthor, project_id)
         
-        # 2. Получаем ID всех авторов
-        results = db.query(models.SystemListAuthor.vk_user_id).filter(models.SystemListAuthor.project_id == project_id).all()
-        all_vk_ids = [r[0] for r in results]
+        # 2. Получаем ID всех авторов через нормализованный запрос
+        all_vk_ids = get_all_author_vk_ids(db, project_id)
         
         unique_tokens = get_all_project_tokens(db, user_token)
     finally:
@@ -55,13 +57,9 @@ def refresh_author_details_task(task_id: str, project_id: str, user_token: str):
     try:
         task_monitor.update_task(task_id, "processing", message="Сохранение...")
         
-        # Используем bulk_upsert_authors для обновления, так как он поддерживает обновление существующих
-        # Но нам нужно сформировать правильную структуру
         updates = []
         for user_data in fetched_users:
             updates.append({
-                "id": f"{project_id}_{user_data['id']}", # Важно для маппинга
-                "project_id": project_id,
                 "vk_user_id": user_data['id'],
                 "first_name": user_data.get('first_name'),
                 "last_name": user_data.get('last_name'),
@@ -80,10 +78,12 @@ def refresh_author_details_task(task_id: str, project_id: str, user_token: str):
             })
             
         if updates:
-            crud.bulk_upsert_authors(db, updates)
+            bulk_update_author_details(db, project_id, updates)
 
-        # Пересчитываем реальное количество авторов (на случай, если дубликаты были удалены)
-        real_count = db.query(models.SystemListAuthor).filter(models.SystemListAuthor.project_id == project_id).count()
+        # Пересчитываем реальное количество авторов
+        real_count = db.query(ProjectAuthor).filter(
+            ProjectAuthor.project_id == project_id
+        ).count()
             
         timestamp = get_rounded_timestamp()
         crud.update_list_meta(db, project_id, {

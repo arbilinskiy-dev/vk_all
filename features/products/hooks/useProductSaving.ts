@@ -110,6 +110,11 @@ export const useProductSaving = ({
 
             const updatedItem = await api.updateMarketItem(projectId, itemWithChanges as MarketItem, fileToUpload, urlToUpload);
             
+            // Показываем предупреждение, если фото было автоматически увеличено
+            if (updatedItem.photo_resized_warning) {
+                window.showAppToast?.(updatedItem.photo_resized_warning, 'warning');
+            }
+            
             // Обновляем состояние напрямую
             const newItems = items.map(i => i.id === updatedItem.id ? updatedItem : i);
             setItems(newItems);

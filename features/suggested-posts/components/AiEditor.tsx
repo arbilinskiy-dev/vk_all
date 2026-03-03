@@ -4,12 +4,15 @@ interface AiEditorProps {
     correctedText: string;
     isCorrecting: boolean;
     onCopyToClipboard: (text: string) => void;
+    /** Опциональный колбэк для синхронизации текста при массовой коррекции */
+    onTextChange?: (newText: string) => void;
 }
 
 export const AiEditor: React.FC<AiEditorProps> = ({
     correctedText,
     isCorrecting,
     onCopyToClipboard,
+    onTextChange,
 }) => {
     const [editableText, setEditableText] = useState(correctedText);
     const [copyButtonText, setCopyButtonText] = useState('Копировать');
@@ -52,7 +55,11 @@ export const AiEditor: React.FC<AiEditorProps> = ({
             </div>
             <textarea
                 value={editableText}
-                onChange={(e) => setEditableText(e.target.value)}
+                onChange={(e) => {
+                    setEditableText(e.target.value);
+                    // Синхронизируем с хуком при массовой коррекции
+                    onTextChange?.(e.target.value);
+                }}
                 className="w-full flex-grow border rounded p-3 text-sm border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100/80 transition-colors custom-scrollbar"
                 placeholder={'Результат появится здесь...'}
                 disabled={isCorrecting}

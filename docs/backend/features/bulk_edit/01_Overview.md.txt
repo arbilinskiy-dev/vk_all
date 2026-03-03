@@ -1,0 +1,203 @@
+# Модуль массового редактирования постов (Bulk Edit)
+
+## Обзор
+
+Модуль `bulk_edit` предназначен для массового редактирования постов сразу в нескольких проектах. Позволяет найти похожие посты по различным критериям и применить к ним единые изменения (текст, изображения, дата публикации).
+
+---
+
+## Архитектура
+
+```
+routers/bulk_edit.py          # API эндпоинты
+├── schemas/bulk_edit.py      # Pydantic схемы
+└── services/bulk_edit/       # Логика обработки
+    ├── __init__.py           # Реэкспорт
+    ├── search_service.py     # Поиск совпадающих постов
+    ├── execution_service.py  # Синхронное выполнение
+    ├── async_execution_service.py  # Асинхронное выполнение
+    └── distribution_service.py     # Распределение задач
+```
+
+---
+
+## API эндпоинты
+
+### `POST /api/bulkEdit/search`
+Поиск постов, соответствующих заданным критериям.
+
+**Request (`BulkEditSearchRequest`):**
+```json
+{
+  "sourcePost": {
+    "id": "post-uuid",
+    "postType": "scheduled",
+    "projectId": "project-uuid",
+    "text": "Текст поста...",
+    "date": "2025-01-20T10:00:00",
+    "attachmentIds": ["id1", "id2"],
+    "attachmentUrls": ["url1", "url2"]
+  },
+  "matchCriteria": {
+    "byDateTime": true,
+    "byText": false,
+    "byAttachments": false
+  },
+  "searchFromDate": "2025-01-01",
+  "targetProjectIds": ["proj1", "proj2"],
+  "targetPostTypes": {
+    "published": true,
+    "scheduled": true,
+    "system": true
+  }
+}
+```
+
+**Response (`BulkEditSearchResponse`):**
+```json
+{
+  "sourcePost": { ... },
+  "matchedPosts": [
+    {
+      "id": "matched-post-id",
+      "postType": "scheduled",
+      "projectId": "project-id",
+      "projectName": "Имя проекта",
+      "date": "2025-01-20T10:00:00",
+      "textPreview": "Первые 100 символов...",
+      "imageCount": 3,
+      "attachmentCount": 1
+    }
+  ],
+  "stats": {
+    "totalFound": 15,
+    "byType": {
+      "published": 5,
+      "scheduled": 8,
+      "system": 2
+    },
+    "projectCount": 3
+  }
+}
+```
+
+---
+
+### `POST /api/bulkEdit/apply`
+Применяет изменения к выбранным постам.
+
+**Query параметры:**
+- `use_async` (bool, default: true) — использовать асинхронную обработку с динамическим пулом воркеров
+
+**Request (`BulkEditApplyRequest`):**
+```json
+{
+  "posts": [
+    { "id": "post1", "postType": "scheduled", "projectId": "proj1" },
+    { "id": "post2", "postType": "published", "projectId": "proj2" }
+  ],
+  "changes": {
+    "text": "Новый текст поста",
+    "images": null,
+    "attachments": null,
+    "date": "2025-02-01T12:00:00"
+  }
+}
+```
+
+**Response (`BulkEditApplyResponse`):**
+```json
+{
+  "taskId": "uuid-задачи-для-отслеживания"
+}
+```
+
+---
+
+### `GET /api/bulkEdit/status/{task_id}`
+Возвращает статус фоновой задачи.
+
+**Response (`BulkEditTaskStatus`):**
+```json
+{
+  "status": "in_progress",
+  "progress": {
+    "total": 15,
+    "completed": 7,
+    "failed": 1,
+    "current": "Редактирование поста в 'Проект Альфа'"
+  },
+  "errors": [
+    {
+      "postId": "post-123",
+      "projectName": "Проект Бета",
+      "error": "VK API timeout"
+    }
+  ],
+  "affectedProjectIds": ["proj1", "proj2"]
+}
+```
+
+---
+
+### `GET /api/bulkEdit/workers/stats`
+Статистика всех пулов воркеров (мониторинг производительности).
+
+**Response:**
+```json
+{
+  "bulk_edit": {
+    "currentWorkers": 5,
+    "activeWorkers": 3,
+    "loadPercent": 60,
+    "completedTasks": 150,
+    "failedTasks": 2,
+    "avgTaskTimeMs": 1234.56,
+    "scaleUps": 10,
+    "scaleDowns": 5,
+    "lastScaleDirection": "up"
+  }
+}
+```
+
+---
+
+## Критерии сопоставления
+
+| Критерий | Описание |
+|----------|----------|
+| `byDateTime` | Совпадение даты и времени публикации |
+| `byText` | Полное совпадение текста поста |
+| `byAttachments` | Совпадение вложений по ID |
+
+Можно комбинировать несколько критериев — пост будет найден, если **все** выбранные критерии совпадают.
+
+---
+
+## Асинхронная обработка
+
+По умолчанию используется асинхронная обработка с динамическим пулом воркеров:
+
+1. **Создание задачи** — генерируется `taskId`, задача регистрируется в `task_monitor`
+2. **Выполнение в фоне** — `execute_bulk_edit_task_async` обрабатывает посты параллельно
+3. **Мониторинг прогресса** — фронтенд периодически опрашивает `/status/{task_id}`
+4. **Динамическое масштабирование** — пул воркеров автоматически расширяется под нагрузкой
+
+**Важно:** При редактировании опубликованных постов используется VK API, что создаёт задержки. Асинхронная обработка позволяет не блокировать UI.
+
+---
+
+## Типы постов
+
+| Тип | Таблица БД | Особенности редактирования |
+|-----|------------|---------------------------|
+| `published` | `posts` | Редактирование через VK API `wall.edit` |
+| `scheduled` | `scheduled_posts` | Прямое редактирование в БД |
+| `system` | `system_posts` | Прямое редактирование в БД |
+
+---
+
+## См. также
+
+- [Task Monitor](../../06_BACKGROUND_SYSTEMS.md.txt) — система отслеживания фоновых задач
+- [VK Service](../core_services/01_VK_Service_Facade.md.txt) — работа с VK API

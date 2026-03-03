@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { ContestSettings, PromoCode } from '../../types';
 import { VK_COLORS, VkPost, VkComment, VkMessage } from './VkUiKit';
 import { Project, GlobalVariableDefinition, ProjectGlobalVariableValue } from '../../../../../shared/types';
+import { RandomProofImagePreview } from './RandomProofImagePreview';
 
 interface ContestPreviewProps {
     settings: ContestSettings;
@@ -64,7 +65,7 @@ export const ContestPreview: React.FC<ContestPreviewProps> = ({
 
     return (
         <div 
-            className="w-full lg:w-1/2 overflow-y-auto custom-scrollbar p-6 border-l border-gray-200 bg-gray-100 flex flex-col" 
+            className="w-full lg:flex-[2] lg:min-w-0 overflow-y-auto custom-scrollbar p-6 border-l border-gray-200 bg-gray-100 flex flex-col" 
             style={{ backgroundColor: VK_COLORS.bg, minHeight: '100%' }}
         >
             <div className="max-w-[550px] w-full mx-auto space-y-8 mt-4 flex-grow">
@@ -109,9 +110,27 @@ export const ContestPreview: React.FC<ContestPreviewProps> = ({
                         comments={12}
                         reposts={5}
                         views={3.5}
-                        images={settings.winnerPostImages}
+                        images={(settings.useProofImage ?? true) ? [] : settings.winnerPostImages}
                         blurredExtras={true} // Размываем лайки, акцент на контенте
-                    />
+                    >
+                        {/* Превью изображения-доказательства с плавной анимацией */}
+                        <div 
+                            className={`-mx-3 overflow-hidden transition-all duration-300 ease-in-out ${
+                                (settings.useProofImage ?? true) 
+                                    ? 'max-h-[600px] opacity-100 -mt-1 mb-2' 
+                                    : 'max-h-0 opacity-0 mt-0 mb-0'
+                            }`}
+                        >
+                            <RandomProofImagePreview 
+                                winnerNumber={42}
+                                winnerName="Мария Смирнова"
+                                totalParticipants={16}
+                                groupName={project.name}
+                                contestName="Конкурс отзывов"
+                                size="large"
+                            />
+                        </div>
+                    </VkPost>
                 </div>
 
                 {/* 3. Сценарий: Вручение приза */}

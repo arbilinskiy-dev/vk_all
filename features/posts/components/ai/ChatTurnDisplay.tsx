@@ -1,10 +1,12 @@
 
 import React, { useState } from 'react';
 import { ChatTurn } from '../../hooks/useAIGenerator';
+import { renderVkFormattedText } from '../../../../shared/utils/renderVkFormattedText';
 
 interface ChatTurnDisplayProps {
     turn: ChatTurn;
     onAddToPost: (text: string) => void;
+    onReplacePostText: (text: string) => void;
     onReply: (turn: ChatTurn) => void;
     onJumpToTurn: (turnId: string) => void;
     getRepliedTurnText: (turnId: string) => string | undefined;
@@ -42,10 +44,11 @@ const ExpandableText: React.FC<{ text: string; className?: string }> = ({ text, 
 };
 
 export const ChatTurnDisplay: React.FC<ChatTurnDisplayProps> = ({ 
-    turn, onAddToPost, onReply, onJumpToTurn, getRepliedTurnText, onRegenerate,
+    turn, onAddToPost, onReplacePostText, onReply, onJumpToTurn, getRepliedTurnText, onRegenerate,
     isMultiGenerationMode, isSelected, onToggleSelection
 }) => {
     const [isCopied, setIsCopied] = useState(false);
+    const [isPromptCopied, setIsPromptCopied] = useState(false);
 
     const repliedTurnText = turn.replyToId ? getRepliedTurnText(turn.replyToId) : null;
 
@@ -100,7 +103,29 @@ export const ChatTurnDisplay: React.FC<ChatTurnDisplayProps> = ({
                         />
                     </div>
                     <div>
-                        <p className="text-xs font-semibold text-indigo-800">Ваш запрос:</p>
+                        <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold text-indigo-800">Ваш запрос:</p>
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    navigator.clipboard.writeText(turn.userPrompt);
+                                    setIsPromptCopied(true);
+                                    setTimeout(() => setIsPromptCopied(false), 1500);
+                                }}
+                                className="text-indigo-500 hover:text-indigo-700 transition-colors p-0.5"
+                                title="Копировать запрос"
+                            >
+                                {isPromptCopied ? (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-green-600" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                    </svg>
+                                ) : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                )}
+                            </button>
+                        </div>
                         <ExpandableText 
                             text={turn.userPrompt} 
                             className="text-sm text-gray-800 font-medium"
@@ -165,41 +190,71 @@ export const ChatTurnDisplay: React.FC<ChatTurnDisplayProps> = ({
                         </div>
                     ) : (
                         <div className="prose prose-sm max-w-none">
-                            <p className="whitespace-pre-wrap break-words">{turn.aiResponse}</p>
+                            <p className="whitespace-pre-wrap break-words">{renderVkFormattedText(turn.aiResponse)}</p>
                         </div>
                     )}
                     {!turn.isLoading && turn.aiResponse && (
-                         <div className="flex justify-end items-center gap-1 mt-3 pt-3 border-t border-gray-200">
+                         <div className="flex flex-wrap justify-between items-center gap-1.5 mt-3 pt-3 border-t border-gray-200">
+                            {/* Модель AI */}
+                            {turn.modelUsed && (
+                                <span className="text-[10px] text-gray-400 font-mono" title="Модель AI, использованная для генерации">
+                                    ⚡ {turn.modelUsed}
+                                </span>
+                            )}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                            {/* Regenerate */}
                             <button
                                 type="button"
                                 onClick={() => onRegenerate(turn)}
                                 title="Сгенерировать заново с теми же параметрами"
-                                className="p-2 text-gray-500 rounded-full hover:bg-gray-300 hover:text-gray-800 transition-colors"
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md border border-gray-200 bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50 transition-all"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5m11 2a9 9 0 11-2.064-5.364M20 4v5h-5" />
                                 </svg>
+                                Regenerate
                             </button>
-                             <button
+                            {/* Копировать */}
+                            <button
                                 type="button"
                                 onClick={handleCopy}
-                                title={isCopied ? 'Скопировано!' : 'Копировать'}
-                                className={`p-2 rounded-full transition-colors ${isCopied ? 'text-green-600 bg-green-100' : 'text-gray-500 hover:bg-gray-300 hover:text-gray-800'}`}
+                                title={isCopied ? 'Скопировано!' : 'Копировать текст'}
+                                className={`inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md border transition-all ${
+                                    isCopied 
+                                        ? 'border-green-300 bg-green-50 text-green-600' 
+                                        : 'border-gray-200 bg-white text-gray-500 hover:text-indigo-600 hover:border-indigo-300 hover:bg-indigo-50'
+                                }`}
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                 </svg>
+                                {isCopied ? 'Скопировано' : 'Копировать'}
                             </button>
+                            {/* Добавить в текст поста */}
                             <button
                                 type="button"
                                 onClick={() => onAddToPost(turn.aiResponse)}
-                                title="Добавить в текст поста"
-                                className="p-2 text-gray-500 rounded-full hover:bg-gray-300 hover:text-gray-800 transition-colors"
+                                title="Добавить к существующему тексту поста"
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md border border-gray-200 bg-white text-gray-500 hover:text-green-600 hover:border-green-300 hover:bg-green-50 transition-all"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m0 0l-4-4m4 4l4-4" />
                                 </svg>
+                                Добавить
                             </button>
+                            {/* Заменить текст поста */}
+                            <button
+                                type="button"
+                                onClick={() => onReplacePostText(turn.aiResponse)}
+                                title="Заменить весь текст поста на этот"
+                                className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md border border-gray-200 bg-white text-gray-500 hover:text-amber-600 hover:border-amber-300 hover:bg-amber-50 transition-all"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Заменить
+                            </button>
+                            </div>
                         </div>
                     )}
                 </div>

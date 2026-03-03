@@ -28,13 +28,13 @@ def delete_market_items(db: Session, project_id: str, item_ids: List[int], user_
             except Exception:
                 pass
 
-        # 2. Удаляем из VK
+        # 2. Удаляем из VK (используем call_vk_api_for_group для приоритета админских токенов)
         try:
-            vk_service.call_vk_api('market.delete', {
+            vk_service.call_vk_api_for_group('market.delete', {
                 'owner_id': owner_id,
                 'item_id': item_id,
                 'access_token': user_token
-            })
+            }, group_id=numeric_group_id)
             print(f"  -> Successfully deleted item {item_id} from VK.")
         except Exception as e:
             print(f"  -> ERROR deleting item {item_id} from VK: {e}")

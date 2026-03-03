@@ -75,6 +75,7 @@ from .ai_prompt_preset_crud import (
 from .global_variable_crud import (
     get_all_definitions,
     get_values_by_project_id,
+    get_values_by_project_ids,
     update_all_definitions,
     update_values_for_project,
 )
@@ -91,6 +92,8 @@ from .market_crud import (
     replace_market_categories,
     get_all_market_categories,
     create_market_album,
+    update_market_album_title,
+    delete_market_album,
     delete_market_item,
     decrement_market_album_count,
 )
@@ -98,7 +101,6 @@ from .market_crud import (
 # Новые импорты для списков (ПРЯМЫЕ ИМПОРТЫ ИЗ МОДУЛЕЙ)
 from .lists.meta import get_list_meta, update_list_meta
 from .lists.stats import get_list_stats_data
-from .lists.retrieval import get_subscribers, get_subscribers_count
 from .lists.subscribers import (
     get_all_subscriber_vk_ids,
     bulk_add_subscribers,
@@ -121,11 +123,11 @@ from .lists.posts import (
     delete_all_posts # New
 )
 from .lists.interactions import (
-    get_interactions, 
     bulk_upsert_interactions,
     get_all_interaction_vk_ids,
+    get_interaction_user_count,
     bulk_update_interaction_users,
-    delete_all_interactions # New
+    delete_all_interactions
 )
 from .lists.mailing import (
     bulk_upsert_mailing,
@@ -135,6 +137,8 @@ from .lists.mailing import (
 # NEW: Импорт для авторов
 from .lists.authors import (
     bulk_upsert_authors,
+    get_all_author_vk_ids,
+    bulk_update_author_details,
     delete_all_authors
 )
 
@@ -147,3 +151,29 @@ from .system_accounts.account_crud import (
     delete_account,
     get_active_account_tokens
 )
+
+# Импорт для массового редактирования постов
+from .bulk_edit_crud import (
+    search_matching_posts,
+    update_system_post_bulk,
+    update_cached_vk_post,
+)
+
+# Импорт batch-функций для параллельной загрузки данных
+from . import batch_crud
+
+# Импорт для шаблонов ответов сообщений
+from .message_template_crud import (
+    get_templates_by_project_id,
+    get_template_by_id,
+    create_template as create_message_template,
+    update_template as update_message_template,
+    delete_template as delete_message_template,
+)
+
+# Импорт для авторизации — сессии и логи
+from . import auth_session_crud
+from . import auth_log_crud
+
+# Импорт для списков промокодов
+from . import promo_list_crud

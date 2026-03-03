@@ -78,6 +78,13 @@
 *   **[01_Core_AI_Services.md](./features/ai/01_Core_AI_Services.md.txt)**: Базовые функции генерации.
 *   **[02_Gemini_Client.md](./features/ai/02_Gemini_Client.md.txt)**: (ОБНОВЛЕНО) Работа с Gemini API, Стратегии, Ротация ключей.
 
+### 💬 `messages/` (Сообщения сообщества)
+*Полный цикл работы с личными сообщениями: история, отправка, SSE real-time, прочитанность, статистика.*
+*   **[01_Architecture.md](./features/messages/01_Architecture.md.txt)**: Архитектура, пакеты, модели БД, ключевые решения.
+*   **[02_API_Endpoints.md](./features/messages/02_API_Endpoints.md.txt)**: Все API-эндпоинты с параметрами и примерами.
+*   **[03_Data_Flows.md](./features/messages/03_Data_Flows.md.txt)**: Потоки данных: инициализация, история, отправка, SSE, прочитанность.
+*   **[04_Frontend_Components.md](./features/messages/04_Frontend_Components.md.txt)**: Компоненты, хуки, типы, иерархия UI.
+
 ### 🎨 `ai_presets/` (Шаблоны AI-инструкций)
 *   **[01_Management.md](./features/ai_presets/01_Management.md.txt)**: CRUD шаблонов.
 
@@ -95,3 +102,20 @@
 ### 🔐 `auth/` (Аутентификация)
 *   **[01_Authentication.md](./features/auth/01_Authentication.md.txt)**: Вход и роли.
 *   **[02_User_Management.md](./features/auth/02_User_Management.md.txt)**: CRUD пользователей.
+
+### ✏️ `bulk_edit/` (Массовое редактирование)
+*Модуль массового редактирования постов в нескольких проектах.*
+*   **[01_Overview.md](./features/bulk_edit/01_Overview.md.txt)**: API, критерии поиска, асинхронная обработка.
+
+### 🎁 `contest_v2/` (Конкурс 2.0)
+*Система конкурсов нового поколения с интеграцией в расписание.*
+*   **[01_Overview.md](./features/contest_v2/01_Overview.md.txt)**: Модель данных, жизненный цикл, синхронизация с SystemPost.
+
+### 🔑 `ai_tokens/` (Управление AI-токенами)
+*Пул API-ключей для Google Gemini.*
+*   **[01_Management.md](./features/ai_tokens/01_Management.md.txt)**: CRUD токенов, верификация, ротация.
+
+### 🧪 `vk_test/` (Тестовая VK авторизация)
+*Эндпоинты для отладки VK OAuth.*
+*   **[01_VK_Test_Auth.md](./features/vk_test/01_VK_Test_Auth.md.txt)**: Exchange token, PKCE, логирование.
+

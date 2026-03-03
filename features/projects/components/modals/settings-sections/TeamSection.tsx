@@ -32,9 +32,36 @@ export const TeamSection: React.FC<TeamSectionProps> = ({
     activeAccordion,
     handleAccordionToggle
 }) => {
+    // Получаем текущие команды проекта (поддержка нового и старого формата)
+    const currentTeams: string[] = formData.teams && formData.teams.length > 0 
+        ? formData.teams 
+        : (formData.team ? [formData.team] : []);
+
+    // Переключение команды (добавить/убрать из массива)
+    const handleToggleTeam = (teamName: string) => {
+        const isSelected = currentTeams.includes(teamName);
+        const newTeams = isSelected
+            ? currentTeams.filter(t => t !== teamName)
+            : [...currentTeams, teamName];
+        handleSetFormData(prev => ({ ...prev, teams: newTeams }));
+    };
+
+    // Очистить все команды
+    const handleClearTeams = () => {
+        handleSetFormData(prev => ({ ...prev, teams: [] }));
+    };
+
+    // Собираем все доступные команды (из всех проектов + текущие выбранные)
+    const allTeams = Array.from(new Set([...uniqueTeams, ...currentTeams]))
+        .filter(t => !!t)
+        .sort();
+
     return (
-        <AccordionSection title="Команда" sectionKey="team" activeSection={activeAccordion} onToggle={handleAccordionToggle}>
-            <p className="text-sm text-gray-500 mb-4">Команда, назначенная на проект.</p>
+        <AccordionSection title="Команды" sectionKey="team" activeSection={activeAccordion} onToggle={handleAccordionToggle}>
+            <p className="text-sm text-gray-500 mb-1">Команды, назначенные на проект. Можно выбрать несколько.</p>
+            {currentTeams.length > 0 && (
+                <p className="text-xs text-indigo-600 mb-3">Выбрано: {currentTeams.join(', ')}</p>
+            )}
             {isCreatingTeam ? (
             <div className="flex items-center gap-2 animate-fade-in-up">
                 <input
@@ -53,10 +80,13 @@ export const TeamSection: React.FC<TeamSectionProps> = ({
             </div>
             ) : (
             <div className="flex flex-wrap gap-2 items-center">
-                <button type="button" onClick={() => handleSetFormData(prev => ({ ...prev, team: undefined }))} disabled={isSaving} className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors disabled:opacity-70 ${formData.team === undefined ? 'bg-indigo-600 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>Без команды</button>
-                {Array.from(new Set([...uniqueTeams, formData.team])).filter((t): t is string => !!t).sort().map(team => (
-                    <button key={team} type="button" onClick={() => handleSetFormData(prev => ({ ...prev, team: team }))} disabled={isSaving} className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors disabled:opacity-70 ${formData.team === team ? 'bg-indigo-600 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>{team}</button>
-                ))}
+                <button type="button" onClick={handleClearTeams} disabled={isSaving} className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors disabled:opacity-70 ${currentTeams.length === 0 ? 'bg-indigo-600 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>Без команды</button>
+                {allTeams.map(team => {
+                    const isSelected = currentTeams.includes(team);
+                    return (
+                        <button key={team} type="button" onClick={() => handleToggleTeam(team)} disabled={isSaving} className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors disabled:opacity-70 ${isSelected ? 'bg-indigo-600 text-white shadow' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}>{team}</button>
+                    );
+                })}
                 <button
                     type="button"
                     onClick={() => setIsCreatingTeam(true)}

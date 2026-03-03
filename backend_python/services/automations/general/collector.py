@@ -5,7 +5,6 @@ from services.automations.general import crud
 from services.vk_service import call_vk_api
 from models_library.general_contests import GeneralContest
 from models_library.general_contests import GeneralContestCycle, GeneralContestEntry
-from models_library.lists import SystemListMailing
 import logging
 import uuid
 

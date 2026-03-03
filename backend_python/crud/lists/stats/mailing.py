@@ -7,13 +7,15 @@ from typing import Dict, List, Optional
 def get_mailing_specific_stats(
     db: Session, 
     model, 
+    pm,
     project_id: str, 
     total_users: int,
     period: str,
     group_by: str,
     date_from: Optional[str],
     date_to: Optional[str],
-    filter_can_write: str
+    filter_can_write: str,
+    needs_join: bool = False
 ) -> Dict:
     result = {
         "mailing_stats": None,
@@ -23,13 +25,15 @@ def get_mailing_specific_stats(
     }
     
     base_query = db.query(model).filter(model.project_id == project_id)
+    if needs_join:
+        base_query = base_query.join(pm, pm.id == model.vk_profile_id)
 
     # 1. Разрешения
-    allowed_count = base_query.filter(model.can_access_closed.is_(True)).count()
+    allowed_count = base_query.filter(pm.can_access_closed.is_(True)).count()
     forbidden_count = total_users - allowed_count
     active_allowed_count = base_query.filter(
-        model.deactivated.is_(None),
-        model.can_access_closed.is_(True)
+        pm.deactivated.is_(None),
+        pm.can_access_closed.is_(True)
     ).count()
     
     result["mailing_stats"] = {
@@ -40,18 +44,19 @@ def get_mailing_specific_stats(
 
     # 2. Lifetime Statistics
     try:
-        print(f"--- DEBUG LIFETIME STATS for {project_id} ---")
-        lt_query = db.query(
-            model.can_access_closed,
+        lt_query_builder = db.query(
+            pm.can_access_closed,
             model.first_message_date,
             model.last_message_date
-        ).filter(
+        ).select_from(model)
+        # CRITICAL FIX: добавляем JOIN с vk_profiles, иначе — CROSS JOIN (277 млрд строк)
+        if needs_join:
+            lt_query_builder = lt_query_builder.join(pm, pm.id == model.vk_profile_id)
+        lt_query = lt_query_builder.filter(
             model.project_id == project_id,
             model.first_message_date.isnot(None),
             model.last_message_date.isnot(None)
         ).all()
-        
-        print(f"DEBUG: Found {len(lt_query)} records with both dates.")
 
         total_days_sum = 0
         total_count = 0
@@ -65,10 +70,6 @@ def get_mailing_specific_stats(
             fd = first_date
             ld = last_date
             
-            # Лог первых 3 записей для проверки типов
-            if i < 3:
-                print(f"DEBUG Record {i}: FD={fd} (tz={fd.tzinfo}), LD={ld} (tz={ld.tzinfo}), CanAccess={can_access}")
-            
             try:
                 # Приводим к naive UTC, если есть смещение
                 if fd.tzinfo is not None:
@@ -78,13 +79,9 @@ def get_mailing_specific_stats(
                 
                 # Вычисляем разницу
                 if ld < fd:
-                    # Аномалия
-                    if i < 3: print(f"DEBUG: Negative diff detected (Last < First). Setting to 0.")
                     diff = 0
                 else:
                     diff = (ld - fd).days
-                    
-                if i < 3: print(f"DEBUG: Diff calculated: {diff} days")
 
                 total_days_sum += diff
                 total_count += 1
@@ -95,13 +92,9 @@ def get_mailing_specific_stats(
                 else:
                     forbidden_days_sum += diff
                     forbidden_count_iter += 1
-            except Exception as loop_e:
-                 print(f"DEBUG: Error processing row {i}: {loop_e}")
+            except Exception:
+                pass
 
-        print(f"DEBUG AGGREGATION: TotalDays={total_days_sum}, TotalCount={total_count}")
-        print(f"DEBUG AGGREGATION: AllowedDays={allowed_days_sum}, AllowedCount={allowed_count_iter}")
-        print(f"DEBUG AGGREGATION: ForbiddenDays={forbidden_days_sum}, ForbiddenCount={forbidden_count_iter}")
-        
         if total_count > 0:
             result["lifetime_stats"] = {
                 "total_avg": round(total_days_sum / total_count, 1),
@@ -117,13 +110,11 @@ def get_mailing_specific_stats(
             
     except Exception as e:
         print(f"Error calculating lifetime stats: {e}")
-        # Возвращаем нули в случае ошибки
         result["lifetime_stats"] = {
             "total_avg": 0,
             "allowed_avg": 0,
             "forbidden_avg": 0
         }
-    print(f"--- END DEBUG LIFETIME STATS ---")
 
     # 3. Last Contact Stats
     now_dt = datetime.now(timezone.utc)
@@ -186,10 +177,14 @@ def get_mailing_specific_stats(
             model.first_message_date.isnot(None)
         )
         
+        # FIX: добавляем JOIN при обращении к полям vk_profiles (фильтр can_write)
+        if filter_can_write != 'all' and needs_join:
+            chart_query = chart_query.join(pm, pm.id == model.vk_profile_id)
+        
         if filter_can_write == 'allowed':
-            chart_query = chart_query.filter(model.can_access_closed.is_(True))
+            chart_query = chart_query.filter(pm.can_access_closed.is_(True))
         elif filter_can_write == 'forbidden':
-            chart_query = chart_query.filter(model.can_access_closed.isnot(True))
+            chart_query = chart_query.filter(pm.can_access_closed.isnot(True))
         
         if start_date:
             chart_query = chart_query.filter(model.first_message_date >= start_date)

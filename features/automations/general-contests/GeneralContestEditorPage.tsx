@@ -267,7 +267,7 @@ export const GeneralContestEditorPage: React.FC<GeneralContestEditorPageProps> =
 
                 {activeTab === 'blacklist' && (
                     <div className="flex-grow p-6 overflow-y-auto custom-scrollbar">
-                        <GeneralBlacklistTab contestId={effectiveContestId} />
+                        <GeneralBlacklistTab contestId={effectiveContestId} projectId={projectId} />
                     </div>
                 )}
             </main>

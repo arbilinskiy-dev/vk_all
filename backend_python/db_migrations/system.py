@@ -43,3 +43,11 @@ def migrate(engine: Engine):
     check_and_add_column(engine, 'administered_groups', 'creator_id', 'BIGINT')
     check_and_add_column(engine, 'administered_groups', 'creator_name', 'VARCHAR')
     check_and_add_column(engine, 'administered_groups', 'admins_data', 'TEXT')
+
+    # Миграция 50: Добавить поля sub-progress в system_tasks для вложенного прогресса bulk-задач
+    check_and_add_column(engine, 'system_tasks', 'sub_loaded', 'INTEGER DEFAULT 0')
+    check_and_add_column(engine, 'system_tasks', 'sub_total', 'INTEGER DEFAULT 0')
+    check_and_add_column(engine, 'system_tasks', 'sub_message', 'VARCHAR')
+
+    # Миграция 51: Добавить поле finished_at для трекинга времени выполнения задач
+    check_and_add_column(engine, 'system_tasks', 'finished_at', 'FLOAT')

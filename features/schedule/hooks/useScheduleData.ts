@@ -122,6 +122,13 @@ export const useScheduleData = ({
     }, [project.id, onRefreshScheduled]);
     
     const handleDelete = useCallback(async (postToDelete: UnifiedPost) => {
+        // Защита: нельзя удалять посты contest_v2_start напрямую из расписания
+        // Они связаны с механикой конкурса и удаляются только вместе с ней
+        if (postToDelete.postType === 'system' && 'post_type' in postToDelete && postToDelete.post_type === 'contest_v2_start') {
+            window.showAppToast?.("Этот пост связан с механикой Конкурс 2.0. Удалите его через настройки конкурса.", 'warning');
+            return false;
+        }
+        
         setLoadingStates(prev => ({ ...prev, isDeleting: true }));
         let success = false;
         try {
@@ -195,12 +202,61 @@ export const useScheduleData = ({
         await onSaveComplete(affectedProjectIds, refreshType);
     }, [onSaveComplete]);
 
+    /**
+     * Массовое удаление постов и заметок — ТОЛЬКО API-вызовы, БЕЗ индивидуальных рефрешей.
+     * Используется в handleConfirmBulkDelete, чтобы избежать гонки состояний
+     * при параллельных рефрешах (каждый из которых мог затирать stories пустым массивом).
+     * После вызова этого метода нужно сделать один финальный onRefreshAll.
+     */
+    const handleBulkDeleteOnly = useCallback(async (
+        postsToDelete: UnifiedPost[],
+        notesToDelete: Note[]
+    ): Promise<{ successCount: number; totalCount: number }> => {
+        const totalCount = postsToDelete.length + notesToDelete.length;
+        
+        // Формируем промисы удаления — только API-вызовы, без рефрешей
+        const postPromises = postsToDelete.map(async (post) => {
+            try {
+                if (post.postType === 'system') {
+                    await api.deleteSystemPost(post.id);
+                } else {
+                    const isPublished = new Date(post.date) < new Date();
+                    if (isPublished) {
+                        await api.deletePublishedPost(post.id, project.id);
+                    } else {
+                        await api.deletePost(post.id, project.id);
+                    }
+                }
+                return true;
+            } catch (error) {
+                console.error(`Ошибка удаления поста ${post.id}:`, error);
+                return false;
+            }
+        });
+        
+        const notePromises = notesToDelete.map(async (note) => {
+            try {
+                await api.deleteNote(note.id);
+                return true;
+            } catch (error) {
+                console.error(`Ошибка удаления заметки ${note.id}:`, error);
+                return false;
+            }
+        });
+        
+        const results = await Promise.allSettled([...postPromises, ...notePromises]);
+        const successCount = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+        
+        return { successCount, totalCount };
+    }, [project.id]);
+
     const actions = useMemo(() => ({
         handleRefreshPublishedClick,
         handleRefreshScheduledClick,
         handleRefreshAll,
         handleDelete,
         handleDeleteNote,
+        handleBulkDeleteOnly,
         handleSaveNote,
         handleSavePost,
         onSystemPostsUpdate,
@@ -210,6 +266,7 @@ export const useScheduleData = ({
         handleRefreshAll,
         handleDelete,
         handleDeleteNote,
+        handleBulkDeleteOnly,
         handleSaveNote,
         handleSavePost,
         onSystemPostsUpdate

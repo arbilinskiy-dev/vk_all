@@ -58,6 +58,12 @@ class SystemTask(Base):
     message = Column(String, nullable=True)
     error = Column(Text, nullable=True)
     
+    # Вложенный прогресс (для bulk-операций - прогресс текущего проекта)
+    sub_loaded = Column(Integer, default=0, nullable=True)
+    sub_total = Column(Integer, default=0, nullable=True)
+    sub_message = Column(String, nullable=True)
+    
     # Время
-    created_at = Column(Float) # timestamp
-    updated_at = Column(Float) # timestamp
+    created_at = Column(Float) # timestamp начала
+    updated_at = Column(Float) # timestamp последнего обновления
+    finished_at = Column(Float, nullable=True) # timestamp завершения (для расчёта длительности)

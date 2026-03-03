@@ -1,30 +1,82 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+import crud
 import schemas
-import services.auth_service as auth_service
-from database import SessionLocal
+import services.session_auth_service as session_auth_service
+from database import get_db
+from services.auth_middleware import get_current_user, CurrentUser
 
 router = APIRouter()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-@router.post("/auth/login", response_model=schemas.LoginResponse)
-def login(payload: schemas.LoginPayload, db: Session = Depends(get_db)):
+@router.post("/auth/login")
+def login(payload: schemas.LoginPayload, request: Request, db: Session = Depends(get_db)):
     """
     Аутентифицирует пользователя по логину и паролю.
-    Сначала проверяет учетные данные администратора из .env, затем ищет в базе данных.
+    Создаёт серверную сессию и возвращает session_token.
+    Множественные одновременные сессии РАЗРЕШЕНЫ.
     """
-    result = auth_service.authenticate_user(db, payload.username, payload.password)
+    # Извлекаем IP и User-Agent из запроса
+    ip_address = request.headers.get("X-Forwarded-For", request.client.host if request.client else None)
+    user_agent = request.headers.get("User-Agent")
+    
+    result = session_auth_service.authenticate_and_create_session(
+        db=db,
+        username=payload.username,
+        password=payload.password,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    
     if not result:
-        # Используем HTTPException с кодом 401, который будет обработан middleware
         raise HTTPException(
             status_code=401,
             detail="Неправильный логин или пароль",
         )
+    
     return result
+
+
+@router.post("/auth/logout")
+def logout(request: Request, db: Session = Depends(get_db)):
+    """
+    Завершает текущую сессию пользователя.
+    Фронтенд отправляет X-Session-Token в заголовке.
+    """
+    session_token = request.headers.get("X-Session-Token")
+    if not session_token:
+        raise HTTPException(status_code=400, detail="Токен сессии не предоставлен")
+    
+    ip_address = request.headers.get("X-Forwarded-For", request.client.host if request.client else None)
+    user_agent = request.headers.get("User-Agent")
+    
+    success = session_auth_service.logout(
+        db=db,
+        session_token=session_token,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    
+    return {"success": success}
+
+
+@router.post("/auth/check-session")
+def check_session(current_user: CurrentUser = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Проверяет, жива ли текущая сессия.
+    Используется фронтендом при восстановлении сессии после перезагрузки.
+    Если сессия протухла — middleware вернёт 401.
+    """
+    # Подтягиваем ФИО из БД для не-admin пользователей
+    full_name = ""
+    if current_user.role != "admin" and current_user.user_id != "admin":
+        db_user = crud.get_user_by_username(db, current_user.username)
+        if db_user:
+            full_name = db_user.full_name or ""
+    
+    return {
+        "valid": True,
+        "username": current_user.username,
+        "role": current_user.role,
+        "full_name": full_name,
+    }

@@ -243,8 +243,8 @@ export const getGeneralContestBlacklist = async (contestId: string): Promise<any
     return callApi<any[]>('automations/general/blacklist/get', { contest_id: contestId });
 };
 
-export const addGeneralContestToBlacklist = async (contestId: string, payload: { user_vk_id: number; until_date?: string; reason?: string }): Promise<{ success: boolean }> => {
-    return callApi('automations/general/blacklist/add', { contest_id: contestId, payload });
+export const addGeneralContestToBlacklist = async (projectId: string, payload: { user_vk_id: number; note?: string }): Promise<{ success: boolean }> => {
+    return callApi('automations/general/blacklist/add', { project_id: projectId, payload });
 };
 
 export const deleteGeneralContestBlacklistEntry = async (entryId: string): Promise<{ success: boolean }> => {

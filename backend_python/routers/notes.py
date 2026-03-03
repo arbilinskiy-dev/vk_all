@@ -4,16 +4,9 @@ from typing import List
 
 import schemas
 import services.note_service as note_service
-from database import SessionLocal
+from database import get_db
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/getNotes", response_model=List[schemas.Note])
 def get_notes(payload: schemas.ProjectIdPayload, db: Session = Depends(get_db)):

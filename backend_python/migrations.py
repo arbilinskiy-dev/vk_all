@@ -12,7 +12,17 @@ from db_migrations import (
     ai_tokens,
     automations,
     automations_general,
-    vk_users
+    vk_users,
+    vk_profiles,
+    members,
+    interactions,
+    dialogs_authors,
+    messages,
+    message_stats,
+    message_templates,
+    promo_lists,
+    auth as auth_migration,
+    cleanup_legacy_tables
 )
 
 def run_migrations(engine: Engine):
@@ -34,5 +44,18 @@ def run_migrations(engine: Engine):
     automations.migrate(engine)
     automations_general.migrate(engine)
     vk_users.migrate()
+    vk_profiles.migrate(engine)
+    members.migrate(engine)
+    interactions.migrate(engine)
+    dialogs_authors.migrate(engine)
+    messages.migrate(engine)
+    message_stats.migrate(engine)
+    message_templates.migrate(engine)
+    promo_lists.migrate(engine)
+    auth_migration.migrate(engine)
+
+    # ФИНАЛЬНЫЙ ШАГ: удаление старых таблиц (только после миграций данных)
+    # ВНИМАНИЕ: cleanup теперь проверяет MIN_RATIO (≥50% данных) перед удалением
+    cleanup_legacy_tables.migrate(engine)
 
     print("Migrations complete.")

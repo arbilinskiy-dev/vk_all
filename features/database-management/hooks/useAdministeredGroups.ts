@@ -162,9 +162,10 @@ export const useAdministeredGroups = () => {
         if (group.screen_name && group.screen_name.toLowerCase().includes(rawQuery)) return true;
 
         // 4. Умный парсинг ссылок (достаем ID или screen_name из ссылки)
+        // Поддерживаем оба домена: vk.com и vk.ru
         let cleanQuery = rawQuery
-            .replace(/https?:\/\/(www\.)?vk\.com\//, '')
-            .replace('vk.com/', '');
+            .replace(/https?:\/\/(www\.)?vk\.(com|ru)\//, '')
+            .replace(/vk\.(com|ru)\//, '');
             
         cleanQuery = cleanQuery
             .replace(/^public/, '')

@@ -1,0 +1,381 @@
+
+# API-эндпоинты модуля «Сообщения»
+
+Все эндпоинты находятся под префиксом `/api/messages`.
+Статистика — под `/api/messages/stats`.
+
+---
+
+## 1. Основные эндпоинты (routers/messages.py)
+
+### GET /messages/user-info
+
+**Назначение:** Получение данных пользователя из таблицы рассылки с авто-обновлением из VK API.
+
+| Параметр | Тип | Обязательный | Описание |
+|---|---|---|---|
+| `project_id` | string | ✅ | ID проекта |
+| `user_id` | int | ✅ | VK user_id пользователя |
+| `force_refresh` | bool | ❌ | Принудительное обновление из VK API (по умолчанию false) |
+
+**Логика:** Проверяет TTL обновления (24 часа). Если данные устарели — запрашивает VK API `users.get` с полями `sex, bdate, city, country, photo_100, domain, has_mobile, last_seen, is_closed, can_access_closed, deactivated`. Обогащает ответ датами последних сообщений (входящее/исходящее).
+
+**Ответ:**
+```json
+{
+    "success": true,
+    "found": true,
+    "user": {
+        "vk_user_id": 12345,
+        "first_name": "Иван",
+        "last_name": "Иванов",
+        "photo_url": "https://...",
+        "city": "Москва",
+        "last_incoming_message_date": "2026-02-25T10:30:00",
+        "last_outgoing_message_date": "2026-02-25T11:00:00",
+        "profile_refreshed": true
+    }
+}
+```
+
+---
+
+### GET /messages/last-messages
+
+**Назначение:** Последнее сообщение для каждого диалога (пакетно).
+
+| Параметр | Тип | Обязательный | Описание |
+|---|---|---|---|
+| `project_id` | string | ✅ | ID проекта |
+| `user_ids` | string | ✅ | Список vk_user_id через запятую |
+
+**Ответ:**
+```json
+{
+    "success": true,
+    "messages": {
+        "12345": { "id": 100, "text": "Привет!", "date": 1740480000, ... },
+        "67890": { "id": 200, "text": "Добрый день", "date": 1740479000, ... }
+    }
+}
+```
+
+---
+
+### GET /messages/history
+
+**Назначение:** История сообщений с кэшированием в БД.
+
+| Параметр | Тип | Обязательный | Описание |
+|---|---|---|---|
+| `project_id` | string | ✅ | ID проекта |
+| `user_id` | int | ✅ | VK user_id собеседника |
+| `count` | int | ❌ | Кол-во сообщений (1–200, по умолчанию 50) |
+| `offset` | int | ❌ | Смещение для пагинации (по умолчанию 0) |
+| `force_refresh` | bool | ❌ | Принудительная синхронизация с VK |
+| `include_user_info` | bool | ❌ | Включить данные пользователя |
+
+**Логика:**
+1. Всегда запрашивает последние 200 сообщений из VK API
+2. Upsert в БД (дозаписывает + обновляет)
+3. Читает из БД нужную страницу (count/offset)
+4. Если VK API недоступен — fallback на данные из БД
+
+**Ответ:**
+```json
+{
+    "success": true,
+    "count": 350,
+    "items": [
+        {
+            "id": 100,
+            "from_id": 12345,
+            "text": "Привет!",
+            "date": 1740480000,
+            "is_outgoing": false,
+            "attachments_json": null,
+            "sent_by_name": null
+        }
+    ],
+    "offset": 0,
+    "has_more": true,
+    "source": "vk_api",
+    "vk_available": true,
+    "cache_meta": {
+        "total_count": 350,
+        "cached_count": 200,
+        "is_fully_loaded": false,
+        "incoming_count": 180,
+        "outgoing_count": 170
+    }
+}
+```
+
+---
+
+### POST /messages/history/all
+
+**Назначение:** Загрузка ВСЕХ сообщений диалога (параллельная при ≥2 токенах).
+
+**Тело запроса (JSON):**
+```json
+{
+    "project_id": "abc123",
+    "user_id": 12345
+}
+```
+
+**Логика:**
+- Если токенов ≥ 2 и сообщений > 400 — параллельная загрузка через `ThreadPoolExecutor`
+- Offset-диапазоны распределяются round-robin между токенами
+- Задержка 1.5с между стартом воркеров (VK flood protection)
+- При 1 токене — последовательная загрузка
+
+**Ответ:**
+```json
+{
+    "success": true,
+    "total_count": 1500,
+    "cached_count": 1500,
+    "is_fully_loaded": true,
+    "strategy": "parallel",
+    "tokens_used": 3,
+    "elapsed_sec": 12.5,
+    "saved_count": 1500
+}
+```
+
+---
+
+### POST /messages/send
+
+**Назначение:** Отправка сообщения через VK API `messages.send`.
+
+**Тело запроса:**
+```json
+{
+    "project_id": "abc123",
+    "user_id": 12345,
+    "message": "Добрый день! {global_greeting}",
+    "sender_id": "manager_01",
+    "sender_name": "Администратор"
+}
+```
+
+**Логика:**
+1. Подстановка глобальных переменных (`{global_*}`) в текст
+2. Отправка через VK API `messages.send`
+3. Сохранение исходящего сообщения в кэш (с `sent_by_id` и `sent_by_name`)
+4. Авто-прочтение диалога (исходящее от менеджера → помечает как прочитанное)
+5. Пересчёт направленных счётчиков
+
+**Ответ:**
+```json
+{
+    "success": true,
+    "message_id": 999,
+    "item": {
+        "id": 999,
+        "from_id": -12345678,
+        "text": "Добрый день! Здравствуйте",
+        "date": 1740480000,
+        "out": 1,
+        "sent_by_id": "manager_01",
+        "sent_by_name": "Администратор"
+    }
+}
+```
+
+---
+
+### POST /messages/conversations-init
+
+**Назначение:** Единый эндпоинт инициализации модуля (замена 4 запросов).
+
+**Тело запроса:**
+```json
+{
+    "project_id": "abc123",
+    "page": 1,
+    "sort_unread_first": true
+}
+```
+
+**Логика:**
+1. Определяет пользователей с непрочитанными сообщениями
+2. Загружает подписчиков (основная страница из списка рассылки)
+3. Подгружает непрочитанных с других страниц (стратегия unread-first)
+4. Подсчитывает unread_counts и last_messages пакетно
+
+**Ответ:**
+```json
+{
+    "success": true,
+    "subscribers": [...],
+    "total_count": 500,
+    "unread_counts": { "12345": 3, "67890": 1 },
+    "last_messages": { "12345": {...}, "67890": {...} },
+    "elapsed_ms": 45
+}
+```
+
+---
+
+## 2. Прочитанность (mark-read / mark-unread)
+
+### PUT /messages/mark-read
+
+Помечает диалог как прочитанный. Отправляет SSE-событие `message_read` и глобальное `unread_count_changed`.
+
+```json
+{ "project_id": "abc123", "user_id": 12345, "manager_id": "mgr_01" }
+```
+
+### PUT /messages/mark-all-read
+
+Помечает ВСЕ диалоги проекта как прочитанные. Отправляет SSE-событие `all_read`.
+
+```json
+{ "project_id": "abc123", "manager_id": "mgr_01" }
+```
+
+### PUT /messages/mark-unread
+
+Помечает диалог как непрочитанный.
+
+```json
+{ "project_id": "abc123", "user_id": 12345, "manager_id": "mgr_01" }
+```
+
+### GET /messages/unread-counts
+
+Возвращает количество непрочитанных входящих сообщений по диалогам.
+
+| Параметр | Тип | Обязательный | Описание |
+|---|---|---|---|
+| `project_id` | string | ✅ | ID проекта |
+| `user_ids` | string | ❌ | Список vk_user_id через запятую (без — все) |
+
+### GET /messages/unread-dialog-counts-batch
+
+Пакетный подсчёт диалогов с непрочитанными для нескольких проектов (один SQL-запрос).
+
+| Параметр | Тип | Обязательный | Описание |
+|---|---|---|---|
+| `project_ids` | string | ✅ | Список ID проектов через запятую |
+
+---
+
+## 3. SSE-потоки (Server-Sent Events)
+
+### GET /messages/global-unread-stream
+
+Глобальный SSE-стрим для счётчиков непрочитанных диалогов по ВСЕМ проектам.
+
+**Типы событий:**
+- `connected` — подключение установлено
+- `unread_count_changed` — `{ project_id, unread_dialogs_count }`
+
+**Heartbeat:** каждые 30 секунд (`:heartbeat <timestamp>`)
+
+### GET /messages/stream
+
+SSE-поток для push-уведомлений по конкретному проекту.
+
+| Параметр | Тип | Обязательный | Описание |
+|---|---|---|---|
+| `project_id` | string | ✅ | ID проекта |
+| `manager_id` | string | ❌ | ID менеджера (по умолчанию "anonymous") |
+| `manager_name` | string | ❌ | Имя менеджера |
+
+**Типы событий:**
+| Событие | Данные | Описание |
+|---|---|---|
+| `connected` | `{ project_id, manager_id }` | Подключение установлено |
+| `new_message` | `{ vk_user_id, message, unread_count, is_incoming }` | Новое сообщение |
+| `message_read` | `{ vk_user_id, last_read_message_id, read_by }` | Диалог прочитан другим менеджером |
+| `all_read` | `{ project_id, updated_count, read_by }` | Все диалоги прочитаны |
+| `user_read` | `{ vk_user_id, read_message_id }` | Пользователь VK прочитал наши сообщения |
+| `user_typing` | `{ vk_user_id }` | Пользователь VK печатает |
+| `dialog_focus` | `{ vk_user_id, manager_id, manager_name, action }` | Менеджер открыл/покинул диалог |
+| `mailing_user_updated` | `{ user: {...} }` | Данные пользователя обновлены |
+
+---
+
+## 4. Фокус менеджера и набор текста
+
+### POST /messages/dialog-focus
+
+Устанавливает/снимает фокус менеджера на диалоге (для отображения другим менеджерам).
+
+```json
+{
+    "project_id": "abc123",
+    "vk_user_id": 12345,
+    "manager_id": "mgr_01",
+    "manager_name": "Администратор",
+    "action": "enter"
+}
+```
+
+`action`: `"enter"` — менеджер открыл диалог, `"leave"` — покинул.
+
+### GET /messages/dialog-focuses
+
+Возвращает все активные фокусы менеджеров на диалогах для проекта.
+
+### POST /messages/typing
+
+Отправляет статус «печатает» пользователю через VK API `messages.setActivity`.
+
+```json
+{ "project_id": "abc123", "user_id": 12345 }
+```
+
+### GET /messages/sse-stats
+
+Возвращает статистику SSE-подключений (для мониторинга).
+
+---
+
+## 5. Эндпоинты статистики (routers/messages_stats.py)
+
+Все эндпоинты под префиксом `/api/messages/stats`.
+
+### GET /messages/stats/summary
+
+Глобальная сводка: общее кол-во сообщений, уникальных пользователей, проектов.
+
+### GET /messages/stats/projects
+
+Сводка по каждому проекту: входящие, исходящие, уникальные пользователи. Для таблицы на дашборде.
+
+### GET /messages/stats/project/{project_id}
+
+Сводка по конкретному проекту.
+
+### GET /messages/stats/chart
+
+Данные для графика пиковых нагрузок — часовые слоты.
+
+| Параметр | Тип | Обязательный | Описание |
+|---|---|---|---|
+| `project_id` | string | ❌ | ID проекта (None = все проекты) |
+| `date_from` | string | ❌ | Начало диапазона YYYY-MM-DD |
+| `date_to` | string | ❌ | Конец диапазона YYYY-MM-DD |
+
+### GET /messages/stats/project/{project_id}/users
+
+Детализация по пользователям проекта: кто, сколько сообщений, первое/последнее.
+
+| Параметр | Тип | Обязательный | Описание |
+|---|---|---|---|
+| `sort_by` | string | ❌ | Поле сортировки (по умолчанию `last_message_at`) |
+| `sort_order` | string | ❌ | Порядок: asc/desc (по умолчанию desc) |
+| `limit` | int | ❌ | Лимит записей (1–200, по умолчанию 50) |
+| `offset` | int | ❌ | Смещение (по умолчанию 0) |
+
+### POST /messages/stats/sync-from-logs
+
+Синхронизирует статистику из существующих VkCallbackLog. Парсит логи `message_new`/`message_reply`, заполняет таблицы статистики. Идемпотентна — можно вызывать повторно.
+

@@ -34,6 +34,13 @@ def _extract_other_attachments(attachments: Optional[List[Dict]]) -> List[Dict]:
             elif att_type == 'video':
                 desc = f"Видео: {att['video']['title']}"
                 att_id = f"video{att['video']['owner_id']}_{att['video']['id']}"
+                # Извлекаем превью видео из массива image (берём наибольший размер)
+                video_images = att['video'].get('image') or att['video'].get('photo') or []
+                thumbnail_url = ""
+                if video_images and isinstance(video_images, list):
+                    # VK возвращает массив размеров: берём последний (самый большой)
+                    thumbnail_url = video_images[-1].get('url', '')
+                player_url = att['video'].get('player', '')
             elif att_type == 'audio':
                 desc = f"Аудио: {att['audio']['artist']} - {att['audio']['title']}"
                 att_id = f"audio{att['audio']['owner_id']}_{att['audio']['id']}"
@@ -41,7 +48,14 @@ def _extract_other_attachments(attachments: Optional[List[Dict]]) -> List[Dict]:
                 desc = f"Ссылка: {att['link'].get('title') or att['link'].get('caption', '')}"
                 att_id = att['link']['url']
             if desc and att_id:
-                other_atts.append({"id": att_id, "type": att_type, "description": desc})
+                att_dict = {"id": att_id, "type": att_type, "description": desc}
+                # Для видео добавляем превью и ссылку на плеер
+                if att_type == 'video':
+                    if thumbnail_url:
+                        att_dict["thumbnail_url"] = thumbnail_url
+                    if player_url:
+                        att_dict["player_url"] = player_url
+                other_atts.append(att_dict)
         except KeyError:
             continue
     return other_atts
@@ -57,7 +71,8 @@ def format_vk_post(vk_post: Dict, is_published: bool) -> Dict:
         "text": vk_post.get('text', ''),
         "images": _extract_photos(vk_post.get('attachments')),
         "attachments": _extract_other_attachments(vk_post.get('attachments')),
-        "vkPostUrl": f"https://vk.com/wall{owner_id}_{post_id}" + ("?postponed=1" if not is_published else "")
+        "vkPostUrl": f"https://vk.com/wall{owner_id}_{post_id}" + ("?postponed=1" if not is_published else ""),
+        "is_pinned": bool(vk_post.get('is_pinned', 0))
     }
 
 def format_suggested_vk_post(vk_post: Dict, internal_project_id: str) -> Dict:
@@ -108,8 +123,37 @@ def format_market_album(vk_album: Dict) -> Dict:
         "updated_time": vk_album['updated_time'],
     }
 
+def _extract_best_market_photo_url(vk_item: Dict) -> str:
+    """
+    Извлекает URL фото максимального размера из массива photos[] товара.
+    VK возвращает photos[] при запросе market.get с extended=1.
+    Если photos[] нет — возвращает thumb_photo (превью), очищая от crop/size параметров.
+    """
+    # Пробуем получить оригинал из photos[].sizes[]
+    photos = vk_item.get('photos')
+    if photos and len(photos) > 0:
+        sizes = photos[0].get('sizes', [])
+        if sizes:
+            # Приоритет типов размеров VK: w(макс) > z > y > x > r > q > p > o > m > s(мин)
+            size_priority = ['w', 'z', 'y', 'x', 'r', 'q', 'p', 'o']
+            for size_type in size_priority:
+                best = next((s for s in sizes if s.get('type') == size_type), None)
+                if best and best.get('url'):
+                    return best['url']
+            # Фолбэк: берём самый большой по ширине
+            sorted_sizes = sorted(sizes, key=lambda s: s.get('width', 0), reverse=True)
+            if sorted_sizes and sorted_sizes[0].get('url'):
+                return sorted_sizes[0]['url']
+    
+    # Фолбэк: используем thumb_photo как есть
+    return vk_item.get('thumb_photo', '')
+
+
 def format_market_item(vk_item: Dict) -> Dict:
     """Форматирует объект товара VK в нашу внутреннюю схему."""
+    # Извлекаем лучший URL фото (оригинал из photos[] или thumb_photo)
+    best_photo_url = _extract_best_market_photo_url(vk_item)
+    
     return {
         "id": vk_item['id'],
         "owner_id": vk_item['owner_id'],
@@ -118,7 +162,7 @@ def format_market_item(vk_item: Dict) -> Dict:
         "price": vk_item['price'],
         "category": vk_item['category'],
         "date": vk_item['date'],
-        "thumb_photo": vk_item['thumb_photo'],
+        "thumb_photo": best_photo_url,
         "availability": vk_item['availability'],
         "is_deleted": vk_item.get('is_deleted', False),
         "album_ids": vk_item.get('album_ids', []),

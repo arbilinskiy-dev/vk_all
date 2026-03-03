@@ -2,7 +2,7 @@
 from sqlalchemy import Engine, inspect
 from models import ReviewContest, PromoCode, ReviewContestEntry, ReviewContestDeliveryLog, ReviewContestBlacklist
 from models_library.general_contests import GeneralContest, GeneralContestEntry
-from .utils import check_and_add_column
+from .utils import check_and_add_column, check_and_add_unique_constraint
 
 def migrate(engine: Engine):
     """Миграции для автоматизаций."""
@@ -68,4 +68,42 @@ def migrate(engine: Engine):
     check_and_add_column(engine, 'stories_automation_logs', 'image_url', 'VARCHAR')
     check_and_add_column(engine, 'stories_automation_logs', 'post_link', 'VARCHAR')
     check_and_add_column(engine, 'stories_automation_logs', 'post_text', 'TEXT')
+
+    # Миграция: Зрители историй
+    check_and_add_column(engine, 'stories_automation_logs', 'viewers', 'TEXT')
+    check_and_add_column(engine, 'stories_automation_logs', 'viewers_updated_at', 'TIMESTAMP WITH TIME ZONE')
+
+    # Миграция: Изображение-доказательство розыгрыша
+    check_and_add_column(engine, 'review_contests', 'use_proof_image', 'BOOLEAN DEFAULT TRUE')
+    check_and_add_column(engine, 'review_contests', 'attach_additional_media', 'BOOLEAN DEFAULT FALSE')
+
+    # Миграция: Статус активности истории (активная/архивная)
+    check_and_add_column(engine, 'stories_automation_logs', 'is_active', 'BOOLEAN DEFAULT FALSE')
+
+    # Миграция: Флаг финализации — история архивная и данные больше не меняются
+    check_and_add_column(engine, 'stories_automation_logs', 'stats_finalized', 'BOOLEAN DEFAULT FALSE')
+    
+    # Миграция: Флаг финализации зрителей — после финализации stats собираем viewers последний раз
+    check_and_add_column(engine, 'stories_automation_logs', 'viewers_finalized', 'BOOLEAN DEFAULT FALSE')
+
+    # Миграция: Дополнительные поля для записей конкурса отзывов
+    check_and_add_column(engine, 'review_contest_entries', 'post_link', 'VARCHAR')
+    check_and_add_column(engine, 'review_contest_entries', 'post_text', 'TEXT')
+    check_and_add_column(engine, 'review_contest_entries', 'status', "VARCHAR DEFAULT 'new'")
+    check_and_add_column(engine, 'review_contest_entries', 'entry_number', 'INTEGER')
+    check_and_add_column(engine, 'review_contest_entries', 'created_at', 'TIMESTAMP WITH TIME ZONE DEFAULT NOW()')
+
+    # Миграция: Диагностический лог для записей конкурса отзывов
+    check_and_add_column(engine, 'review_contest_entries', 'log', 'TEXT')
+
+    # Миграция: Реальная дата поста VK для записей конкурса отзывов
+    check_and_add_column(engine, 'review_contest_entries', 'post_date', 'TIMESTAMP WITH TIME ZONE')
+
+    # Миграция: Уникальный constraint для предотвращения дублирования историй
+    # Защита от race condition при параллельном выполнении в нескольких Gunicorn-воркерах
+    check_and_add_unique_constraint(
+        engine, 'stories_automation_logs',
+        'uq_stories_log_project_post',
+        ['project_id', 'vk_post_id']
+    )
 

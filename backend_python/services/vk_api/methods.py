@@ -1,14 +1,17 @@
 
 from typing import List, Dict, Any
-from .token_manager import call_vk_api, publish_with_fallback
+from .token_manager import call_vk_api, publish_with_fallback, call_vk_api_for_group, publish_with_admin_priority
 
 def create_album(owner_id: str, title: str, token: str) -> Dict:
     """Creates a new photo album."""
-    # Используем publish_with_fallback для надежности при создании
-    return publish_with_fallback({
+    # Извлекаем group_id из owner_id (он отрицательный для групп)
+    group_id = abs(int(owner_id)) if owner_id else None
+    
+    # Используем publish_with_admin_priority для приоритета токенов-админов группы
+    return publish_with_admin_priority({
         'owner_id': owner_id,
         'title': title
-    }, method='photos.createAlbum', preferred_token=token)
+    }, method='photos.createAlbum', group_id=group_id, preferred_token=token)
 
 def get_albums(owner_id: str, token: str) -> List[Dict]:
     """Fetches all photo albums."""
@@ -59,27 +62,57 @@ def get_latest_wall_posts(owner_id: str, token: str, count: int = 20) -> List[Di
 def create_comment(owner_id: int, post_id: int, message: str, token: str, from_group: int = 1) -> Dict:
     """
     Adds a comment to a post.
-    Using publish_with_fallback to ensure it works even if some tokens are blocked.
+    Using publish_with_admin_priority to ensure it works with admin tokens first.
     """
+    # Извлекаем group_id из owner_id (он отрицательный для групп)
+    group_id = abs(int(owner_id)) if owner_id else None
+    
     params = {
         'owner_id': owner_id,
         'post_id': post_id,
         'message': message,
         'from_group': from_group
     }
-    return publish_with_fallback(params, method='wall.createComment', preferred_token=token)
+    return publish_with_admin_priority(params, method='wall.createComment', group_id=group_id, preferred_token=token)
 
-def get_active_stories(group_id: int, token: str) -> List[Dict]:
+def pin_post(owner_id: str, post_id: int, token: str) -> Dict:
+    """
+    Закрепляет запись на стене сообщества.
+    Требует user_token с правами администратора группы.
+    """
+    group_id = abs(int(owner_id)) if owner_id else None
+    params = {
+        'owner_id': owner_id,
+        'post_id': post_id
+    }
+    return publish_with_admin_priority(params, method='wall.pin', group_id=group_id, preferred_token=token)
+
+def unpin_post(owner_id: str, post_id: int, token: str) -> Dict:
+    """
+    Открепляет запись на стене сообщества.
+    Требует user_token с правами администратора группы.
+    """
+    group_id = abs(int(owner_id)) if owner_id else None
+    params = {
+        'owner_id': owner_id,
+        'post_id': post_id
+    }
+    return publish_with_admin_priority(params, method='wall.unpin', group_id=group_id, preferred_token=token)
+
+def get_active_stories(group_id: int, token: str, community_tokens: list = None) -> List[Dict]:
     """
     Fetches active stories for a community.
+    
+    Если community_tokens не пуст — используются ТОЛЬКО они (эксклюзивный режим).
+    Иначе — стандартная ротация admin-токенов.
     """
     try:
-        response = call_vk_api('stories.get', {
+        response = call_vk_api_for_group('stories.get', {
             'owner_id': -int(group_id),
             'access_token': token,
             'extended': 0,
             'v': '5.199'
-        })
+        }, group_id=group_id, community_tokens=community_tokens)
         
         all_stories = []
         items_list = response.get('items', [])

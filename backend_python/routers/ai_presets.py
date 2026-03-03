@@ -4,16 +4,9 @@ from typing import List
 
 from schemas import AiPromptPreset, ProjectIdPayload, CreateAiPromptPresetPayload, UpdateAiPromptPresetPayload, GenericSuccess
 import services.ai_prompt_preset_service as preset_service
-from database import SessionLocal
+from database import get_db
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/getForProject", response_model=List[AiPromptPreset])
 def get_presets_for_project(payload: ProjectIdPayload, db: Session = Depends(get_db)):

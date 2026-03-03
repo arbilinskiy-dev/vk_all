@@ -1,11 +1,14 @@
 from sqlalchemy.orm import Session, subqueryload
 from sqlalchemy import func
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 
 import models
 from schemas import ScheduledPost, SystemPost, SuggestedPost, Note
+
+logger = logging.getLogger(__name__)
 
 # ===============================================
 # POSTS (Published, Scheduled, Suggested)
@@ -58,6 +61,7 @@ def replace_published_posts(db: Session, project_id: str, posts: list[dict], tim
             attachments=json.dumps(p.get('attachments', [])),
             vkPostUrl=p.get('vkPostUrl'),
             tags=p.get('tags', []),
+            is_pinned=p.get('is_pinned', False),
             _lastUpdated=timestamp
         ) for p in posts]
         db.add_all(new_db_posts)
@@ -102,6 +106,7 @@ def upsert_published_posts(db: Session, project_id: str, posts: list[dict], time
             if db_obj.images != new_images_json: changes_detected = True
             if db_obj.attachments != new_attachments_json: changes_detected = True
             if db_obj.vkPostUrl != p_data.get('vkPostUrl'): changes_detected = True
+            if db_obj.is_pinned != p_data.get('is_pinned', False): changes_detected = True
             
             if changes_detected:
                 db_obj.date = p_data['date']
@@ -109,6 +114,7 @@ def upsert_published_posts(db: Session, project_id: str, posts: list[dict], time
                 db_obj.images = new_images_json
                 db_obj.attachments = new_attachments_json
                 db_obj.vkPostUrl = p_data.get('vkPostUrl')
+                db_obj.is_pinned = p_data.get('is_pinned', False)
                 db_obj._lastUpdated = timestamp
                 has_changes = True
         else:
@@ -121,7 +127,8 @@ def upsert_published_posts(db: Session, project_id: str, posts: list[dict], time
                 images=json.dumps(p_data['images']),
                 attachments=json.dumps(p_data.get('attachments', [])),
                 vkPostUrl=p_data.get('vkPostUrl'),
-                tags=p_data.get('tags', []), 
+                tags=p_data.get('tags', []),
+                is_pinned=p_data.get('is_pinned', False),
                 _lastUpdated=timestamp
             )
             new_objects.append(new_obj)
@@ -188,8 +195,13 @@ def replace_suggested_posts(db: Session, project_id: str, posts: list[dict], tim
         db.add_all(new_db_posts)
     db.commit()
 
-def upsert_post(db: Session, post_data: dict, is_published: bool, project_id: str):
-    """Atomically inserts or updates a single post in the database cache."""
+def upsert_post(db: Session, post_data: dict, is_published: bool, project_id: str, post_type: str = None, related_id: str = None):
+    """Atomically inserts or updates a single post in the database cache.
+    
+    Args:
+        post_type: Тип поста для связи с автоматизациями (например, 'contest_v2_start')
+        related_id: ID связанной сущности (например, ID конкурса)
+    """
     model = models.Post if is_published else models.ScheduledPost
     post_id = post_data['id']
     
@@ -208,21 +220,41 @@ def upsert_post(db: Session, post_data: dict, is_published: bool, project_id: st
         db_post._lastUpdated = timestamp
         # Если пост существовал, но был привязан к другому проекту (конфликт), 
         # обновляем привязку на текущий.
-        db_post.projectId = project_id 
+        db_post.projectId = project_id
+        # Обновляем post_type и related_id если указаны (только для published posts)
+        if is_published and post_type is not None:
+            db_post.post_type = post_type
+        if is_published and related_id is not None:
+            db_post.related_id = related_id
         print(f"DB: Updated {'published' if is_published else 'scheduled'} post {post_id}.")
     else:
         # Insert new post
-        db_post = model(
-            id=post_id,
-            projectId=project_id,
-            date=post_data['date'],
-            text=post_data['text'],
-            images=json.dumps(post_data['images']),
-            attachments=json.dumps(post_data.get('attachments', [])),
-            vkPostUrl=post_data.get('vkPostUrl'),
-            tags=post_data.get('tags', []),
-            _lastUpdated=timestamp
-        )
+        if is_published:
+            db_post = model(
+                id=post_id,
+                projectId=project_id,
+                date=post_data['date'],
+                text=post_data['text'],
+                images=json.dumps(post_data['images']),
+                attachments=json.dumps(post_data.get('attachments', [])),
+                vkPostUrl=post_data.get('vkPostUrl'),
+                tags=post_data.get('tags', []),
+                _lastUpdated=timestamp,
+                post_type=post_type,
+                related_id=related_id
+            )
+        else:
+            db_post = model(
+                id=post_id,
+                projectId=project_id,
+                date=post_data['date'],
+                text=post_data['text'],
+                images=json.dumps(post_data['images']),
+                attachments=json.dumps(post_data.get('attachments', [])),
+                vkPostUrl=post_data.get('vkPostUrl'),
+                tags=post_data.get('tags', []),
+                _lastUpdated=timestamp
+            )
         db.add(db_post)
         print(f"DB: Inserted new {'published' if is_published else 'scheduled'} post {post_id}.")
     
@@ -272,19 +304,39 @@ def get_all_data_for_project_ids(db: Session, project_ids: list[str]) -> dict:
            pass # Fail silently for stories to not break main flow
 
     for p in db.query(models.Post).options(subqueryload(models.Post.tags)).filter(models.Post.projectId.in_(project_ids)).all():
-        all_posts[p.projectId].append(ScheduledPost.model_validate(p, from_attributes=True))
+        try:
+            all_posts[p.projectId].append(ScheduledPost.model_validate(p, from_attributes=True))
+        except Exception as e:
+            logger.warning(f"Пропускаем пост {getattr(p, 'id', '?')}: {e}")
     
     for p in db.query(models.ScheduledPost).options(subqueryload(models.ScheduledPost.tags)).filter(models.ScheduledPost.projectId.in_(project_ids)).all():
-        all_scheduled[p.projectId].append(ScheduledPost.model_validate(p, from_attributes=True))
+        try:
+            all_scheduled[p.projectId].append(ScheduledPost.model_validate(p, from_attributes=True))
+        except Exception as e:
+            logger.warning(f"Пропускаем отложенный пост {getattr(p, 'id', '?')}: {e}")
 
     for p in db.query(models.SuggestedPost).filter(models.SuggestedPost.projectId.in_(project_ids)).all():
-        all_suggested[p.projectId].append(SuggestedPost.model_validate(p, from_attributes=True))
+        try:
+            all_suggested[p.projectId].append(SuggestedPost.model_validate(p, from_attributes=True))
+        except Exception as e:
+            logger.warning(f"Пропускаем предложенный пост {getattr(p, 'id', '?')}: {e}")
 
-    for p in db.query(models.SystemPost).filter(models.SystemPost.project_id.in_(project_ids)).all():
-        all_system[p.project_id].append(SystemPost.model_validate(p, from_attributes=True))
+    # Фильтруем только активные системные посты (is_active=True),
+    # чтобы "мёртвые" циклические посты не завышали счётчик в сайдбаре
+    for p in db.query(models.SystemPost).filter(
+        models.SystemPost.project_id.in_(project_ids),
+        models.SystemPost.is_active == True
+    ).all():
+        try:
+            all_system[p.project_id].append(SystemPost.model_validate(p, from_attributes=True))
+        except Exception as e:
+            logger.warning(f"Пропускаем системный пост {getattr(p, 'id', '?')}: {e}")
 
     for n in db.query(models.Note).filter(models.Note.projectId.in_(project_ids)).all():
-        all_notes[n.projectId].append(Note.model_validate(n, from_attributes=True))
+        try:
+            all_notes[n.projectId].append(Note.model_validate(n, from_attributes=True))
+        except Exception as e:
+            logger.warning(f"Пропускаем заметку {getattr(n, 'id', '?')}: {e}")
         
     return {
         "allPosts": all_posts,
@@ -319,6 +371,16 @@ def get_project_update_status(db: Session) -> dict[str, list[str]]:
     ).all()
     stale_scheduled = [p.id for p in stale_scheduled_projects]
 
+    # Находим проекты, где last_stories_update либо NULL, либо старше 6 часов
+    # Stories живут 24ч, поэтому порог свежести меньше, чем у постов (6ч vs 12ч)
+    six_hours_ago = datetime.utcnow() - timedelta(hours=6)
+    six_hours_ago_str = six_hours_ago.isoformat() + 'Z'
+    stale_stories_projects = db.query(models.Project.id).filter(
+        (models.Project.last_stories_update == None) |
+        (models.Project.last_stories_update < six_hours_ago_str)
+    ).all()
+    stale_stories = [p.id for p in stale_stories_projects]
+
     # Логика для предложенных постов остается прежней, так как для них нет отдельного поля
     stale_suggested_ids = set()
     today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -330,5 +392,6 @@ def get_project_update_status(db: Session) -> dict[str, list[str]]:
     return {
         "stalePublished": stale_published,
         "staleScheduled": stale_scheduled,
-        "staleSuggested": list(stale_suggested_ids)
+        "staleSuggested": list(stale_suggested_ids),
+        "staleStories": stale_stories
     }

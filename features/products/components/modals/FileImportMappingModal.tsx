@@ -3,16 +3,20 @@ import { v4 as uuidv4 } from 'uuid';
 import { NewProductRow } from '../../types';
 import { MarketAlbum, MarketCategory } from '../../../../shared/types';
 import { HEADER_MAP } from '../../utils/fileParser';
+import * as api from '../../../../services/api';
 
 interface FileImportMappingModalProps {
     gridData: string[][];
     onClose: () => void;
     onImport: (rows: NewProductRow[]) => void;
+    mode?: 'create' | 'update';
     allAlbums: MarketAlbum[];
     allCategories: MarketCategory[];
+    projectId: string;
+    onAlbumsCreated?: (newAlbums: MarketAlbum[]) => void;
 }
 
-type ProductField = 'title' | 'description' | 'price' | 'old_price' | 'sku' | 'category' | 'album' | 'skip' | 'vk_id' | 'vk_link';
+type ProductField = 'title' | 'description' | 'price' | 'old_price' | 'sku' | 'category' | 'album' | 'photoUrl' | 'skip' | 'vk_id' | 'vk_link';
 
 const FIELD_OPTIONS: { value: ProductField; label: string }[] = [
     { value: 'skip', label: 'Пропустить' },
@@ -23,16 +27,26 @@ const FIELD_OPTIONS: { value: ProductField; label: string }[] = [
     { value: 'sku', label: 'Артикул' },
     { value: 'category', label: 'Категория' },
     { value: 'album', label: 'Подборка' },
+    { value: 'photoUrl', label: 'Фото (URL)' },
     { value: 'vk_id', label: 'VK ID' },
     { value: 'vk_link', label: 'VK Link' },
 ];
 
 export const FileImportMappingModal: React.FC<FileImportMappingModalProps> = ({
-    gridData, onClose, onImport, allAlbums, allCategories
+    gridData, onClose, onImport, mode = 'create', allAlbums, allCategories, projectId, onAlbumsCreated
 }) => {
     const [mapping, setMapping] = useState<Record<number, ProductField>>({});
+    const [isImporting, setIsImporting] = useState(false);
 
     const maxCols = useMemo(() => gridData[0]?.length || 0, [gridData]);
+
+    // Фильтруем опции: VK ID и VK Link доступны только при обновлении
+    const filteredFieldOptions = useMemo(() => {
+        if (mode === 'create') {
+            return FIELD_OPTIONS.filter(opt => opt.value !== 'vk_id' && opt.value !== 'vk_link');
+        }
+        return FIELD_OPTIONS;
+    }, [mode]);
 
     // Инициализация маппинга на основе заголовков файла
     useEffect(() => {
@@ -42,72 +56,132 @@ export const FileImportMappingModal: React.FC<FileImportMappingModalProps> = ({
             
             headers.forEach((header, idx) => {
                 // Пытаемся автоматически найти подходящее поле
-                const suggestedField = HEADER_MAP[header] as ProductField;
+                let suggestedField = HEADER_MAP[header] as ProductField;
+                // При создании товаров принудительно пропускаем VK ID и VK Link
+                if (mode === 'create' && (suggestedField === 'vk_id' || suggestedField === 'vk_link')) {
+                    suggestedField = 'skip' as ProductField;
+                }
                 initialMapping[idx] = suggestedField || 'skip';
             });
             setMapping(initialMapping);
         }
     }, [gridData]);
 
-    const handleImport = () => {
-        const dataRows = gridData.slice(1);
-        const resultRows: NewProductRow[] = dataRows.map(row => {
-            const newRow: NewProductRow = { tempId: uuidv4(), price: '' };
+    const handleImport = async () => {
+        setIsImporting(true);
+        try {
+            const dataRows = gridData.slice(1);
+
+            // 1. Собираем все уникальные названия подборок из данных
+            const albumColumnIdx = Object.entries(mapping).find(([_, field]) => field === 'album')?.[0];
+            const uniqueAlbumNames = new Set<string>();
+            if (albumColumnIdx !== undefined) {
+                dataRows.forEach(row => {
+                    const rawVal = row[Number(albumColumnIdx)]?.trim();
+                    const val = rawVal?.toLowerCase().split('(')[0].trim();
+                    if (val) uniqueAlbumNames.add(val);
+                });
+            }
+
+            // 2. Определяем, какие подборки нужно создать
+            const albumNameToId = new Map<string, number>();
+            const newlyCreatedAlbums: MarketAlbum[] = [];
             
-            row.forEach((cell, idx) => {
-                const field = mapping[idx];
-                if (!field || field === 'skip') return;
-
-                const val = cell.trim();
-                if (!val) return;
-
-                if (field === 'title') newRow.title = val;
-                else if (field === 'description') newRow.description = val;
-                else if (field === 'price') newRow.price = val;
-                else if (field === 'old_price') newRow.old_price = val;
-                else if (field === 'sku') newRow.sku = val;
-                else if (field === 'vk_id') newRow.vk_id = val;
-                else if (field === 'vk_link') newRow.vk_link = val;
-                else if (field === 'category') {
-                    const lowerVal = val.toLowerCase();
-                    const idMatch = val.match(/\((\d+)\)$/);
-                    let found: MarketCategory | undefined;
-                    
-                    if (idMatch) {
-                        const id = parseInt(idMatch[1], 10);
-                        found = allCategories.find(c => c.id === id);
-                    }
-                    if (!found) {
-                        found = allCategories.find(c => 
-                            c.name.toLowerCase() === lowerVal || 
-                            `${c.section_name} / ${c.name}`.toLowerCase() === lowerVal
-                        );
-                    }
-
-                    if (found) {
-                        newRow.category = {
-                            id: found.id,
-                            name: found.name,
-                            section_id: found.section_id,
-                            section_name: found.section_name
-                        };
-                    }
-                } else if (field === 'album') {
-                    const lowerVal = val.toLowerCase().split('(')[0].trim();
-                    const found = allAlbums.find(a => a.title.toLowerCase() === lowerVal);
-                    if (found) newRow.album_ids = [found.id];
+            // Заполняем из существующих
+            for (const name of uniqueAlbumNames) {
+                const found = allAlbums.find(a => a.title.toLowerCase() === name);
+                if (found) {
+                    albumNameToId.set(name, found.id);
                 }
+            }
+
+            // Создаём недостающие подборки
+            for (const name of uniqueAlbumNames) {
+                if (!albumNameToId.has(name)) {
+                    try {
+                        // Используем оригинальное название (с правильным регистром) из первой найденной строки
+                        const originalName = dataRows
+                            .map(row => row[Number(albumColumnIdx)]?.trim())
+                            .find(v => v && v.toLowerCase().split('(')[0].trim() === name) || name;
+                        const cleanName = originalName.split('(')[0].trim();
+                        const newAlbum = await api.createMarketAlbum(projectId, cleanName);
+                        albumNameToId.set(name, newAlbum.id);
+                        newlyCreatedAlbums.push(newAlbum);
+                    } catch (err) {
+                        console.error(`Не удалось создать подборку "${name}":`, err);
+                        (window as any).showAppToast?.(`Не удалось создать подборку "${name}"`, 'warning');
+                    }
+                }
+            }
+
+            // 3. Уведомляем родителя о созданных подборках
+            if (newlyCreatedAlbums.length > 0 && onAlbumsCreated) {
+                onAlbumsCreated(newlyCreatedAlbums);
+            }
+
+            // 4. Формируем строки товаров
+            const resultRows: NewProductRow[] = dataRows.map(row => {
+                const newRow: NewProductRow = { tempId: uuidv4(), price: '' };
                 
-                // Для фото по URL в файлах обычно используется 'фото (url)' -> photoUrl
-                if (field === 'photoUrl' as any) {
-                    newRow.photoUrl = val;
-                    newRow.photoPreview = val;
-                }
-            });
-            return newRow;
-        });
+                row.forEach((cell, idx) => {
+                    const field = mapping[idx];
+                    if (!field || field === 'skip') return;
 
-        onImport(resultRows.filter(r => r.title || r.price || r.photoPreview));
+                    const val = cell.trim();
+                    if (!val) return;
+
+                    if (field === 'title') newRow.title = val;
+                    else if (field === 'description') newRow.description = val;
+                    else if (field === 'price') newRow.price = val;
+                    else if (field === 'old_price') newRow.old_price = val;
+                    else if (field === 'sku') newRow.sku = val;
+                    else if (field === 'vk_id') newRow.vk_id = val;
+                    else if (field === 'vk_link') newRow.vk_link = val;
+                    else if (field === 'photoUrl') {
+                        newRow.photoUrl = val;
+                        newRow.photoPreview = val;
+                        newRow.useDefaultImage = false;
+                    } else if (field === 'category') {
+                        const lowerVal = val.toLowerCase();
+                        const idMatch = val.match(/\((\d+)\)$/);
+                        let found: MarketCategory | undefined;
+                        
+                        if (idMatch) {
+                            const id = parseInt(idMatch[1], 10);
+                            found = allCategories.find(c => c.id === id);
+                        }
+                        if (!found) {
+                            found = allCategories.find(c => 
+                                c.name.toLowerCase() === lowerVal || 
+                                `${c.section_name} / ${c.name}`.toLowerCase() === lowerVal
+                            );
+                        }
+
+                        if (found) {
+                            newRow.category = {
+                                id: found.id,
+                                name: found.name,
+                                section_id: found.section_id,
+                                section_name: found.section_name
+                            };
+                        }
+                    } else if (field === 'album') {
+                        // Поиск альбома по названию (включая только что созданные)
+                        const lowerVal = val.toLowerCase().split('(')[0].trim();
+                        const albumId = albumNameToId.get(lowerVal);
+                        if (albumId) newRow.album_ids = [albumId];
+                    }
+                });
+                return newRow;
+            });
+
+            onImport(resultRows.filter(r => r.title || r.price || r.photoPreview));
+        } catch (err) {
+            console.error('Ошибка при импорте:', err);
+            (window as any).showAppToast?.('Произошла ошибка при импорте', 'error');
+        } finally {
+            setIsImporting(false);
+        }
     };
 
     return (
@@ -141,7 +215,7 @@ export const FileImportMappingModal: React.FC<FileImportMappingModalProps> = ({
                                                         mapping[idx] !== 'skip' ? 'border-indigo-500 text-indigo-700 bg-indigo-50' : 'border-gray-300 text-gray-500'
                                                     }`}
                                                 >
-                                                    {FIELD_OPTIONS.map(opt => (
+                                                    {filteredFieldOptions.map(opt => (
                                                         <option key={opt.value} value={opt.value}>{opt.label}</option>
                                                     ))}
                                                 </select>
@@ -170,9 +244,17 @@ export const FileImportMappingModal: React.FC<FileImportMappingModalProps> = ({
                     <button onClick={onClose} className="px-4 py-2 text-sm font-medium rounded-md bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors">Отмена</button>
                     <button
                         onClick={handleImport}
-                        className="px-6 py-2 text-sm font-medium rounded-md bg-indigo-600 text-white hover:bg-indigo-700 shadow-md transition-all active:scale-95"
+                        disabled={isImporting}
+                        className="px-6 py-2 text-sm font-medium rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-gray-400 shadow-md transition-all active:scale-95 flex items-center gap-2"
                     >
-                        Импортировать товары ({gridData.length - 1})
+                        {isImporting ? (
+                            <>
+                                <div className="loader border-white border-t-transparent h-4 w-4"></div>
+                                Создание подборок...
+                            </>
+                        ) : (
+                            `Импортировать товары (${gridData.length - 1})`
+                        )}
                     </button>
                 </footer>
             </div>

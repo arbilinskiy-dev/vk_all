@@ -24,6 +24,10 @@ export interface ReviewContestSettingsDto {
     winnerPostImages: PhotoAttachment[];
     templateDm: string;
     templateErrorComment: string;
+    
+    // Генерация изображения-доказательства розыгрыша
+    useProofImage?: boolean;
+    attachAdditionalMedia?: boolean; // Прикреплять дополнительные медиа
 }
 
 export interface ContestEntry {
@@ -34,6 +38,7 @@ export interface ContestEntry {
     user_vk_id: number;
     post_link?: string;
     post_text?: string;
+    post_date?: string; // Реальная дата публикации поста в VK
     status: string; // new, processing, commented, error, winner
     entry_number?: number;
     created_at: string;

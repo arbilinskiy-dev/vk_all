@@ -8,9 +8,11 @@
 // URL "боевого" бэкенда, развернутого в Yandex.Cloud Containers.
 const PRODUCTION_API_URL = 'https://bba15i6uulg2j0uk90sm.containers.yandexcloud.net/api';
 
-// НОВЫЙ URL: URL предпродакшен-бэкенда.
-// Обновлено на новый контейнер от 03.12.2025
-const PRE_PRODUCTION_API_URL = 'https://bbaeoc78aed6qkfe5tsv.containers.yandexcloud.net/api';
+// URL предпродакшен-бэкенда (VM + Nginx + Let's Encrypt SSL).
+const PRE_PRODUCTION_API_URL = 'https://api.dosmmit.ru/api';
+
+// Старый URL на Serverless Container (оставлен как резерв)
+// const PRE_PRODUCTION_CONTAINER_URL = 'https://bbaumq46ep27n4mvnbmk.containers.yandexcloud.net/api';
 
 // URL локального бэкенда для разработки.
 const LOCAL_API_URL = 'http://127.0.0.1:8000/api';

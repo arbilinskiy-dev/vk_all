@@ -16,6 +16,8 @@ interface ProjectListItemProps {
     onOpenSettings: (project: Project) => void;
     animationIndex: number;
     contestStatus?: ContestStatus; // Обновленный тип
+    storiesAutomationActive?: boolean; // Статус автоматизации историй
+    unreadDialogsCount?: number; // Количество диалогов с непрочитанными (модуль сообщений)
 }
 
 const getPostCountColorClasses = (count: number, isActive: boolean, isDisabled: boolean): string => {
@@ -46,7 +48,9 @@ export const ProjectListItem: React.FC<ProjectListItemProps> = ({
     onRefreshProject,
     onOpenSettings,
     animationIndex,
-    contestStatus
+    contestStatus,
+    storiesAutomationActive,
+    unreadDialogsCount
 }) => {
     const [isHovered, setIsHovered] = useState(false);
 
@@ -55,10 +59,13 @@ export const ProjectListItem: React.FC<ProjectListItemProps> = ({
     const hasError = !!errorDetails;
     const isRefreshing = isCheckingForUpdates || isSequentiallyUpdating;
 
+    // Задержка анимации: 50мс между элементами, максимум 800мс (чтобы далёкие элементы не ждали слишком долго)
+    const delay = Math.min(animationIndex * 50, 800);
+
     return (
         <div
             className={`relative overflow-hidden opacity-0 animate-fade-in-up ${isDisabled ? 'opacity-70' : ''}`}
-            style={{ animationDelay: `${animationIndex * 30}ms` }}
+            style={{ animationDelay: `${delay}ms` }}
             onMouseEnter={() => setIsHovered(true)}
             onMouseLeave={() => setIsHovered(false)}
         >
@@ -112,22 +119,41 @@ export const ProjectListItem: React.FC<ProjectListItemProps> = ({
                          // Отображение статуса конкурса
                          contestStatus.isActive ? (
                             contestStatus.promoCount < 5 ? (
-                                <div title={`Внимание! Осталось мало промокодов: ${contestStatus.promoCount}`} className="flex items-center justify-center w-5 h-5 bg-amber-100 text-amber-600 rounded-full font-bold text-xs border border-amber-200">
+                                <div title={`Внимание! Осталось мало промокодов: ${contestStatus.promoCount}`} className="flex items-center justify-center w-5 h-5 bg-amber-100 text-amber-600 rounded-full font-bold text-xs border border-amber-200 animate-fade-in">
                                     !
                                 </div>
                             ) : (
-                                <div title={`Конкурс активен. Промокодов: ${contestStatus.promoCount}`} className="flex items-center justify-center w-5 h-5 bg-green-100 text-green-600 rounded-full">
+                                <div title={`Конкурс активен. Промокодов: ${contestStatus.promoCount}`} className="flex items-center justify-center w-5 h-5 bg-green-100 text-green-600 rounded-full animate-fade-in">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor">
                                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                                     </svg>
                                 </div>
                             )
                          ) : (
-                             <div title="Конкурс отключен" className="w-2 h-2 bg-gray-300 rounded-full"></div>
+                             <div title="Конкурс отключен" className="w-2 h-2 bg-gray-300 rounded-full animate-fade-in"></div>
                          )
                     ) :
+                    storiesAutomationActive !== undefined ? (
+                        // Отображение статуса автоматизации историй
+                        storiesAutomationActive ? (
+                            <div title="Автоматизация историй включена" className="w-2.5 h-2.5 bg-green-500 rounded-full animate-fade-in"></div>
+                        ) : (
+                            <div title="Автоматизация историй выключена" className="w-2 h-2 bg-gray-300 rounded-full animate-fade-in"></div>
+                        )
+                    ) :
+                    unreadDialogsCount !== undefined ? (
+                        // Количество диалогов с непрочитанными сообщениями
+                        unreadDialogsCount > 0 ? (
+                            <span
+                                className="min-w-[20px] h-5 flex items-center justify-center text-[11px] font-bold px-1.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200 animate-fade-in"
+                                title={`${unreadDialogsCount} диал. с непрочитанными`}
+                            >
+                                {unreadDialogsCount}
+                            </span>
+                        ) : null
+                    ) :
                     postCount !== undefined ?
-                        (<span className={`text-xs px-2 py-0.5 rounded-full ${getPostCountColorClasses(count, isActive, isDisabled)}`}>{count}</span>) :
+                        (<span className={`text-xs px-2 py-0.5 rounded-full animate-fade-in ${getPostCountColorClasses(count, isActive, isDisabled)}`}>{count}</span>) :
                         null
                     }
                 </div>

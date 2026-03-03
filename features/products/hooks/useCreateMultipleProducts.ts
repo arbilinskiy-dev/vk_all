@@ -1,12 +1,26 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { NewProductRow, BulkPriceUpdatePayload } from '../../types';
 import { MarketCategory, MarketAlbum } from '../../../shared/types';
 
 interface UseCreateMultipleProductsProps {
-    onSave: (productsData: NewProductRow[]) => Promise<{ successfulTempIds: string[], failed: { tempId: string, error: string }[] }>;
+    onSave: (
+        productsData: NewProductRow[],
+        onProgress?: (progress: { current: number; total: number; currentName: string; status: 'processing' | 'done' | 'error' }) => void,
+        signal?: AbortSignal
+    ) => Promise<{ successfulTempIds: string[], failed: { tempId: string, error: string }[] }>;
     onClose: () => void;
     initialRows?: NewProductRow[] | null;
+}
+
+// Состояние прогресса создания товаров
+export interface BulkCreationProgress {
+    current: number;
+    total: number;
+    currentName: string;
+    succeeded: number;
+    failed: number;
+    status: 'processing' | 'done' | 'error';
 }
 
 export const useCreateMultipleProducts = ({ onSave, onClose, initialRows }: UseCreateMultipleProductsProps) => {
@@ -36,6 +50,13 @@ export const useCreateMultipleProducts = ({ onSave, onClose, initialRows }: UseC
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showConfirmSave, setShowConfirmSave] = useState(false);
     const [validRowsToSave, setValidRowsToSave] = useState<NewProductRow[]>([]);
+    
+    // Состояние прогресса массового создания
+    const [creationProgress, setCreationProgress] = useState<BulkCreationProgress | null>(null);
+    
+    // Контроллер отмены создания товаров
+    const abortControllerRef = useRef<AbortController | null>(null);
+    const [showCancelCreation, setShowCancelCreation] = useState(false);
 
     // Bulk & Paste Modals State
     const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
@@ -240,7 +261,23 @@ export const useCreateMultipleProducts = ({ onSave, onClose, initialRows }: UseC
             }
         });
         setErrors(newErrors);
-        if (hasErrors) return;
+        if (hasErrors) {
+            // Считаем общее количество ошибочных строк
+            const errorCount = Object.keys(newErrors).length;
+            window.showAppToast?.(`Заполните обязательные поля. Найдено строк с ошибками: ${errorCount}`, 'warning');
+            
+            // Скроллим к первой строке с ошибкой
+            const firstErrorTempId = Object.keys(newErrors)[0];
+            if (firstErrorTempId) {
+                setTimeout(() => {
+                    const errorRow = document.querySelector(`[data-tempid="${firstErrorTempId}"]`);
+                    if (errorRow) {
+                        errorRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }, 50);
+            }
+            return;
+        }
         if (validRows.length === 0) { window.showAppToast?.("Заполните хотя бы один товар.", 'warning'); return; }
         setValidRowsToSave(validRows);
         setShowConfirmSave(true);
@@ -250,30 +287,88 @@ export const useCreateMultipleProducts = ({ onSave, onClose, initialRows }: UseC
         setShowConfirmSave(false);
         setIsSubmitting(true);
         setServerErrors({});
+        
+        // Создаём контроллер отмены
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+        
+        // Инициализируем прогресс
+        let succeeded = 0;
+        let failedCount = 0;
+        setCreationProgress({
+            current: 0,
+            total: validRowsToSave.length,
+            currentName: '',
+            succeeded: 0,
+            failed: 0,
+            status: 'processing'
+        });
+        
         try {
-            const result = await onSave(validRowsToSave);
+            const result = await onSave(validRowsToSave, (progress) => {
+                // Обновляем счётчики на основе статуса
+                if (progress.status === 'done') succeeded++;
+                if (progress.status === 'error') failedCount++;
+                
+                setCreationProgress({
+                    current: progress.current,
+                    total: progress.total,
+                    currentName: progress.currentName,
+                    succeeded,
+                    failed: failedCount,
+                    status: progress.status
+                });
+            }, controller.signal);
+            
             if (result.successfulTempIds.length > 0) setRows(prev => prev.filter(row => !result.successfulTempIds.includes(row.tempId)));
-            if (result.failed.length > 0) {
+            
+            // Считаем реальные ошибки (без отменённых)
+            const realFailed = result.failed.filter(f => f.error !== 'Отменено пользователем');
+            const cancelledCount = result.failed.filter(f => f.error === 'Отменено пользователем').length;
+            
+            if (controller.signal.aborted) {
+                // Операция была отменена
+                const msg = result.successfulTempIds.length > 0
+                    ? `Создание остановлено. Успешно создано: ${result.successfulTempIds.length}. Не создано: ${cancelledCount}.`
+                    : 'Создание товаров отменено.';
+                window.showAppToast?.(msg, 'warning');
+            } else if (realFailed.length > 0) {
                 const newServerErrors: Record<string, string> = {};
-                result.failed.forEach(fail => { newServerErrors[fail.tempId] = fail.error; });
+                realFailed.forEach(fail => { newServerErrors[fail.tempId] = fail.error; });
                 setServerErrors(newServerErrors);
-                window.showAppToast?.(`Загружено: ${result.successfulTempIds.length}. Ошибок: ${result.failed.length}.`, 'warning');
+                window.showAppToast?.(`Загружено: ${result.successfulTempIds.length}. Ошибок: ${realFailed.length}.`, 'warning');
             } else {
                 window.showAppToast?.(`Успешно загружено ${result.successfulTempIds.length} товаров.`, 'success');
                 onClose();
             }
         } catch (e) { window.showAppToast?.("Критическая ошибка при сохранении.", 'error'); }
-        finally { setIsSubmitting(false); }
+        finally {
+            setIsSubmitting(false);
+            setCreationProgress(null);
+            abortControllerRef.current = null;
+        }
     };
+    
+    // Обработчик отмены создания товаров
+    const handleCancelCreation = useCallback(() => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            setShowCancelCreation(false);
+        }
+    }, []);
 
-    // FIX: Added missing handleCloseRequest function to handle closing the modal with a dirty check
+    // Обработка закрытия модалки: если идёт создание — предлагаем отменить
     const handleCloseRequest = useCallback(() => {
+        if (isSubmitting) {
+            setShowCancelCreation(true);
+            return;
+        }
         if (isDirty) {
             setShowCloseConfirm(true);
         } else {
             onClose();
         }
-    }, [isDirty, onClose]);
+    }, [isDirty, isSubmitting, onClose]);
 
     return {
         rows,
@@ -291,6 +386,8 @@ export const useCreateMultipleProducts = ({ onSave, onClose, initialRows }: UseC
         isBulkEditOpen,
         activeBulkModal,
         isPasteModalOpen,
+        creationProgress,
+        showCancelCreation,
         actions: {
             setShowCloseConfirm,
             setActiveDescriptionRowId,
@@ -315,7 +412,9 @@ export const useCreateMultipleProducts = ({ onSave, onClose, initialRows }: UseC
             handleBulkAlbumUpdate,
             handleBulkPriceUpdate,
             setIsPasteModalOpen,
-            handleImportFromPaste
+            handleImportFromPaste,
+            setShowCancelCreation,
+            handleCancelCreation
         }
     };
 };

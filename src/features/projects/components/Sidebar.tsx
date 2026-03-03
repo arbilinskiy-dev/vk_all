@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Project } from '../../../shared/types';
-import { TeamFilter, ContentFilter } from '../types';
+import { TeamFilter, ContentFilter, CallbackFilter, UnreadDialogsFilter } from '../types';
 import { AppView } from '../../../App';
 import { ProjectListItem } from './ProjectListItem';
 import { ConfirmationModal } from '../../../shared/components/modals/ConfirmationModal';
@@ -15,6 +15,8 @@ export const Sidebar: React.FC<{
     activeView: AppView;
     scheduledPostCounts: Record<string, number>;
     suggestedPostCounts: Record<string, number>;
+    /** Количество диалогов с непрочитанными для каждого проекта (модуль сообщений) */
+    unreadDialogCounts?: Record<string, number>;
     isLoadingCounts: boolean;
     isCheckingForUpdatesProjectId: string | null;
     projectPermissionErrors: Record<string, string | null>;
@@ -29,6 +31,7 @@ export const Sidebar: React.FC<{
     activeView,
     scheduledPostCounts,
     suggestedPostCounts,
+    unreadDialogCounts,
     isLoadingCounts: initialIsLoadingCounts,
     isCheckingForUpdatesProjectId,
     projectPermissionErrors,
@@ -45,6 +48,9 @@ export const Sidebar: React.FC<{
     const [teamFilter, setTeamFilter] = useState<TeamFilter>('All');
     const [contentFilter, setContentFilter] = useState<ContentFilter>('all');
     const [showDisabled, setShowDisabled] = useState(true);
+    // Фильтры модуля сообщений
+    const [callbackFilter, setCallbackFilter] = useState<CallbackFilter>('all');
+    const [unreadDialogsFilter, setUnreadDialogsFilter] = useState<UnreadDialogsFilter>('all');
     
     const [isForceRefreshing, setIsForceRefreshing] = useState(false);
     const [isLoadingCounts, setIsLoadingCounts] = useState(initialIsLoadingCounts);
@@ -61,7 +67,10 @@ export const Sidebar: React.FC<{
     const uniqueTeams = useMemo(() => {
         const teams = new Set<string>();
         projects.forEach(p => {
-            if (p.team) {
+            // Поддержка нового поля teams (массив) и старого team (строка)
+            if (p.teams && p.teams.length > 0) {
+                p.teams.forEach(t => teams.add(t));
+            } else if (p.team) {
                 teams.add(p.team);
             }
         });
@@ -86,14 +95,16 @@ export const Sidebar: React.FC<{
     };
 
     const { filteredEnabledProjects, filteredDisabledProjects } = useMemo(() => {
+        const isMessagesView = activeView === 'messages-vk' || activeView === 'messages-tg';
         const checkVisibility = (p: Project): boolean => {
             // Общие фильтры
             if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase())) {
                 return false;
             }
             if (teamFilter !== 'All') {
-                if (teamFilter === 'NoTeam' && p.team) return false;
-                if (teamFilter !== 'NoTeam' && p.team !== teamFilter) return false;
+                const projectTeams = p.teams && p.teams.length > 0 ? p.teams : (p.team ? [p.team] : []);
+                if (teamFilter === 'NoTeam' && projectTeams.length > 0) return false;
+                if (teamFilter !== 'NoTeam' && !projectTeams.includes(teamFilter)) return false;
             }
 
             // Фильтр по контенту, применяется только для вкладок с постами
@@ -108,6 +119,22 @@ export const Sidebar: React.FC<{
                     default: break;
                 }
             }
+
+            // Фильтры модуля сообщений (только для messages-vk / messages-tg)
+            if (isMessagesView) {
+                // Фильтр по подключению callback
+                if (callbackFilter !== 'all') {
+                    const isConnected = !!(p.communityToken && p.vk_confirmation_code);
+                    if (callbackFilter === 'connected' && !isConnected) return false;
+                    if (callbackFilter === 'not-connected' && isConnected) return false;
+                }
+                // Фильтр по наличию непрочитанных диалогов
+                if (unreadDialogsFilter === 'has-unread') {
+                    const unreadCount = unreadDialogCounts?.[p.id] ?? 0;
+                    if (unreadCount === 0) return false;
+                }
+            }
+
             return true;
         };
 
@@ -119,7 +146,7 @@ export const Sidebar: React.FC<{
             }
         });
         return { filteredEnabledProjects: enabled, filteredDisabledProjects: disabled };
-    }, [projects, searchQuery, teamFilter, contentFilter, postCounts, activeView]);
+    }, [projects, searchQuery, teamFilter, contentFilter, postCounts, activeView, callbackFilter, unreadDialogsFilter, unreadDialogCounts]);
 
     const handleConfirmMassUpdate = async () => {
         setShowMassUpdateConfirm(false);
@@ -201,6 +228,10 @@ export const Sidebar: React.FC<{
 
     // Определяем, нужно ли показывать статус конкурса
     const showContestStatus = activeView === 'automations-reviews-contest';
+    // Определяем, мы ли в модуле сообщений
+    const isMessagesView = activeView === 'messages-vk' || activeView === 'messages-tg';
+    // Определяем, показывать ли счётчик постов (только в контент-модуле)
+    const isContentView = activeView === 'schedule' || activeView === 'suggested';
 
     const renderProjectList = (projectList: Project[], startIndex: number = 0) => {
         return projectList.map((p, i) => (
@@ -208,18 +239,20 @@ export const Sidebar: React.FC<{
                 key={p.id}
                 project={p}
                 isActive={activeProjectId === p.id}
-                postCount={postCounts[p.id]}
+                postCount={isContentView ? postCounts[p.id] : undefined}
                 isLoadingCount={isLoadingCounts}
                 isCheckingForUpdates={isCheckingForUpdatesProjectId === p.id}
                 isSequentiallyUpdating={processingProjectId === p.id} 
                 errorDetails={projectPermissionErrors[p.id] || null}
-                hasUpdate={updatedProjectIds.has(p.id)}
+                hasUpdate={isContentView ? updatedProjectIds.has(p.id) : false}
                 onSelectProject={onSelectProject}
                 onRefreshProject={(id) => onRefreshProject(id, activeView, false)}
                 onOpenSettings={onOpenSettings}
                 animationIndex={startIndex + i}
                 // Передаем статус конкурса, если мы на нужной вкладке
                 contestStatus={showContestStatus ? reviewsContestStatuses[p.id] : undefined}
+                // Передаём количество непрочитанных диалогов ТОЛЬКО в модуле сообщений
+                unreadDialogsCount={isMessagesView ? unreadDialogCounts?.[p.id] : undefined}
             />
         ));
     };
@@ -269,13 +302,26 @@ export const Sidebar: React.FC<{
             </div>
 
             <div className="p-3 space-y-4 border-b border-gray-200">
-                <input
-                    type="text"
-                    placeholder="Поиск по названию..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
+                <div className="relative">
+                    <input
+                        type="text"
+                        placeholder="Поиск по названию..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full px-3 py-1.5 pr-8 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            title="Сбросить поиск"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    )}
+                </div>
                 <div>
                     <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Команды</h4>
                     <div className="flex flex-wrap gap-1.5">
@@ -302,6 +348,27 @@ export const Sidebar: React.FC<{
                              <button onClick={() => setContentFilter('gt10')} className={getPostFilterButtonClasses('gt10')}>&gt; 10</button>
                         </div>
                     </div>
+                )}
+
+                {/* Фильтры модуля сообщений: подключено/не подключено + есть новые диалоги */}
+                {isMessagesView && (
+                    <>
+                        <div>
+                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Callback API</h4>
+                            <div className="flex flex-wrap gap-1.5">
+                                <button onClick={() => setCallbackFilter('all')} className={getTeamFilterButtonClasses(callbackFilter === 'all')}>Все</button>
+                                <button onClick={() => setCallbackFilter('connected')} className={getTeamFilterButtonClasses(callbackFilter === 'connected')}>Подключено</button>
+                                <button onClick={() => setCallbackFilter('not-connected')} className={getTeamFilterButtonClasses(callbackFilter === 'not-connected')}>Не подключено</button>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Диалоги</h4>
+                            <div className="flex flex-wrap gap-1.5">
+                                <button onClick={() => setUnreadDialogsFilter('all')} className={getTeamFilterButtonClasses(unreadDialogsFilter === 'all')}>Все</button>
+                                <button onClick={() => setUnreadDialogsFilter('has-unread')} className={getTeamFilterButtonClasses(unreadDialogsFilter === 'has-unread')}>Есть новые</button>
+                            </div>
+                        </div>
+                    </>
                 )}
             </div>
 

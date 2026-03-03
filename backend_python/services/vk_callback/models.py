@@ -1,49 +1,57 @@
-# VK Callback Event Models
-# 
+# VK Callback Event Models — ХАБ
+#
 # Типы данных и Pydantic модели для VK Callback событий.
+# Логика разнесена по модулям:
+#   event_types.py      — EventType enum
+#   event_categories.py — EventCategory enum, EVENT_CATEGORY_MAP, get_event_category()
+#   vk_objects.py       — WallPostObject, SchedulePostObject, LikeObject и др.
+#
+# Этот файл — реэкспорт для обратной совместимости (20+ файлов импортируют из .models).
 
-from enum import Enum
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from pydantic import BaseModel
 from datetime import datetime
 
+# --- Вынесенные модули ---
+from .event_types import EventType                                          # noqa: F401
+from .event_categories import EventCategory, EVENT_CATEGORY_MAP, get_event_category  # noqa: F401
+from .vk_objects import (                                                   # noqa: F401
+    WallPostObject,
+    SchedulePostObject,
+    LikeObject,
+    MemberObject,
+    WallCommentObject,
+    MarketOrderObject,
+)
 
-class EventType(str, Enum):
-    """Типы событий VK Callback API, которые мы обрабатываем."""
-    
-    # Подтверждение сервера
-    CONFIRMATION = "confirmation"
-    
-    # События стены (публикации)
-    WALL_POST_NEW = "wall_post_new"  # Новый пост опубликован
-    WALL_REPOST = "wall_repost"  # Репост
-    
-    # События отложенных постов
-    WALL_SCHEDULE_POST_NEW = "wall_schedule_post_new"  # Создан отложенный пост
-    WALL_SCHEDULE_POST_DELETE = "wall_schedule_post_delete"  # Удален/отредактирован отложенный пост
-    
-    # События предложенных постов
-    WALL_POST_SUGGEST = "wall_post_suggest"  # Предложен пост (suggest)
-    
-    # Сообщения (для будущего расширения)
-    MESSAGE_NEW = "message_new"
-    
-    # Неизвестное событие
-    UNKNOWN = "unknown"
 
+# =============================================================================
+# PYDANTIC МОДЕЛИ (остаются здесь — ядро системы)
+# =============================================================================
 
 class CallbackEvent(BaseModel):
-    """Модель события VK Callback."""
+    """
+    Модель входящего события VK Callback.
+    
+    Содержит все поля, которые VK присылает в JSON:
+    - type: тип события
+    - group_id: ID сообщества
+    - event_id: уникальный ID события (с API v5.103+)
+    - v: версия API
+    - object: данные события (структура зависит от типа)
+    - secret: секретный ключ (если настроен)
+    """
     
     type: str
     group_id: int
-    event_id: Optional[str] = None  # Уникальный ID события от VK
-    v: Optional[str] = None  # Версия API
-    object: Optional[dict] = None  # Данные события
-    secret: Optional[str] = None  # Secret key (если настроен)
+    event_id: Optional[str] = None
+    v: Optional[str] = None
+    object: Optional[Dict[str, Any]] = None
+    secret: Optional[str] = None
     
-    # Внутренние поля
-    received_at: datetime = None
+    # Внутренние поля (не от VK)
+    received_at: Optional[datetime] = None
+    retry_count: int = 0
     
     def __init__(self, **data):
         super().__init__(**data)
@@ -52,50 +60,66 @@ class CallbackEvent(BaseModel):
     
     @property
     def event_type(self) -> EventType:
-        """Получить типизированный EventType из строки."""
-        try:
-            return EventType(self.type)
-        except ValueError:
-            return EventType.UNKNOWN
+        """Типизированный EventType."""
+        return EventType.from_string(self.type)
+    
+    @property
+    def category(self) -> EventCategory:
+        """Категория события."""
+        return get_event_category(self.type)
     
     @property
     def is_wall_event(self) -> bool:
-        """Проверить, является ли это событием стены."""
         return self.type.startswith("wall_")
     
     @property
-    def is_schedule_event(self) -> bool:
-        """Проверить, является ли это событием отложенных постов."""
-        return "schedule" in self.type
-
-
-class WallPostObject(BaseModel):
-    """Объект поста в событии wall_post_new."""
-    id: int
-    owner_id: int
-    from_id: Optional[int] = None
-    created_by: Optional[int] = None
-    date: int
-    text: Optional[str] = None
-    post_type: Optional[str] = None
-    attachments: Optional[list] = None
-    postponed_id: Optional[int] = None  # ID из отложки, если был опубликован из неё
+    def is_message_event(self) -> bool:
+        return self.type.startswith("message_")
     
     @property
-    def was_scheduled(self) -> bool:
-        """Был ли этот пост в отложке до публикации."""
-        return self.postponed_id is not None
-
-
-class SchedulePostObject(BaseModel):
-    """Объект отложенного поста в событиях wall_schedule_post_*."""
-    id: int
-    schedule_time: int  # Unix timestamp планируемой публикации
+    def is_comment_event(self) -> bool:
+        return "comment" in self.type or "reply" in self.type
+    
+    def to_queue_dict(self) -> dict:
+        """Сериализация для Redis-очереди."""
+        return {
+            "type": self.type,
+            "group_id": self.group_id,
+            "event_id": self.event_id,
+            "v": self.v,
+            "object": self.object,
+            "secret": self.secret,
+            "received_at": self.received_at.isoformat() if self.received_at else None,
+            "retry_count": self.retry_count,
+        }
+    
+    @classmethod
+    def from_queue_dict(cls, data: dict) -> "CallbackEvent":
+        """Десериализация из Redis-очереди."""
+        received_at = data.get("received_at")
+        if received_at and isinstance(received_at, str):
+            data["received_at"] = datetime.fromisoformat(received_at)
+        return cls(**data)
 
 
 class HandlerResult(BaseModel):
-    """Результат обработки события."""
+    """Результат обработки события хендлером."""
+    
     success: bool
     message: Optional[str] = None
-    action_taken: Optional[str] = None  # Описание выполненного действия
-    data: Optional[dict] = None  # Дополнительные данные
+    action_taken: Optional[str] = None
+    data: Optional[Dict[str, Any]] = None
+    should_retry: bool = False
+    
+    @property
+    def is_ignored(self) -> bool:
+        """Событие было сознательно проигнорировано."""
+        return self.action_taken in ("ignored", "skipped", "no_handler")
+
+
+class MiddlewareResult(BaseModel):
+    """Результат прохождения через middleware."""
+    
+    allow: bool = True
+    reason: Optional[str] = None
+    modified_event: Optional[CallbackEvent] = None

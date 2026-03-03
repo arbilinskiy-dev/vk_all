@@ -66,6 +66,10 @@ def upsert_contest_settings(db: Session, settings: ReviewContestSettings) -> mod
     contest.template_dm = settings.templateDm
     contest.template_error_comment = settings.templateErrorComment
     
+    # Изображение-доказательство розыгрыша
+    contest.use_proof_image = settings.useProofImage
+    contest.attach_additional_media = settings.attachAdditionalMedia
+    
     db.commit()
     db.refresh(contest)
     return contest
@@ -148,14 +152,27 @@ def update_promocode_description(db: Session, promo_id: str, description: str) -
 
 # --- Delivery Logs CRUD ---
 
-def create_delivery_log(db: Session, log_data: dict) -> models.ReviewContestDeliveryLog:
+def create_delivery_log(db: Session, log_data: dict, auto_commit: bool = True) -> models.ReviewContestDeliveryLog:
+    """
+    Создаёт запись в журнале доставки.
+    
+    Args:
+        db: Сессия БД
+        log_data: Данные лога
+        auto_commit: Если False — только flush (добавляет в сессию без коммита).
+                     Вызывающий код сам решает, когда делать commit.
+                     Это нужно для атомарности: все изменения коммитятся одним commit в конце.
+    """
     db_log = models.ReviewContestDeliveryLog(
         id=str(uuid.uuid4()),
         **log_data
     )
     db.add(db_log)
-    db.commit()
-    db.refresh(db_log)
+    if auto_commit:
+        db.commit()
+        db.refresh(db_log)
+    else:
+        db.flush()  # Присваивает ID, но не коммитит
     return db_log
 
 def get_delivery_logs(db: Session, project_id: str) -> List[models.ReviewContestDeliveryLog]:

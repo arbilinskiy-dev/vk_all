@@ -4,17 +4,10 @@ from sqlalchemy.orm import Session
 from typing import List
 
 import schemas
-from database import SessionLocal
+from database import get_db
 import services.automations.ai_posts_service as ai_posts_service
 
 router = APIRouter(prefix="/automations/ai-posts", tags=["Automations AI Posts"])
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/list", response_model=List[schemas.SystemPost])
 def get_list(payload: schemas.ProjectIdPayload, db: Session = Depends(get_db)):

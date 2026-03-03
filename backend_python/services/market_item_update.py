@@ -60,6 +60,9 @@ def update_market_item(
             file_bytes = None
             filename = None
 
+        # Информация о ресайзе фото (если было увеличено)
+        photo_resize_info = None
+        
         if file_bytes:
             saved_photo_data = vk_service.upload_market_photo(
                 group_id=numeric_group_id,
@@ -67,6 +70,8 @@ def update_market_item(
                 file_name=filename,
                 user_token=user_token
             )
+            # Извлекаем инфо о ресайзе (если фото было увеличено)
+            photo_resize_info = saved_photo_data.pop('_resize_info', None)
             main_photo_id = saved_photo_data.get('id')
             if not main_photo_id:
                 raise Exception("VK did not return a photo ID after saving.")
@@ -117,7 +122,7 @@ def update_market_item(
             if item_data.price.old_amount is not None:
                 params['old_price'] = int(item_data.price.old_amount) // 100 if item_data.price.old_amount else 0
 
-            vk_service.call_vk_api('market.edit', params)
+            vk_service.call_vk_api_for_group('market.edit', params, group_id=numeric_group_id)
         else:
             print(f"SERVICE: Core fields for item {item_data.id} have NOT changed. Skipping market.edit call.")
         
@@ -127,9 +132,9 @@ def update_market_item(
         if set(original_album_ids) != set(new_album_ids):
             print(f"SERVICE: Album membership changed for item {item_data.id}. Updating albums in VK...")
             if original_album_ids:
-                vk_service.call_vk_api('market.removeFromAlbum', {'owner_id': item_data.owner_id, 'item_id': item_data.id, 'album_ids': ",".join(map(str, original_album_ids)), 'access_token': token})
+                vk_service.call_vk_api_for_group('market.removeFromAlbum', {'owner_id': item_data.owner_id, 'item_id': item_data.id, 'album_ids': ",".join(map(str, original_album_ids)), 'access_token': token}, group_id=numeric_group_id)
             if new_album_ids:
-                vk_service.call_vk_api('market.addToAlbum', {'owner_id': item_data.owner_id, 'item_id': item_data.id, 'album_ids': ",".join(map(str, new_album_ids)), 'access_token': token})
+                vk_service.call_vk_api_for_group('market.addToAlbum', {'owner_id': item_data.owner_id, 'item_id': item_data.id, 'album_ids': ",".join(map(str, new_album_ids)), 'access_token': token}, group_id=numeric_group_id)
             
             # Обновляем счетчики в кеше БД
             owner_id = item_data.owner_id
@@ -163,9 +168,21 @@ def update_market_item(
         db.refresh(original_db_item)
         print(f"SERVICE: Local DB cache updated for item {item_data.id}.")
         
-        return schemas.MarketItem.model_validate(original_db_item, from_attributes=True)
+        result = schemas.MarketItem.model_validate(original_db_item, from_attributes=True)
+        
+        # Если фото было автоматически увеличено — передаём предупреждение клиенту
+        if photo_resize_info:
+            result.photo_resized_warning = (
+                f"Фото было автоматически увеличено с {photo_resize_info['original_width']}×{photo_resize_info['original_height']} "
+                f"до {photo_resize_info['new_width']}×{photo_resize_info['new_height']} px. "
+                f"Качество изображения могло пострадать — проверьте результат."
+            )
+            print(f"SERVICE: WARNING: {result.photo_resized_warning}")
+        
+        return result
         
     except Exception as e:
+        db.rollback()
         print(f"SERVICE ERROR: Failed to update market item: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -176,6 +193,12 @@ def update_market_items(db: Session, project_id: str, items_data: List[schemas.M
         try:
             update_market_item(db, project_id, item, user_token, None)
         except Exception as e:
+            # rollback уже выполнен внутри update_market_item,
+            # но на случай других ошибок — делаем повторный rollback для безопасности
+            try:
+                db.rollback()
+            except Exception:
+                pass
             print(f"[SERVICE - market.update_items] ERROR: Не удалось обновить товар {item.id} во время массового обновления: {e}")
             continue
     print(f"[SERVICE - market.update_items] END: Процесс массового обновления для проекта {project_id} завершен.")
@@ -202,16 +225,19 @@ def upload_market_item_photo(db: Session, project_id: str, item_id: int, file: U
             user_token=user_token
         )
         
+        # Извлекаем инфо о ресайзе (если фото было увеличено)
+        photo_resize_info = saved_photo_data.pop('_resize_info', None)
+        
         photo_id = saved_photo_data.get('id')
         if not photo_id:
             raise Exception("VK did not return a photo ID after saving.")
             
-        vk_service.call_vk_api('market.edit', {
+        vk_service.call_vk_api_for_group('market.edit', {
             'owner_id': owner_id,
             'item_id': item_id,
             'main_photo_id': photo_id,
             'access_token': user_token
-        })
+        }, group_id=numeric_group_id)
         
         sizes = saved_photo_data.get('sizes', [])
         thumb_url = None
@@ -233,7 +259,17 @@ def upload_market_item_photo(db: Session, project_id: str, item_id: int, file: U
         db.commit()
         db.refresh(item)
         
-        return schemas.MarketItem.model_validate(item, from_attributes=True)
+        result = schemas.MarketItem.model_validate(item, from_attributes=True)
+        
+        # Если фото было автоматически увеличено — передаём предупреждение клиенту
+        if photo_resize_info:
+            result.photo_resized_warning = (
+                f"Фото было автоматически увеличено с {photo_resize_info['original_width']}×{photo_resize_info['original_height']} "
+                f"до {photo_resize_info['new_width']}×{photo_resize_info['new_height']} px. "
+                f"Качество изображения могло пострадать — проверьте результат."
+            )
+        
+        return result
 
     except vk_service.VkApiError as e:
         raise HTTPException(status_code=400, detail=str(e))

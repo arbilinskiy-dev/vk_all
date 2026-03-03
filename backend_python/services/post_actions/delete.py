@@ -24,7 +24,8 @@ def delete_scheduled_post(db: Session, payload: schemas.DeletePostPayload, user_
     set_event_cooldown(group_id, "wall_schedule_post_delete")
     
     try:
-        vk_service.call_vk_api('wall.delete', {'owner_id': owner_id, 'post_id': post_id, 'access_token': user_token})
+        # Используем call_vk_api_for_group для приоритета токенов-админов группы
+        vk_service.call_vk_api_for_group('wall.delete', {'owner_id': owner_id, 'post_id': post_id, 'access_token': user_token}, group_id=group_id)
     except VkApiError as e:
         if e.code not in {100, 212}: 
             # При ошибке снимаем cooldown
@@ -39,9 +40,11 @@ def delete_scheduled_post(db: Session, payload: schemas.DeletePostPayload, user_
 
 def delete_published_post(db: Session, payload: schemas.DeletePostPayload, user_token: str) -> str:
     owner_id, post_id = payload.postId.split('_')
+    group_id = abs(int(owner_id))  # Извлекаем group_id для приоритета админов
     message = 'deleted'
     try:
-        vk_service.call_vk_api('wall.delete', {'owner_id': owner_id, 'post_id': post_id, 'access_token': user_token})
+        # Используем call_vk_api_for_group для приоритета токенов-админов группы
+        vk_service.call_vk_api_for_group('wall.delete', {'owner_id': owner_id, 'post_id': post_id, 'access_token': user_token}, group_id=group_id)
     except VkApiError as e:
         if e.code in {100, 212}: message = 'already_deleted'
         else: raise HTTPException(status_code=400, detail=str(e))

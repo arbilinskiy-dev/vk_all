@@ -75,6 +75,7 @@ export interface GeneralContest {
     // 6. Циклы
     is_cyclic: boolean;
     restart_type: 'manual' | 'interval' | 'daily' | 'weekly';
+    restart_delay_hours?: number;  // Задержка перезапуска в часах
     restart_settings?: string;
     
     // 7. Шаблоны

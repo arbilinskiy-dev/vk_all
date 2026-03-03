@@ -9,19 +9,12 @@ from schemas.automations import ReviewContestSettings, PromoCodeResponse, Create
 from schemas import ProjectIdPayload, GenericSuccess, FinalizeContestResponse
 import services.automations.reviews.crud as crud_automations
 import crud # Импортируем общий crud для получения проекта
-from database import SessionLocal
+from database import get_db
 import services.automations.reviews.scheduler as contest_scheduler
 import services.automations.reviews.service as contest_service
 from services.automations.reviews.finalizer import retry_delivery, retry_delivery_all
 
 router = APIRouter(prefix="/automations", tags=["Automations"])
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/reviews/getSettings", response_model=ReviewContestSettings)
 def get_reviews_settings(payload: ProjectIdPayload, db: Session = Depends(get_db)):
@@ -62,7 +55,9 @@ def get_reviews_settings(payload: ProjectIdPayload, db: Session = Depends(get_db
         templateWinnerPost=contest.template_winner_post or "",
         winnerPostImages=json.loads(contest.winner_post_images) if contest.winner_post_images else [],
         templateDm=contest.template_dm or "",
-        templateErrorComment=contest.template_error_comment or ""
+        templateErrorComment=contest.template_error_comment or "",
+        useProofImage=contest.use_proof_image if contest.use_proof_image is not None else True,
+        attachAdditionalMedia=contest.attach_additional_media if contest.attach_additional_media is not None else False
     )
 
 @router.post("/reviews/saveSettings", response_model=ReviewContestSettings)
@@ -84,7 +79,9 @@ def save_reviews_settings(payload: ReviewContestSettings, db: Session = Depends(
         templateWinnerPost=contest.template_winner_post or "",
         winnerPostImages=json.loads(contest.winner_post_images) if contest.winner_post_images else [],
         templateDm=contest.template_dm or "",
-        templateErrorComment=contest.template_error_comment or ""
+        templateErrorComment=contest.template_error_comment or "",
+        useProofImage=contest.use_proof_image if contest.use_proof_image is not None else True,
+        attachAdditionalMedia=contest.attach_additional_media if contest.attach_additional_media is not None else False
     )
 
 @router.post("/reviews/collectPosts", response_model=GenericSuccess)

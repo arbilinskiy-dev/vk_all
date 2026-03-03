@@ -3,11 +3,27 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from datetime import datetime
 from typing import Dict
+from .utils import apply_type_filter, get_count_expr
 
-def get_gender_stats(db: Session, model, project_id: str) -> Dict[str, int]:
+def _base_query(db, model, pm, project_id, needs_join, r=None):
+    """Строит базовый запрос с JOIN-ом и type_filter при необходимости."""
+    q = db.query(model).filter(model.project_id == project_id)
+    if r:
+        q = apply_type_filter(q, r)
+    if needs_join:
+        q = q.join(pm, pm.id == model.vk_profile_id)
+    return q
+
+def get_gender_stats(db: Session, model, pm, project_id: str, needs_join: bool = False, r=None) -> Dict[str, int]:
     stats = {"male": 0, "female": 0, "unknown": 0}
     try:
-        gender_counts = db.query(model.sex, func.count(model.id)).filter(model.project_id == project_id).group_by(model.sex).all()
+        count_expr = get_count_expr(r) if r else func.count(model.id)
+        q = db.query(pm.sex, count_expr).select_from(model)
+        if r:
+            q = apply_type_filter(q, r)
+        if needs_join:
+            q = q.join(pm, pm.id == model.vk_profile_id)
+        gender_counts = q.filter(model.project_id == project_id).group_by(pm.sex).all()
         for sex, count in gender_counts:
             if sex == 1: stats["female"] = count
             elif sex == 2: stats["male"] = count
@@ -16,13 +32,18 @@ def get_gender_stats(db: Session, model, project_id: str) -> Dict[str, int]:
         pass
     return stats
 
-def get_geo_stats(db: Session, model, project_id: str) -> Dict[str, int]:
+def get_geo_stats(db: Session, model, pm, project_id: str, needs_join: bool = False, r=None) -> Dict[str, int]:
     stats = {}
     try:
-        city_counts = db.query(model.city, func.count(model.id))\
-            .filter(model.project_id == project_id)\
-            .group_by(model.city)\
-            .order_by(desc(func.count(model.id)))\
+        count_expr = get_count_expr(r) if r else func.count(model.id)
+        q = db.query(pm.city, count_expr).select_from(model)
+        if r:
+            q = apply_type_filter(q, r)
+        if needs_join:
+            q = q.join(pm, pm.id == model.vk_profile_id)
+        city_counts = q.filter(model.project_id == project_id)\
+            .group_by(pm.city)\
+            .order_by(desc(count_expr))\
             .all()
         
         for city_name, count in city_counts:
@@ -32,18 +53,25 @@ def get_geo_stats(db: Session, model, project_id: str) -> Dict[str, int]:
         print(f"Error calculating geo stats: {e}")
     return stats
 
-def get_age_and_bdate_stats(db: Session, model, project_id: str) -> Dict:
+def get_age_and_bdate_stats(db: Session, model, pm, project_id: str, needs_join: bool = False, r=None) -> Dict:
     bdate_stats = {str(i): 0 for i in range(1, 14)} # 1-12 month, 13=unknown
     age_stats = {
         "u16": 0, "16-20": 0, "20-25": 0, "25-30": 0, "30-35": 0, "35-40": 0, "40-45": 0, "45p": 0, "unknown": 0
     }
     
-    if not hasattr(model, 'bdate'):
+    if not hasattr(pm, 'bdate'):
         return {"bdate_stats": bdate_stats, "age_stats": age_stats}
 
     try:
-        bdates_query = db.query(model.bdate).filter(model.project_id == project_id, model.bdate.isnot(None))
-        bdates = bdates_query.all()
+        q = db.query(pm.bdate).select_from(model).filter(model.project_id == project_id, pm.bdate.isnot(None))
+        if r:
+            q = apply_type_filter(q, r)
+        if needs_join:
+            q = q.join(pm, pm.id == model.vk_profile_id)
+        # Для aggregate_by_user: DISTINCT по vk_profile_id, чтобы не считать одного пользователя несколько раз
+        if r and r.aggregate_by_user:
+            q = q.distinct(model.vk_profile_id)
+        bdates = q.all()
         current_year = datetime.now().year
         
         for (bdate_str,) in bdates:
@@ -82,7 +110,13 @@ def get_age_and_bdate_stats(db: Session, model, project_id: str) -> Dict:
                 age_stats["unknown"] += 1
 
         # Добавляем тех, у кого bdate is None
-        none_bdate_count = db.query(model).filter(model.project_id == project_id, model.bdate.is_(None)).count()
+        count_expr = get_count_expr(r) if r else func.count(model.id)
+        none_q = db.query(count_expr).select_from(model).filter(model.project_id == project_id, pm.bdate.is_(None))
+        if r:
+            none_q = apply_type_filter(none_q, r)
+        if needs_join:
+            none_q = none_q.join(pm, pm.id == model.vk_profile_id)
+        none_bdate_count = none_q.scalar() or 0
         bdate_stats["13"] += none_bdate_count
         age_stats["unknown"] += none_bdate_count
         

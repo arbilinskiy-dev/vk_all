@@ -74,6 +74,69 @@ def upload_photo(db: Session, project_id: str, file: UploadFile) -> PhotoAttachm
         # Re-raise as HTTPException to be sent to the client
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred during upload: {e}")
 
+
+def upload_video(db: Session, project_id: str, file: UploadFile) -> dict:
+    """
+    Загрузка видео в сообщество VK.
+    1. Получает данные проекта.
+    2. Резолвит group_id.
+    3. Вызывает vk_service.upload_video() (двухшаговая загрузка).
+    4. Возвращает Attachment с id видео.
+    """
+    from schemas.models.media import Attachment
+    
+    project = crud.get_project_by_id(db, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    try:
+        numeric_id = vk_service.resolve_vk_group_id(project.vkProjectId, settings.vk_user_token)
+        
+        file_bytes = file.file.read()
+        file_name = file.filename or "video.mp4"
+
+        # Используем имя файла (без расширения) как название видео в VK
+        video_name = file_name.rsplit('.', 1)[0] if '.' in file_name else file_name
+
+        video_data = vk_service.upload_video(
+            group_id=numeric_id,
+            file_bytes=file_bytes,
+            file_name=file_name,
+            user_token=settings.vk_user_token,
+            name=video_name,
+        )
+
+        owner_id = video_data.get('owner_id')
+        video_id = video_data.get('video_id')
+        access_key = video_data.get('access_key', '')
+        title = video_data.get('title', video_name)
+        thumbnail_url = video_data.get('thumbnail_url', '')
+        player_url = video_data.get('player_url', '')
+
+        if not all([owner_id, video_id]):
+            raise HTTPException(status_code=500, detail="VK API вернул неполные данные видео.")
+
+        # Формат id: video{owner_id}_{video_id} (например video-123456_789)
+        attachment_id = f"video{owner_id}_{video_id}"
+        
+        # Описание для отображения в UI
+        description = title if title else file_name
+
+        return Attachment(
+            id=attachment_id,
+            type="video",
+            description=description,
+            thumbnail_url=thumbnail_url if thumbnail_url else None,
+            player_url=player_url if player_url else None,
+        )
+
+    except vk_service.VkApiError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print(f"ERROR: Ошибка загрузки видео для проекта {project_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка загрузки видео: {e}")
+
+
 # --- Gallery Logic ---
 
 def create_album(db: Session, project_id: str, title: str) -> Album:

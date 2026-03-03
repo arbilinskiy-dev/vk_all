@@ -1,7 +1,7 @@
 
 // FIX: Import React to make React types like Dispatch and SetStateAction available.
 import React, { useState, useEffect, useCallback } from 'react';
-import { MarketItem, MarketCategory, MarketPrice } from '../../../shared/types';
+import { MarketItem, MarketAlbum, MarketCategory, MarketPrice } from '../../../shared/types';
 import * as api from '../../../services/api';
 import { 
     BulkPriceUpdatePayload, 
@@ -18,6 +18,8 @@ interface UseProductBulkActionsProps {
     selectedItemIds: Set<number>;
     editedItems: Record<string, Partial<MarketItem>>;
     setEditedItems: React.Dispatch<React.SetStateAction<Record<string, Partial<MarketItem>>>>;
+    setItems: React.Dispatch<React.SetStateAction<MarketItem[]>>;
+    setAlbums: React.Dispatch<React.SetStateAction<MarketAlbum[]>>;
     modalActions: ReturnType<typeof useProductModals>['modalActions'];
     aiActions: ReturnType<typeof useProductAI>['aiActions'];
     selectionActions: ReturnType<typeof useProductSelection>['selectionActions'];
@@ -31,6 +33,8 @@ export const useProductBulkActions = ({
     selectedItemIds,
     editedItems,
     setEditedItems,
+    setItems,
+    setAlbums,
     modalActions,
     aiActions,
     selectionActions
@@ -49,10 +53,43 @@ export const useProductBulkActions = ({
 
     const handleConfirmBulkDelete = useCallback(async () => {
         if (selectedItemIds.size === 0) return;
+        const deletedIds = new Set(selectedItemIds);
         try {
             await api.deleteMarketItems(projectId, Array.from(selectedItemIds));
-            window.showAppToast?.(`Удалено ${selectedItemIds.size} товаров.`, 'success');
-            // Здесь нужно будет вызвать обновление данных
+            
+            // Считаем сколько товаров из каждой подборки было удалено
+            const albumDecrements: Record<number, number> = {};
+            deletedIds.forEach(id => {
+                const item = items.find(i => i.id === id);
+                if (item?.album_ids) {
+                    item.album_ids.forEach(albumId => {
+                        albumDecrements[albumId] = (albumDecrements[albumId] || 0) + 1;
+                    });
+                }
+            });
+            
+            // Удаляем товары из локального стейта и кэша
+            setItems(prev => prev.filter(item => !deletedIds.has(item.id)));
+            
+            // Обновляем счётчики подборок
+            if (Object.keys(albumDecrements).length > 0) {
+                setAlbums(prev => prev.map(album => {
+                    const dec = albumDecrements[album.id];
+                    if (dec) {
+                        return { ...album, count: Math.max(0, album.count - dec) };
+                    }
+                    return album;
+                }));
+            }
+            
+            // Очищаем редактирования для удалённых товаров
+            setEditedItems(prev => {
+                const next = { ...prev };
+                deletedIds.forEach(id => delete next[id]);
+                return next;
+            });
+            
+            window.showAppToast?.(`Удалено ${deletedIds.size} товаров.`, 'success');
         } catch (error) {
              const msg = error instanceof Error ? error.message : 'Произошла ошибка';
              window.showAppToast?.(`Не удалось удалить товары: ${msg}`, 'error');
@@ -60,7 +97,7 @@ export const useProductBulkActions = ({
              modalActions.setBulkDeleteConfirmation(0);
              selectionActions.clearSelection();
         }
-    }, [selectedItemIds, projectId, modalActions, selectionActions]);
+    }, [selectedItemIds, projectId, setItems, setEditedItems, modalActions, selectionActions]);
 
     const handleBulkCategoryUpdate = useCallback((update: MarketCategory | api.BulkSuggestionResult[]) => {
         const newEdits: Record<string, Partial<MarketItem>> = { ...editedItems };

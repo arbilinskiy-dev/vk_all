@@ -12,8 +12,9 @@ export const getAllGlobalVariableDefinitions = async (): Promise<GlobalVariableD
 
 /**
  * Обновляет все определения глобальных переменных.
+ * Возвращает маппинг {old_new_id: real_uuid} для новых определений.
  */
-export const updateAllGlobalVariableDefinitions = async (definitions: GlobalVariableDefinition[]): Promise<{ success: boolean }> => {
+export const updateAllGlobalVariableDefinitions = async (definitions: GlobalVariableDefinition[]): Promise<{ success: boolean; idMapping: Record<string, string> }> => {
     return callApi('global-variables/updateAllDefinitions', { definitions });
 };
 
@@ -22,6 +23,14 @@ export const updateAllGlobalVariableDefinitions = async (definitions: GlobalVari
  */
 export const getGlobalVariablesForProject = async (projectId: string): Promise<{ definitions: GlobalVariableDefinition[], values: ProjectGlobalVariableValue[] }> => {
     return callApi('global-variables/getForProject', { projectId });
+};
+
+/**
+ * Батч-загрузка значений глобальных переменных для нескольких проектов одним запросом.
+ * Заменяет N отдельных запросов getForProject.
+ */
+export const getGlobalVariablesForMultipleProjects = async (projectIds: string[]): Promise<{ definitions: GlobalVariableDefinition[], valuesByProject: Record<string, ProjectGlobalVariableValue[]> }> => {
+    return callApi('global-variables/getForMultipleProjects', { projectIds });
 };
 
 /**

@@ -12,7 +12,7 @@ type ApiEnvironment = 'production' | 'pre-production' | 'local';
 
 // Конфигурация VK приложения
 const VK_APP_ID = 54423358;
-const VK_REDIRECT_URI = 'https://718f01ee96c1.ngrok-free.app';
+const VK_REDIRECT_URI = 'https://3828ad0cd7bd.ngrok-free.app';
 
 // Генератор code_verifier для PKCE (для локального режима)
 const generateCodeVerifier = () => {
@@ -50,17 +50,27 @@ export const LoginPage: React.FC = () => {
         }
     }, []);
 
-    // Загрузка VK SDK и рендеринг OneTap виджета (ТОЛЬКО для продакшен/препрод)
+    // Загрузка VK SDK и рендеринг OneTap виджета (ТОЛЬКО для продакшен/препрод/ngrok)
     useEffect(() => {
-        // На локальном окружении OneTap не используем — он не работает на localhost
-        if (apiEnv === 'local') {
-            console.log('[VK Auth] Локальное окружение — OneTap отключен, будет использован popup');
+        // Проверяем, это localhost без ngrok? Тогда OneTap не будет работать
+        const isRealLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const isNgrok = window.location.hostname.includes('ngrok');
+        
+        // На чистом localhost OneTap не работает, но через ngrok — работает
+        if (isRealLocalhost && !isNgrok) {
+            console.log('[VK Auth] Локальное окружение (localhost) — OneTap отключен, будет использован popup');
             return;
         }
+        
+        console.log(`[VK Auth] Домен: ${window.location.hostname}, isNgrok: ${isNgrok} — OneTap включен`);
 
         const initVkOneTap = () => {
             if ('VKIDSDK' in window && vkContainerRef.current) {
                 const VKID = window.VKIDSDK;
+                
+                // Генерируем verifier для PKCE
+                vkVerifierRef.current = generateCodeVerifier();
+                console.log(`[LoginPage] VK SDK Init for App ${VK_APP_ID}. Verifier: ${vkVerifierRef.current.substring(0, 5)}...`);
                 
                 // Инициализация конфигурации VK ID
                 VKID.Config.init({
@@ -68,7 +78,7 @@ export const LoginPage: React.FC = () => {
                     redirectUrl: VK_REDIRECT_URI,
                     responseMode: VKID.ConfigResponseMode.Callback,
                     source: VKID.ConfigSource.LOWCODE,
-                    scope: '', // Пустой scope для базовой авторизации
+                    scope: 'notify friends photos audio video stories pages notes wall ads offline docs groups notifications stats email market',
                 });
 
                 // Создаём и рендерим OneTap виджет
@@ -176,7 +186,7 @@ export const LoginPage: React.FC = () => {
         } else if ('VKIDSDK' in window) {
             setTimeout(initVkOneTap, 100);
         }
-    }, [loginWithVk, apiEnv]);
+    }, [loginWithVk]);
     
     // Слушатель postMessage для получения callback от popup (локальный режим)
     useEffect(() => {
@@ -297,7 +307,7 @@ export const LoginPage: React.FC = () => {
                     app: VK_APP_ID,
                     redirectUrl: VK_REDIRECT_URI,
                     responseMode: VKID.ConfigResponseMode.Callback,
-                    scope: '',
+                    scope: 'notify friends photos audio video stories pages notes wall ads offline docs groups notifications stats email market', // Максимальные права доступа
                     codeVerifier: codeVerifier
                 });
                 

@@ -55,12 +55,14 @@ export const useDataRefreshers = ({
         console.log(`Обновление опубликованных постов для проекта ${projectId} из VK...`);
         try {
             // 1. Обновляем данные из VK (синхронизация)
-            // Параллельно запрашиваем истории, так как это логически связанный контент
+            // Параллельно загружаем истории из кэша (без VK запроса)
             const [_, stories] = await Promise.all([
                 api.refreshPublishedPosts(projectId),
-                api.getCommunityStories(projectId).catch(err => {
+                api.getCachedStories(projectId).catch(err => {
                     console.warn(`Не удалось загрузить истории для проекта ${projectId}:`, err);
-                    return [] as UnifiedStory[];
+                    // FIX: Возвращаем null вместо [], чтобы не затирать существующие stories
+                    // при ошибке сети (особенно критично при параллельных вызовах в bulk delete)
+                    return null;
                 })
             ]);
             
@@ -69,7 +71,10 @@ export const useDataRefreshers = ({
             const cachedPosts = await api.getCachedPublishedPosts(projectId);
             
             setAllPosts(prev => ({ ...prev, [projectId]: cachedPosts }));
-            setAllStories(prev => ({ ...prev, [projectId]: stories }));
+            // Обновляем stories только если они были успешно загружены (не null)
+            if (stories !== null) {
+                setAllStories(prev => ({ ...prev, [projectId]: stories }));
+            }
 
         } catch (error) {
             const errorAction = interpretApiError(error, { projectId, projectName: project?.name });
@@ -152,8 +157,8 @@ export const useDataRefreshers = ({
     const handleRefreshStories = useCallback(async (projectId: string): Promise<void> => {
         console.log(`[CONTEXT] Обновление историй для проекта ${projectId}...`);
         try {
-            // FORCE REFRESH = TRUE here, because this is an explicit action (e.g. from user or bulk refresh)
-            const stories = await api.getCommunityStories(projectId, true);
+            // Явное действие пользователя - принудительное обновление из VK API
+            const stories = await api.refreshStories(projectId);
             console.log(`[CONTEXT] Получено историй для проекта ${projectId}: ${stories.length}`);
             setAllStories(prev => {
                 const updated = { ...prev, [projectId]: stories };
@@ -215,6 +220,8 @@ export const useDataRefreshers = ({
         if (activeView === 'schedule') {
             refreshPromises.push(handleRefreshScheduled(projectId));
             refreshPromises.push(handleRefreshPublished(projectId));
+            // Обновляем истории из VK API параллельно с постами
+            refreshPromises.push(handleRefreshStories(projectId));
             const notesPromise = api.getNotes(projectId).then(notes => {
                 setAllNotes(prev => ({ ...prev, [projectId]: notes }));
                 return notes;
@@ -295,6 +302,11 @@ export const useDataRefreshers = ({
 
     const syncDataForProject = useCallback(async (projectId: string, activeView: AppView) => {
         console.log(`Проект ${projectId} помечен как обновленный. Запускаем фоновую синхронизацию из БД для вида "${activeView}"...`);
+        
+        // ИСПРАВЛЕНИЕ ГОНКИ СОСТОЯНИЙ: Сразу помечаем проект как обрабатываемый,
+        // чтобы предотвратить повторные вызовы из useUpdatePolling
+        addRecentRefresh(projectId);
+        
         setIsCheckingForUpdates(projectId);
         try {
             const { 
@@ -304,6 +316,7 @@ export const useDataRefreshers = ({
                 // FIX: Correctly destructure `allSystemPosts` from the API response.
                 allSystemPosts: systemFromDb,
                 allNotes: notesFromDb,
+                allStories: storiesFromDb,
             } = await api.getAllPostsForProjects([projectId]);
             
             if (activeView === 'schedule') {
@@ -311,6 +324,10 @@ export const useDataRefreshers = ({
                 setAllScheduledPosts(prev => ({ ...prev, [projectId]: scheduledFromDb[projectId] || [] }));
                 setAllSystemPosts(prev => ({ ...prev, [projectId]: systemFromDb[projectId] || [] }));
                 setAllNotes(prev => ({ ...prev, [projectId]: notesFromDb[projectId] || [] }));
+                // Подтягиваем истории из кэша БД вместе с остальным контентом
+                if (storiesFromDb?.[projectId]) {
+                    setAllStories(prev => ({ ...prev, [projectId]: storiesFromDb[projectId] }));
+                }
                 
                 const newCount = (scheduledFromDb[projectId]?.length || 0) + (systemFromDb[projectId]?.length || 0);
                 setScheduledPostCounts(prev => ({ ...prev, [projectId]: newCount }));
@@ -334,10 +351,10 @@ export const useDataRefreshers = ({
                 newSet.delete(projectId);
                 return newSet;
             });
-            // Игнорируем последующие уведомления
+            // Повторно вызываем для обновления timestamp и продления защиты от гонки
             addRecentRefresh(projectId);
         }
-    }, [setAllNotes, setAllPosts, setAllScheduledPosts, setAllSuggestedPosts, setAllSystemPosts, setScheduledPostCounts, setSuggestedPostCounts, setUpdatedProjectIds, addRecentRefresh]);
+    }, [setAllNotes, setAllPosts, setAllScheduledPosts, setAllSuggestedPosts, setAllSystemPosts, setAllStories, setScheduledPostCounts, setSuggestedPostCounts, setUpdatedProjectIds, addRecentRefresh]);
     
     // --- Действия по сохранению/обновлению ---
 
@@ -397,36 +414,54 @@ export const useDataRefreshers = ({
 
             if (refreshedProjects.length > 0) {
                 const projectIds = refreshedProjects.map(p => p.id);
-                const { 
-                    allPosts: postsFromDb, 
-                    allScheduledPosts: scheduledFromDb, 
-                    allSuggestedPosts: suggestedFromDb,
-                    // FIX: Correctly destructure `allSystemPosts` from the API response.
-                    allSystemPosts: systemFromDb,
-                    allNotes: notesFromDb,
-                } = await api.getAllPostsForProjects(projectIds);
                 
-                setAllPosts(postsFromDb);
-                setAllScheduledPosts(scheduledFromDb);
-                setAllSuggestedPosts(suggestedFromDb);
-                setAllSystemPosts(systemFromDb);
-                setAllNotes(notesFromDb);
+                // Загружаем контент батчами по 5 проектов, чтобы не перегружать сервер
+                const CHUNK_SIZE = 5;
+                const mergedPosts: Record<string, any> = {};
+                const mergedScheduled: Record<string, any[]> = {};
+                const mergedSuggested: Record<string, any[]> = {};
+                const mergedSystem: Record<string, any[]> = {};
+                const mergedNotes: Record<string, any[]> = {};
+                const mergedStories: Record<string, any[]> = {};
+
+                for (let i = 0; i < projectIds.length; i += CHUNK_SIZE) {
+                    const chunk = projectIds.slice(i, i + CHUNK_SIZE);
+                    try {
+                        const chunkData = await api.getAllPostsForProjects(chunk);
+                        Object.assign(mergedPosts, chunkData.allPosts);
+                        Object.assign(mergedScheduled, chunkData.allScheduledPosts);
+                        Object.assign(mergedSuggested, chunkData.allSuggestedPosts);
+                        Object.assign(mergedSystem, chunkData.allSystemPosts);
+                        Object.assign(mergedNotes, chunkData.allNotes);
+                        if (chunkData.allStories) Object.assign(mergedStories, chunkData.allStories);
+                    } catch (e) {
+                        console.error(`  ❌ Ошибка загрузки батча ${Math.floor(i / CHUNK_SIZE) + 1}:`, e);
+                        // Продолжаем загрузку остальных батчей
+                    }
+                }
+
+                setAllPosts(mergedPosts);
+                setAllScheduledPosts(mergedScheduled);
+                setAllSuggestedPosts(mergedSuggested);
+                setAllSystemPosts(mergedSystem);
+                setAllNotes(mergedNotes);
+                setAllStories(mergedStories);
 
                 const newScheduledCounts: Record<string, number> = {};
                 projectIds.forEach(id => {
-                    newScheduledCounts[id] = (scheduledFromDb[id]?.length || 0) + (systemFromDb[id]?.length || 0);
+                    newScheduledCounts[id] = (mergedScheduled[id]?.length || 0) + (mergedSystem[id]?.length || 0);
                 });
                 setScheduledPostCounts(newScheduledCounts);
                 const globalVarDefs = await api.getAllGlobalVariableDefinitions();
                 const allGlobalVarValues: Record<string, ProjectGlobalVariableValue[]> = {};
                 if (projectIds.length > 0) {
-                    const globalVarValuesPromises = projectIds.map(id =>
-                        api.getGlobalVariablesForProject(id).then(res => ({ projectId: id, values: res.values }))
-                    );
-                    const globalVarValuesResults = await Promise.all(globalVarValuesPromises);
-                    globalVarValuesResults.forEach(result => {
-                        allGlobalVarValues[result.projectId] = result.values;
-                    });
+                    // Батч-загрузка глобальных переменных одним запросом вместо N
+                    try {
+                        const batchResult = await api.getGlobalVariablesForMultipleProjects(projectIds);
+                        Object.assign(allGlobalVarValues, batchResult.valuesByProject);
+                    } catch (e) {
+                        console.error("Ошибка батч-загрузки глобальных переменных:", e);
+                    }
                 }
                 setAllGlobalVarDefs(globalVarDefs);
                 setAllGlobalVarValues(allGlobalVarValues);

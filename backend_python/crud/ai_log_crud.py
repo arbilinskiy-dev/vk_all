@@ -73,6 +73,16 @@ def clear_logs(db: Session, token_id: str = None):
     query.delete(synchronize_session=False)
     db.commit()
 
+def clear_old_logs(db: Session, older_than_days: int = 30) -> int:
+    """Удаляет логи AI API вызовов старше N дней. Используется в cron-задаче ротации."""
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+    count = db.query(models.AiTokenLog).filter(
+        models.AiTokenLog.timestamp < cutoff
+    ).delete(synchronize_session=False)
+    db.commit()
+    return count
+
 def delete_log(db: Session, log_id: str):
     """Удаляет одну запись лога по ID."""
     db.query(models.AiTokenLog).filter(models.AiTokenLog.id == log_id).delete(synchronize_session=False)

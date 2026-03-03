@@ -15,7 +15,8 @@ class Project(BaseModel):
     avatar_url: Optional[str] = None
     
     notes: Optional[str] = None
-    team: Optional[str] = None
+    team: Optional[str] = None  # Устаревшее поле, сохранено для обратной совместимости
+    teams: Optional[List[str]] = []  # Массив команд проекта
     disabled: Optional[bool] = False
     archived: Optional[bool] = False
     variables: Optional[str] = None
@@ -37,6 +38,21 @@ class Project(BaseModel):
                 return json.loads(v)
             except json.JSONDecodeError:
                 return []
+        return v
+
+    @field_validator('teams', mode='before')
+    @classmethod
+    def parse_json_teams(cls, v):
+        """Парсинг JSON-массива команд из строки БД."""
+        if isinstance(v, str):
+            if not v:
+                return []
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return []
+        if v is None:
+            return []
         return v
 
 class User(BaseModel):

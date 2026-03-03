@@ -54,12 +54,12 @@ export const AiTokensSettings: React.FC = () => {
                         type="button"
                         onClick={actions.handleVerifyTokens}
                         disabled={isVerifying || tokens.length === 0}
-                        className="inline-flex items-center px-4 py-2 border border-blue-600 text-sm font-medium rounded-md text-blue-600 bg-white hover:bg-blue-50 disabled:opacity-50"
+                        className="inline-flex items-center px-4 py-2 border border-indigo-600 text-sm font-medium rounded-md text-indigo-600 bg-white hover:bg-indigo-50 disabled:opacity-50"
                         title="Проверить валидность всех токенов через Google API"
                     >
                         {isVerifying ? (
                             <>
-                                <div className="loader border-blue-600 border-t-transparent h-4 w-4 mr-2"></div>
+                                <div className="loader border-indigo-600 border-t-transparent h-4 w-4 mr-2"></div>
                                 Проверка...
                             </>
                         ) : (
@@ -93,15 +93,43 @@ export const AiTokensSettings: React.FC = () => {
             {/* Контент */}
             <div className="flex-grow overflow-auto custom-scrollbar bg-white p-4">
                 {isLoading ? (
-                    <div className="flex justify-center items-center h-40">
-                        <div className="loader border-t-indigo-500 w-8 h-8"></div>
+                    /* Скелетон таблицы токенов */
+                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                        <table className="min-w-[1000px] w-full text-sm text-left">
+                            <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b">
+                                <tr>
+                                    <th className="w-8 px-2 py-3"></th>
+                                    <th className="px-4 py-3">Описание</th>
+                                    <th className="px-4 py-3">Токен</th>
+                                    <th className="px-4 py-3 text-center w-24">Статус</th>
+                                    <th className="px-4 py-3 text-center w-20">Успешно</th>
+                                    <th className="px-4 py-3 text-center w-20">Ошибки</th>
+                                    <th className="px-4 py-3 text-center w-16">Логи</th>
+                                    <th className="px-4 py-3 text-right w-16">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 bg-white">
+                                {Array.from({ length: 5 }).map((_, i) => (
+                                    <tr key={i} className="opacity-0 animate-fade-in-up" style={{ animationDelay: `${i * 60}ms` }}>
+                                        <td className="px-2 py-3"><div className="h-4 w-4 bg-gray-200 animate-pulse rounded"></div></td>
+                                        <td className="px-4 py-3"><div className="h-5 w-48 bg-gray-200 animate-pulse rounded"></div></td>
+                                        <td className="px-4 py-3"><div className="h-5 w-64 bg-gray-200 animate-pulse rounded"></div></td>
+                                        <td className="px-4 py-3 text-center"><div className="h-5 w-14 bg-gray-200 animate-pulse rounded mx-auto"></div></td>
+                                        <td className="px-4 py-3 text-center"><div className="h-5 w-8 bg-gray-200 animate-pulse rounded mx-auto"></div></td>
+                                        <td className="px-4 py-3 text-center"><div className="h-5 w-8 bg-gray-200 animate-pulse rounded mx-auto"></div></td>
+                                        <td className="px-4 py-3 text-center"><div className="h-5 w-5 bg-gray-200 animate-pulse rounded mx-auto"></div></td>
+                                        <td className="px-4 py-3 text-right"><div className="h-5 w-5 bg-gray-200 animate-pulse rounded ml-auto"></div></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 ) : (
                     <>
                         {error && <div className="mb-4 text-center text-red-600 bg-red-50 p-2 rounded border border-red-200">{error}</div>}
                         
                         {/* Таблица токенов */}
-                        <div className="overflow-x-auto custom-scrollbar border border-gray-200 rounded-lg">
+                        <div className="overflow-x-auto custom-scrollbar border border-gray-200 rounded-lg opacity-0 animate-fade-in-up" style={{ animationDelay: '50ms' }}>
                             <table className="min-w-[1000px] w-full text-sm text-left">
                                 <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b sticky top-0">
                                     <tr>
@@ -119,7 +147,8 @@ export const AiTokensSettings: React.FC = () => {
                                     {/* ENV TOKEN - первая строка */}
                                     <React.Fragment>
                                         <tr 
-                                            className={`hover:bg-gray-50 cursor-pointer bg-slate-50 ${expandedTokenId === 'env' ? 'bg-indigo-50/30' : ''}`}
+                                            className={`hover:bg-gray-50 cursor-pointer bg-slate-50 opacity-0 animate-fade-in-up ${expandedTokenId === 'env' ? 'bg-indigo-50/30' : ''}`}
+                                            style={{ animationDelay: '80ms' }}
                                             onClick={() => actions.toggleRowExpand('env')}
                                         >
                                             <td className="px-2 py-2 text-center text-gray-400">
@@ -170,20 +199,23 @@ export const AiTokensSettings: React.FC = () => {
                                         {expandedTokenId === 'env' && (
                                             <tr className="bg-gray-50/50">
                                                 <td colSpan={8} className="p-0">
-                                                    <AiTokenStatsPanel tokenId="env" />
+                                                    <div className="animate-expand-down">
+                                                        <AiTokenStatsPanel tokenId="env" />
+                                                    </div>
                                                 </td>
                                             </tr>
                                         )}
                                     </React.Fragment>
 
                                     {/* Обычные токены */}
-                                    {tokens.map((token) => {
+                                    {tokens.map((token, index) => {
                                         const isExpanded = expandedTokenId === token.id;
                                         const tokenStatus = getTokenStatus(token);
                                         return (
                                             <React.Fragment key={token.id}>
                                                 <tr 
-                                                    className={`hover:bg-gray-50 cursor-pointer ${isExpanded ? 'bg-indigo-50/30' : ''}`} 
+                                                    className={`hover:bg-gray-50 cursor-pointer opacity-0 animate-fade-in-up ${isExpanded ? 'bg-indigo-50/30' : ''}`}
+                                                    style={{ animationDelay: `${(index + 1) * 40 + 100}ms` }}
                                                         onClick={() => actions.toggleRowExpand(token.id)}
                                                     >
                                                         <td className="px-2 py-2 text-center text-gray-400">
@@ -269,7 +301,9 @@ export const AiTokensSettings: React.FC = () => {
                                                     {isExpanded && (
                                                         <tr className="bg-gray-50/50">
                                                             <td colSpan={8} className="p-0">
-                                                                <AiTokenStatsPanel tokenId={token.id} />
+                                                                <div className="animate-expand-down">
+                                                                    <AiTokenStatsPanel tokenId={token.id} />
+                                                                </div>
                                                             </td>
                                                         </tr>
                                                     )}

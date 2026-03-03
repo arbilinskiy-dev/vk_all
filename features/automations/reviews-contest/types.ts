@@ -1,5 +1,5 @@
 
-import { PhotoAttachment } from '../../../../shared/types';
+import { PhotoAttachment } from '../../../shared/types';
 
 export type FinishConditionType = 'count' | 'date' | 'mixed';
 
@@ -24,6 +24,8 @@ export interface ContestSettings {
     
     templateWinnerPost: string;
     winnerPostImages: PhotoAttachment[]; // Изображения для поста с итогами
+    useProofImage?: boolean; // Генерировать изображение-доказательство розыгрыша
+    attachAdditionalMedia?: boolean; // Прикрепить дополнительные медиа к посту с итогами
 
     templateDm: string;
     templateErrorComment: string;

@@ -54,6 +54,7 @@ const Content: React.FC<DayColumnContentProps> = ({ date, children, onDrop, onDo
             onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('bg-indigo-100'); }}
             onDragLeave={(e) => e.currentTarget.classList.remove('bg-indigo-100')}
             onDrop={(e) => {
+                e.stopPropagation(); // Предотвращаем всплытие события drop к родительским элементам
                 e.currentTarget.classList.remove('bg-indigo-100');
                 onDrop(e, date);
             }}

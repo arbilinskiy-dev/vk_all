@@ -5,7 +5,12 @@ from datetime import datetime, timedelta
 import crud.token_log_crud as log_crud
 import crud.system_accounts.account_crud as account_crud
 from config import settings
-from database import SessionLocal
+# КРИТИЧНО: Используем _session_factory напрямую, а НЕ SessionLocal (scoped_session).
+# SessionLocal() возвращает thread-local сессию — ту же самую, что используется
+# в вызывающем коде (collector, processor и т.д.). Если мы сделаем commit()/close()
+# на ней здесь, все ORM-объекты в вызывающем коде станут detached → DetachedInstanceError.
+# _session_factory() создаёт полностью НЕЗАВИСИМУЮ сессию.
+from database import _session_factory
 
 # Кеш токенов для быстрой проверки (token -> account_id)
 _TOKEN_CACHE = {}
@@ -13,9 +18,10 @@ _TOKEN_CACHE = {}
 def log_api_call(token: str, method: str, project_id: str = None, success: bool = True, error_details: str = None):
     """
     Основная функция логирования. Вызывается из api_client.
-    Определяет владельца токена и пишет лог в БД в отдельной сессии.
+    Определяет владельца токена и пишет лог в БД в НЕЗАВИСИМОЙ сессии,
+    чтобы не затрагивать thread-local scoped_session вызывающего кода.
     """
-    db = SessionLocal()
+    db = _session_factory()
     try:
         account_id = None
         is_env_token = False
@@ -54,7 +60,7 @@ def log_api_call(token: str, method: str, project_id: str = None, success: bool 
     except Exception as e:
         print(f"LOGGING ERROR: Failed to write token log: {e}")
     finally:
-        db.close()
+        db.close()  # Закрываем НЕЗАВИСИМУЮ сессию — не влияет на scoped_session
 
 def get_logs(
     db: Session, 
@@ -234,3 +240,45 @@ def get_chart_data(db: Session, account_id: str, granularity: str, project_id: O
             break
         
     return chart_data
+
+
+def get_compare_stats(db: Session, account_ids: List[str]):
+    """
+    Получает сравнительную статистику по нескольким аккаунтам.
+    Возвращает данные для инфографики: сколько раз каждый метод вызывался каждым аккаунтом.
+    """
+    if not account_ids:
+        return {"accounts": [], "methods": [], "data": {}}
+    
+    results = log_crud.get_compare_stats(db, account_ids)
+    
+    # Преобразуем результаты в удобный формат
+    # data: { 'account_key': { 'method': count, ... }, ... }
+    data: Dict[str, Dict[str, int]] = {}
+    methods_set = set()
+    
+    for account_id, is_env_token, method, count in results:
+        # Определяем ключ аккаунта
+        key = 'env' if is_env_token else account_id
+        if not key:
+            continue
+            
+        if key not in data:
+            data[key] = {}
+        
+        data[key][method] = count
+        methods_set.add(method)
+    
+    # Сортируем методы по общему количеству вызовов (по убыванию)
+    method_totals = {}
+    for method in methods_set:
+        total = sum(data.get(acc, {}).get(method, 0) for acc in data.keys())
+        method_totals[method] = total
+    
+    sorted_methods = sorted(method_totals.keys(), key=lambda m: method_totals[m], reverse=True)
+    
+    return {
+        "accounts": list(data.keys()),
+        "methods": sorted_methods,
+        "stats_data": data
+    }

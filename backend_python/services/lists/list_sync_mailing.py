@@ -207,8 +207,9 @@ def refresh_mailing_task(task_id: str, project_id: str):
         # --- PHASE 4: FINALIZE ---
         db_final = SessionLocal()
         try:
+            from models_library.dialogs_authors import ProjectDialog
             task_monitor.update_task(task_id, "processing", message="Обновление статистики...")
-            real_count = db_final.query(models.SystemListMailing).filter(models.SystemListMailing.project_id == project_id).count()
+            real_count = db_final.query(ProjectDialog).filter(ProjectDialog.project_id == project_id).count()
             timestamp = get_rounded_timestamp()
             crud.update_list_meta(db_final, project_id, {
                 "mailing_last_updated": timestamp,

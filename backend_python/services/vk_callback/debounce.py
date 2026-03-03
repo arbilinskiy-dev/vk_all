@@ -1,29 +1,38 @@
-# Debounce механизм для VK Callback событий
+# Debounce и Cooldown для VK Callback событий (Redis-based)
 #
-# Защита от дублирования действий при быстрых последовательных событиях.
-# Например, при редактировании отложенного поста VK шлет 2 события подряд:
-# wall_schedule_post_delete + wall_schedule_post_new
-# Мы не хотим делать 2 обновления — достаточно одного.
+# Работает корректно между несколькими Gunicorn-воркерами,
+# т.к. состояние хранится в Redis, а не в памяти процесса.
 #
-# Также включает механизм Cooldown для игнорирования событий во время
-# внутренних операций (например, массового удаления постов).
+# Cooldown — подавление событий во время внутренних операций
+#            (например, массовое удаление постов).
+# Debounce — группировка быстрых последовательных событий одного типа
+#            (например, edit = delete + new подряд).
+# Dedup    — пропуск повторных событий с одинаковым event_id.
 
 import time
-import threading
-from typing import Dict, Callable, Optional
-from dataclasses import dataclass
-from datetime import datetime
+import json
+import logging
+from typing import Optional
+
+from .config import callback_config
+
+logger = logging.getLogger("vk_callback.debounce")
+
+
+def _get_redis():
+    """Ленивый импорт Redis-клиента."""
+    try:
+        from database import redis_client
+        return redis_client
+    except ImportError:
+        return None
 
 
 # =============================================================================
-# COOLDOWN — Игнорирование событий во время внутренних операций
+# COOLDOWN — Подавление событий во время внутренних операций
 # =============================================================================
 
-_cooldowns: Dict[str, float] = {}  # key = "{group_id}:{event_type}" -> timestamp окончания
-_cooldown_lock = threading.Lock()
-
-
-def set_event_cooldown(group_id: int, event_type: str, seconds: float = 30.0):
+def set_event_cooldown(group_id: int, event_type: str, seconds: float = None):
     """
     Установить cooldown для конкретного типа события.
     
@@ -32,22 +41,43 @@ def set_event_cooldown(group_id: int, event_type: str, seconds: float = 30.0):
     
     Args:
         group_id: ID группы VK
-        event_type: Тип события VK (например, 'wall_schedule_post_delete')
-        seconds: Длительность cooldown в секундах
+        event_type: Тип события VK
+        seconds: Длительность cooldown в секундах (None = из конфига)
     """
-    key = f"{group_id}:{event_type}"
-    with _cooldown_lock:
-        _cooldowns[key] = time.time() + seconds
-    print(f"COOLDOWN: Set '{event_type}' for group {group_id} ({seconds}s)")
+    if seconds is None:
+        seconds = callback_config.cooldown_default_seconds
+    
+    redis = _get_redis()
+    key = f"{callback_config.cooldown_key_prefix}:{group_id}:{event_type}"
+    
+    if redis:
+        try:
+            # SET с TTL — автоматически удалится
+            redis.set(key, "1", ex=int(seconds))
+            logger.info(f"COOLDOWN: Установлен '{event_type}' для group={group_id} ({seconds}с) [Redis]")
+            return
+        except Exception as e:
+            logger.warning(f"COOLDOWN: Redis ошибка, fallback на in-memory: {e}")
+    
+    # Fallback на in-memory (для локальной разработки без Redis)
+    _memory_cooldowns[f"{group_id}:{event_type}"] = time.time() + seconds
+    logger.info(f"COOLDOWN: Установлен '{event_type}' для group={group_id} ({seconds}с) [in-memory]")
 
 
 def clear_event_cooldown(group_id: int, event_type: str):
-    """Снять cooldown раньше времени (после завершения операции)."""
-    key = f"{group_id}:{event_type}"
-    with _cooldown_lock:
-        if key in _cooldowns:
-            del _cooldowns[key]
-            print(f"COOLDOWN: Cleared '{event_type}' for group {group_id}")
+    """Снять cooldown раньше времени."""
+    redis = _get_redis()
+    key = f"{callback_config.cooldown_key_prefix}:{group_id}:{event_type}"
+    
+    if redis:
+        try:
+            redis.delete(key)
+            logger.info(f"COOLDOWN: Снят '{event_type}' для group={group_id} [Redis]")
+            return
+        except Exception:
+            pass
+    
+    _memory_cooldowns.pop(f"{group_id}:{event_type}", None)
 
 
 def is_event_on_cooldown(group_id: int, event_type: str) -> bool:
@@ -57,154 +87,190 @@ def is_event_on_cooldown(group_id: int, event_type: str) -> bool:
     Returns:
         True если событие должно быть проигнорировано
     """
-    key = f"{group_id}:{event_type}"
-    with _cooldown_lock:
-        deadline = _cooldowns.get(key, 0)
-        if deadline > time.time():
-            return True
-        # Истёк — удаляем
-        _cooldowns.pop(key, None)
-        return False
+    redis = _get_redis()
+    key = f"{callback_config.cooldown_key_prefix}:{group_id}:{event_type}"
+    
+    if redis:
+        try:
+            return redis.exists(key) > 0
+        except Exception:
+            pass
+    
+    # Fallback на in-memory
+    deadline = _memory_cooldowns.get(f"{group_id}:{event_type}", 0)
+    if deadline > time.time():
+        return True
+    _memory_cooldowns.pop(f"{group_id}:{event_type}", None)
+    return False
+
+
+# In-memory fallback для разработки без Redis
+_memory_cooldowns = {}
 
 
 # =============================================================================
-# DEBOUNCE — Накопление быстрых событий
+# DEBOUNCE — Группировка быстрых последовательных событий
 # =============================================================================
 
-
-@dataclass
-class PendingAction:
-    """Отложенное действие."""
-    group_id: int
-    action_type: str  # Тип действия (например, 'refresh_scheduled', 'refresh_published')
-    scheduled_at: float  # Когда запланировано выполнение
-    event_ids: list[str]  # ID событий, которые вызвали это действие
-
-
-class EventDebouncer:
+def should_debounce(group_id: int, action_type: str) -> bool:
     """
-    Debouncer для событий VK Callback.
+    Проверить, нужно ли подавить событие (debounce активен).
     
-    Накапливает быстрые последовательные события одного типа и выполняет
-    одно действие с задержкой, чтобы избежать дублирования.
+    Если для этого group_id + action_type уже есть активный debounce-таймер
+    в Redis, возвращает True (событие нужно проигнорировать — предыдущее
+    ещё не обработано и обработает все накопленные).
+    
+    Args:
+        group_id: ID группы VK
+        action_type: Тип действия (refresh_scheduled, refresh_published, etc.)
+        
+    Returns:
+        True если событие нужно подавить (дубль в пределах debounce-окна)
     """
+    redis = _get_redis()
+    key = f"{callback_config.debounce_key_prefix}:{group_id}:{action_type}"
     
-    def __init__(self, delay_seconds: float = 2.0):
-        """
-        Args:
-            delay_seconds: Задержка перед выполнением действия.
-                          Если за это время придет еще событие — таймер сбрасывается.
-        """
-        self.delay_seconds = delay_seconds
-        self._pending: Dict[str, PendingAction] = {}  # key = "{group_id}:{action_type}"
-        self._lock = threading.Lock()
-        self._timers: Dict[str, threading.Timer] = {}
-        
-    def _get_key(self, group_id: int, action_type: str) -> str:
-        """Ключ для идентификации действия."""
-        return f"{group_id}:{action_type}"
-    
-    def schedule_action(
-        self, 
-        group_id: int, 
-        action_type: str, 
-        event_id: Optional[str],
-        callback: Callable
-    ) -> bool:
-        """
-        Запланировать действие с debounce.
-        
-        Если такое действие уже запланировано — таймер сбрасывается.
-        Возвращает True, если это новое действие (первое в серии).
-        
-        Args:
-            group_id: ID группы VK
-            action_type: Тип действия (refresh_scheduled, refresh_published, etc.)
-            event_id: ID события VK (для логирования)
-            callback: Функция, которую нужно вызвать
-        """
-        key = self._get_key(group_id, action_type)
-        is_new = False
-        
-        with self._lock:
-            # Отменяем предыдущий таймер, если есть
-            if key in self._timers:
-                self._timers[key].cancel()
-                # Добавляем event_id к существующему действию
-                if key in self._pending and event_id:
-                    self._pending[key].event_ids.append(event_id)
-            else:
-                is_new = True
-                # Создаем новое отложенное действие
-                self._pending[key] = PendingAction(
-                    group_id=group_id,
-                    action_type=action_type,
-                    scheduled_at=time.time() + self.delay_seconds,
-                    event_ids=[event_id] if event_id else []
-                )
-            
-            # Создаем новый таймер
-            timer = threading.Timer(
-                self.delay_seconds, 
-                self._execute_action, 
-                args=[key, callback]
+    if redis:
+        try:
+            # Пытаемся установить ключ только если его нет (NX)
+            # Если установили — это первое событие в серии (NOT debounced)
+            # Если не установили — debounce активен (нужно подавить)
+            was_set = redis.set(
+                key, "1", 
+                nx=True, 
+                ex=int(callback_config.debounce_delay)
             )
-            self._timers[key] = timer
-            timer.start()
-            
-        action_word = "Scheduled new" if is_new else "Rescheduled"
-        print(f"DEBOUNCER: {action_word} action '{action_type}' for group {group_id} (delay: {self.delay_seconds}s)")
-        
-        return is_new
+            if was_set:
+                logger.debug(f"DEBOUNCE: Первое событие '{action_type}' для group={group_id}")
+                return False  # Первое событие — обрабатываем
+            else:
+                logger.debug(f"DEBOUNCE: Подавлено '{action_type}' для group={group_id}")
+                return True  # Дубль — подавляем
+        except Exception as e:
+            logger.warning(f"DEBOUNCE: Redis ошибка: {e}")
     
-    def _execute_action(self, key: str, callback: Callable):
-        """Выполнить отложенное действие."""
-        with self._lock:
-            pending = self._pending.pop(key, None)
-            self._timers.pop(key, None)
-        
-        if pending:
-            event_count = len(pending.event_ids)
-            print(f"DEBOUNCER: Executing '{pending.action_type}' for group {pending.group_id} (triggered by {event_count} events)")
-            try:
-                callback()
-            except Exception as e:
-                print(f"DEBOUNCER ERROR: Failed to execute '{pending.action_type}': {e}")
+    # Без Redis — не дебаунсим, обрабатываем всё
+    return False
+
+
+def extend_debounce(group_id: int, action_type: str):
+    """
+    Продлить debounce-окно (сбросить таймер).
     
-    def cancel_action(self, group_id: int, action_type: str) -> bool:
-        """Отменить запланированное действие."""
-        key = self._get_key(group_id, action_type)
-        
-        with self._lock:
-            if key in self._timers:
-                self._timers[key].cancel()
-                del self._timers[key]
-                self._pending.pop(key, None)
-                print(f"DEBOUNCER: Cancelled action '{action_type}' for group {group_id}")
-                return True
-        return False
+    Вызывается когда приходит ещё одно событие до истечения debounce.
+    """
+    redis = _get_redis()
+    key = f"{callback_config.debounce_key_prefix}:{group_id}:{action_type}"
     
-    def has_pending(self, group_id: int, action_type: str) -> bool:
-        """Проверить, есть ли запланированное действие."""
-        key = self._get_key(group_id, action_type)
-        return key in self._pending
+    if redis:
+        try:
+            redis.expire(key, int(callback_config.debounce_delay))
+        except Exception:
+            pass
 
 
-# Глобальный экземпляр debouncer'а
-# Задержка 2 секунды — достаточно для накопления связанных событий
-_debouncer = EventDebouncer(delay_seconds=2.0)
+def clear_debounce(group_id: int, action_type: str):
+    """Снять debounce (после выполнения действия)."""
+    redis = _get_redis()
+    key = f"{callback_config.debounce_key_prefix}:{group_id}:{action_type}"
+    
+    if redis:
+        try:
+            redis.delete(key)
+        except Exception:
+            pass
 
 
-def get_debouncer() -> EventDebouncer:
-    """Получить глобальный debouncer."""
-    return _debouncer
+# =============================================================================
+# ДЕДУПЛИКАЦИЯ — Пропуск повторных событий по event_id
+# =============================================================================
+
+def is_duplicate_event(event_id: Optional[str]) -> bool:
+    """
+    Проверить, обрабатывалось ли уже событие с таким event_id.
+    
+    VK может повторно отправить событие если не получил 'ok' вовремя.
+    
+    Args:
+        event_id: Уникальный ID события от VK
+        
+    Returns:
+        True если это дубликат (уже обработано)
+    """
+    if not event_id:
+        return False  # Без event_id не дедуплицируем
+    
+    redis = _get_redis()
+    key = f"{callback_config.dedup_key_prefix}:{event_id}"
+    
+    if redis:
+        try:
+            # SET NX — установить только если не существует
+            was_set = redis.set(key, "1", nx=True, ex=callback_config.dedup_ttl)
+            if was_set:
+                return False  # Новое событие
+            else:
+                logger.info(f"DEDUP: Дубликат event_id={event_id}")
+                return True  # Уже видели
+        except Exception as e:
+            logger.warning(f"DEDUP: Redis ошибка: {e}")
+    
+    return False  # Без Redis — дедупликация отключена
 
 
-# Экспорт функций cooldown для удобства
+# =============================================================================
+# RATE LIMITING — Ограничение частоты от одной группы
+# =============================================================================
+
+def check_rate_limit(group_id: int) -> bool:
+    """
+    Проверить, не превышен ли лимит запросов от группы.
+    
+    Returns:
+        True если лимит НЕ превышен (можно обрабатывать)
+        False если превышен
+    """
+    redis = _get_redis()
+    if not redis:
+        return True  # Без Redis — лимит не проверяем
+    
+    key = f"{callback_config.rate_limit_key_prefix}:{group_id}"
+    
+    try:
+        # Инкрементируем счётчик
+        count = redis.incr(key)
+        
+        # Если это первый запрос — ставим TTL окна
+        if count == 1:
+            redis.expire(key, callback_config.rate_limit_window)
+        
+        # Проверяем лимит
+        if count > callback_config.rate_limit_max_events:
+            logger.warning(
+                f"RATELIMIT: Превышен лимит для group={group_id} "
+                f"({count}/{callback_config.rate_limit_max_events} за {callback_config.rate_limit_window}с)"
+            )
+            return False
+        
+        return True
+        
+    except Exception as e:
+        logger.warning(f"RATELIMIT: Redis ошибка: {e}")
+        return True  # При ошибке — пропускаем
+
+
+# Экспорт
 __all__ = [
-    'EventDebouncer',
-    'get_debouncer',
+    # Cooldown
     'set_event_cooldown',
     'clear_event_cooldown',
     'is_event_on_cooldown',
+    # Debounce
+    'should_debounce',
+    'extend_debounce',
+    'clear_debounce',
+    # Дедупликация
+    'is_duplicate_event',
+    # Rate limiting
+    'check_rate_limit',
 ]

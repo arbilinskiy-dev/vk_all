@@ -119,7 +119,8 @@ def _validate_ai_value(field_name: str, value: str) -> bool:
 
     if name_lower == "сайт":
         # Ссылка на сайт не должна быть ссылкой на приложение доставки VK
-        if "vk.com/app" in val:
+        # Поддерживаем оба домена: vk.com и vk.ru
+        if "vk.com/app" in val or "vk.ru/app" in val:
             return False
     
     elif name_lower == "android":
@@ -137,8 +138,8 @@ def _validate_ai_value(field_name: str, value: str) -> bool:
             
     elif name_lower == "dlvry":
         # Должна быть ссылкой на приложение доставки ВКонтакте. 
-        # Она ОБЯЗАНА иметь вид `https://vk.com/app6408974_-XXXXXXXX`.
-        if not re.match(r'^https://vk\.com/app6408974_-?\d+$', val):
+        # Она ОБЯЗАНА иметь вид `https://vk.com/app6408974_-XXXXXXXX` или `https://vk.ru/app6408974_-XXXXXXXX`.
+        if not re.match(r'^https://vk\.(?:com|ru)/app6408974_-?\d+$', val):
             return False
             
     elif name_lower == "зона доставки":

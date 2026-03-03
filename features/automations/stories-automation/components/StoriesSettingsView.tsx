@@ -2,8 +2,29 @@ import React, { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { PublishedPost } from '../types';
 import { ImagePreviewModal } from '../../../../shared/components/modals/ImagePreviewModal';
+import { useIntegrationRequirements } from '../hooks/useIntegrationRequirements';
+import { IntegrationRequirementsBlock } from './IntegrationRequirementsBlock';
+
+/** Хук для skeleton + fade-in загрузки изображения */
+const ImageWithSkeleton: React.FC<{ src: string; alt?: string; className?: string; onClick?: () => void }> = ({ src, alt = '', className = '', onClick }) => {
+    const [loaded, setLoaded] = useState(false);
+    return (
+        <div className="relative w-full h-full">
+            {!loaded && <div className="absolute inset-0 bg-gray-200 rounded-lg animate-pulse" />}
+            <img
+                src={src}
+                alt={alt}
+                className={`${className} transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+                onLoad={() => setLoaded(true)}
+                onClick={onClick}
+                loading="lazy"
+            />
+        </div>
+    );
+};
 
 interface StoriesSettingsViewProps {
+    projectId?: string;
     isActive: boolean;
     setIsActive: (val: boolean) => void;
     keywords: string;
@@ -57,6 +78,7 @@ const HoverPreview: React.FC<{ url: string; rect: DOMRect; isExiting: boolean }>
 };
 
 export const StoriesSettingsView: React.FC<StoriesSettingsViewProps> = ({
+    projectId,
     isActive, setIsActive,
     keywords, setKeywords,
     posts, visibleCount,
@@ -64,7 +86,9 @@ export const StoriesSettingsView: React.FC<StoriesSettingsViewProps> = ({
     getPostStatus, getFirstImage,
     handleManualPublish, isPublishing
 }) => {
-    
+    // Проверка интеграционных требований (токен, callback, wall_post_new)
+    const { state: integrationState, actions: integrationActions, callbackSetup } = useIntegrationRequirements(projectId);
+
     // Sort posts
     const sortedPosts = [...posts].sort((a, b) => b.date.localeCompare(a.date));
     const paginatedPosts = sortedPosts.slice(0, visibleCount);
@@ -95,8 +119,14 @@ export const StoriesSettingsView: React.FC<StoriesSettingsViewProps> = ({
         }, 200);
     };
 
+    // Блокировка включения автоматизации, если интеграция не готова
+    const canEnableAutomation = integrationState.isReady;
+
     return (
-        <>
+        <div className="space-y-4">
+            {/* Блок проверки интеграционных требований */}
+            <IntegrationRequirementsBlock state={integrationState} actions={integrationActions} callbackSetup={callbackSetup} />
+
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex-shrink-0 sticky top-0 z-30">
                 <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
                     <h3 className="text-base font-semibold text-gray-900">Настройки фильтрации</h3>
@@ -109,14 +139,24 @@ export const StoriesSettingsView: React.FC<StoriesSettingsViewProps> = ({
                                 Когда включено, система каждые 10 минут проверяет новые посты. Если пост содержит одно из ключевых слов, он будет автоматически опубликован в истории.
                             </p>
                         </div>
-                        <label className="relative inline-flex items-center cursor-pointer mt-1">
+                        <label className={`relative inline-flex items-center flex-shrink-0 mt-1 ${!isActive && !canEnableAutomation ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                            title={!isActive && !canEnableAutomation ? 'Выполните все требования интеграции выше' : undefined}
+                        >
                             <input
                                 type="checkbox"
                                 className="sr-only peer"
                                 checked={isActive}
-                                onChange={(e) => setIsActive(e.target.checked)}
+                                onChange={(e) => {
+                                    // Разрешаем выключение всегда, включение — только при готовой интеграции
+                                    if (e.target.checked && !canEnableAutomation) {
+                                        window.showAppToast?.('Сначала выполните все требования интеграции', 'error');
+                                        return;
+                                    }
+                                    setIsActive(e.target.checked);
+                                }}
+                                disabled={!isActive && !canEnableAutomation}
                             />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                            <div className={`w-11 h-6 bg-gray-200 rounded-full peer peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:shadow-sm after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white rtl:peer-checked:after:-translate-x-full ${!isActive && !canEnableAutomation ? 'opacity-50' : ''}`}></div>
                         </label>
                     </div>
 
@@ -164,7 +204,7 @@ export const StoriesSettingsView: React.FC<StoriesSettingsViewProps> = ({
                                                 type="text" 
                                                 value={keywords} 
                                                 onChange={(e) => setKeywords(e.target.value)}
-                                                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                                                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                                                 placeholder="Например: #вистории, #repost, #важное"
                                             />
                                         </div>
@@ -201,13 +241,13 @@ export const StoriesSettingsView: React.FC<StoriesSettingsViewProps> = ({
                     </div>
                 ) : (
                     <div className="overflow-x-auto bg-white custom-scrollbar">
-                        <table className="min-w-full divide-y divide-gray-100">
+                        <table className="min-w-full divide-y divide-gray-100 table-fixed">
                             <thead className="bg-gray-50">
                                 <tr>
                                     <th scope="col" className="px-6 py-3 text-left w-20">Превью</th>
                                     <th scope="col" className="px-6 py-3 text-left">Содержание</th>
-                                    <th scope="col" className="px-6 py-3 text-left w-48">Дата</th>
-                                    <th scope="col" className="px-6 py-3 text-left w-64">Статус</th>
+                                    <th scope="col" className="px-6 py-3 text-left w-28">Дата</th>
+                                    <th scope="col" className="px-6 py-3 text-left w-36">Статус</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-100">
@@ -230,12 +270,12 @@ export const StoriesSettingsView: React.FC<StoriesSettingsViewProps> = ({
                                                         onMouseLeave={handleMouseLeave}
                                                         onClick={() => setPreviewImage(imageUrl)}
                                                     >
-                                                        <img src={imageUrl} alt="" className="w-full h-full rounded-lg object-cover border" loading="lazy" />
+                                                        <img src={imageUrl} alt="" className="w-full h-full rounded-lg object-cover border transition-opacity duration-300" loading="lazy" />
                                                     </div>
                                                 ) : <div className="w-12 h-12 bg-gray-50 rounded-lg border text-[10px] flex items-center justify-center">NO IMG</div>}
                                             </td>
                                             <td className="px-6 py-4 align-top">
-                                                <div className="text-sm line-clamp-3 text-gray-900">{post.text}</div>
+                                                <div className="text-sm line-clamp-3 text-gray-900 break-words overflow-hidden">{post.text}</div>
                                             </td>
                                             <td className="px-6 py-4 align-top text-sm text-gray-500">
                                                 <div>{postDate.toLocaleDateString()}</div>
@@ -274,6 +314,6 @@ export const StoriesSettingsView: React.FC<StoriesSettingsViewProps> = ({
                     onClose={() => setPreviewImage(null)}
                 />
             )}
-        </>
+        </div>
     );
 };

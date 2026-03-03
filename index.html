@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Планировщик контента</title>
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -35,11 +36,18 @@
         100% { transform: rotate(360deg); }
       }
        @keyframes fade-in-up {
-        from { opacity: 0; transform: translateY(20px); }
+        from { opacity: 0; transform: translateY(12px); }
         to { opacity: 1; transform: translateY(0); }
       }
       .animate-fade-in-up {
-        animation: fade-in-up 0.3s ease-out forwards;
+        animation: fade-in-up 0.35s ease-out forwards;
+      }
+      @keyframes fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .animate-fade-in {
+        animation: fade-in 0.25s ease-out forwards;
       }
       @keyframes image-fade-in {
         from { opacity: 0; }
@@ -47,6 +55,13 @@
       }
       .animate-image-fade-in {
         animation: image-fade-in 0.4s ease-out forwards;
+      }
+      @keyframes data-swap {
+        0% { opacity: 0.4; }
+        100% { opacity: 1; }
+      }
+      .animate-data-swap {
+        animation: data-swap 0.25s ease-out forwards;
       }
       .skeleton-loader {
         background-color: #e5e7eb; /* gray-200 */
@@ -93,6 +108,62 @@
       }
       .animate-image-preview-out {
         animation: image-preview-out 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) forwards;
+      }
+
+      /* === SlidePanel — выезжающая панель справа === */
+      @keyframes slide-panel-overlay-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes slide-panel-in {
+        from { transform: translateX(100%); }
+        to { transform: translateX(0); }
+      }
+      @keyframes slide-panel-out {
+        from { transform: translateX(0); }
+        to { transform: translateX(100%); }
+      }
+      .slide-panel-overlay {
+        animation: slide-panel-overlay-in 0.3s ease-out forwards;
+      }
+      .slide-panel-content {
+        animation: slide-panel-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      .slide-panel-closing .slide-panel-content {
+        animation: slide-panel-out 0.25s ease-in forwards;
+      }
+
+      /* === Плавное раскрытие/сворачивание панелей (expand/collapse) === */
+      @keyframes expand-down {
+        from { opacity: 0; max-height: 0; }
+        to { opacity: 1; max-height: 500px; }
+      }
+      .animate-expand-down {
+        animation: expand-down 0.25s ease-out forwards;
+        overflow: hidden;
+      }
+      @keyframes collapse-up {
+        from { opacity: 1; max-height: 500px; }
+        to { opacity: 0; max-height: 0; }
+      }
+      .animate-collapse-up {
+        animation: collapse-up 0.2s ease-in forwards;
+        overflow: hidden;
+      }
+
+      /* === Плавное появление строк таблицы / элементов списка (stagger) === */
+      @keyframes fade-in-row {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-in-row {
+        animation: fade-in-row 0.25s ease-out forwards;
+      }
+
+      /* === Неопределённый прогресс-бар (загрузка видео) === */
+      @keyframes indeterminate {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
       }
     </style>
   <script type="importmap">

@@ -26,10 +26,11 @@ def get_subscribers(
     filter_can_write: str = 'all',
     filter_bdate_month: str = 'any', # NEW
     filter_platform: str = 'any', # NEW
-    filter_age: str = 'any' # NEW
+    filter_age: str = 'any', # NEW
+    filter_unread: str = 'all' # Фильтр по непрочитанным
 ):
-    items = fetch_list_items(db, project_id, list_type, page, page_size, search_query, filter_quality, filter_sex, filter_online, filter_can_write, filter_bdate_month, filter_platform, filter_age)
-    total = fetch_list_count(db, project_id, list_type, search_query, filter_quality, filter_sex, filter_online, filter_can_write, filter_bdate_month, filter_platform, filter_age)
+    items = fetch_list_items(db, project_id, list_type, page, page_size, search_query, filter_quality, filter_sex, filter_online, filter_can_write, filter_bdate_month, filter_platform, filter_age, filter_unread)
+    total = fetch_list_count(db, project_id, list_type, search_query, filter_quality, filter_sex, filter_online, filter_can_write, filter_bdate_month, filter_platform, filter_age, filter_unread)
     meta = crud.get_list_meta(db, project_id)
     return {"meta": meta, "items": items, "total_count": total, "page": page, "page_size": page_size}
 

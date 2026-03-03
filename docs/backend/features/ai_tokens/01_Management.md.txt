@@ -1,0 +1,190 @@
+# Модуль управления AI-токенами (AI Tokens)
+
+## Обзор
+
+Модуль `ai_tokens` управляет пулом API-ключей для Google Gemini AI. Позволяет добавлять, удалять, верифицировать токены и отслеживать их статус.
+
+---
+
+## Архитектура
+
+```
+routers/ai_tokens.py               # API эндпоинты
+├── services/ai_token_service.py   # Логика управления токенами
+├── services/ai_log_service.py     # Логирование использования
+├── crud/ai_token_crud.py          # CRUD операции
+└── models.AiToken                 # SQLAlchemy модель
+```
+
+---
+
+## Модель данных
+
+### Таблица `ai_tokens`
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | UUID | Первичный ключ |
+| `token` | String | API-ключ Gemini |
+| `description` | String | Описание/комментарий |
+| `is_active` | Boolean | Активен ли токен для использования |
+| `status` | Enum | `'active'` \| `'error'` \| `'unknown'` |
+| `status_error` | Text | Сообщение об ошибке |
+| `last_checked` | DateTime | Дата последней проверки |
+| `priority` | Integer | Приоритет (для ротации) |
+| `created_at` | DateTime | Дата добавления |
+
+---
+
+## API эндпоинты
+
+### `POST /api/ai-tokens/getAll`
+Получение списка всех AI-токенов.
+
+**Response:** `List[AiToken]`
+```json
+[
+  {
+    "id": "uuid-токена",
+    "token": "AIza...",
+    "description": "Основной ключ",
+    "is_active": true,
+    "status": "active",
+    "status_error": null,
+    "last_checked": "2025-01-20T10:00:00",
+    "priority": 1
+  }
+]
+```
+
+---
+
+### `POST /api/ai-tokens/updateAll`
+Массовое обновление токенов.
+
+**Request (`UpdateAiTokensPayload`):**
+```json
+{
+  "tokens": [
+    {
+      "id": "uuid-или-null-для-нового",
+      "token": "AIza...",
+      "description": "Резервный ключ",
+      "is_active": true,
+      "priority": 2
+    }
+  ]
+}
+```
+
+**Response:** `{ "success": true }`
+
+---
+
+### `POST /api/ai-tokens/delete`
+Удаление токена.
+
+**Request (`DeleteAiTokenPayload`):**
+```json
+{
+  "tokenId": "uuid-токена"
+}
+```
+
+**Response:** `{ "success": true }`
+
+---
+
+### `POST /api/ai-tokens/verify`
+Верификация всех токенов через Google Gemini API.
+
+**Логика:**
+1. Для каждого токена делает запрос `GET /v1beta/models?key={token}`
+2. Если статус 200 — токен валидный
+3. Если ошибка — сохраняет сообщение об ошибке
+
+**Response (`VerifyAiTokensResponse`):**
+```json
+{
+  "results": [
+    {
+      "token_id": "uuid",
+      "description": "Основной ключ",
+      "is_valid": true,
+      "error": null,
+      "models_count": 15
+    },
+    {
+      "token_id": "uuid-2",
+      "description": "Просроченный",
+      "is_valid": false,
+      "error": "PERMISSION_DENIED: API key expired",
+      "models_count": 0
+    }
+  ]
+}
+```
+
+**Побочный эффект:** Обновляет `status`, `status_error` и `last_checked` в БД.
+
+---
+
+## Ротация токенов
+
+Модуль `gemini_service` использует токены с ротацией:
+
+1. **Выбор токена** — берётся активный токен с наивысшим приоритетом
+2. **При ошибке** — токен временно исключается из ротации
+3. **Резервные токены** — автоматически используются при исчерпании лимитов основного
+
+---
+
+## Типичные ошибки
+
+| Ошибка | Причина | Решение |
+|--------|---------|---------|
+| `PERMISSION_DENIED` | Ключ отозван или неверный | Удалить и создать новый ключ в Google Cloud Console |
+| `RESOURCE_EXHAUSTED` | Превышен лимит запросов | Подождать сброса лимита или добавить дополнительные ключи |
+| `TIMEOUT` | Нет ответа от Google | Проверить сетевое соединение |
+
+---
+
+## Логирование использования
+
+Каждый вызов AI сохраняется в таблицу `ai_logs`:
+
+| Поле | Описание |
+|------|----------|
+| `token_id` | Какой токен использовался |
+| `action` | Тип операции (`generate_text`, `summarize`, etc.) |
+| `project_id` | Для какого проекта |
+| `input_tokens` | Количество входных токенов |
+| `output_tokens` | Количество выходных токенов |
+| `duration_ms` | Время выполнения |
+| `success` | Успешность запроса |
+| `error` | Сообщение об ошибке (если есть) |
+
+---
+
+## Интеграция с Gemini Service
+
+```python
+# services/gemini_service.py
+from services.ai_token_service import get_active_token, mark_token_error
+
+async def generate_text(prompt: str, db: Session):
+    token = get_active_token(db)  # Получить активный токен
+    try:
+        result = await call_gemini_api(prompt, token.token)
+        return result
+    except GeminiError as e:
+        mark_token_error(db, token.id, str(e))  # Пометить токен как ошибочный
+        raise
+```
+
+---
+
+## См. также
+
+- [Gemini Client](../ai/02_Gemini_Client.md.txt) — работа с Gemini API
+- [AI Services](../ai/01_Core_AI_Services.md.txt) — базовые AI-функции

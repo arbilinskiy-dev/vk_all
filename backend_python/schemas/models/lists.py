@@ -1,8 +1,16 @@
 
 from pydantic import BaseModel, ConfigDict, field_validator
-from typing import List, Optional
+from typing import Any, List, Optional
 from datetime import datetime
 import json
+
+
+def _coerce_id_to_str(v):
+    """Конвертация id в строку (новые модели используют BigInteger PK)."""
+    if v is None:
+        return v
+    return str(v)
+
 
 class ListMemberBase(BaseModel):
     vk_user_id: int
@@ -30,13 +38,18 @@ class ListMemberBase(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class SystemListSubscriber(ListMemberBase):
-    id: str
+    id: Any  # str (старые) или int (новые модели)
     project_id: str
     added_at: datetime
     source: str
 
+    @field_validator('id', mode='before')
+    @classmethod
+    def coerce_id(cls, v):
+        return _coerce_id_to_str(v)
+
 class SystemListMailingItem(ListMemberBase):
-    id: str
+    id: Any
     project_id: str
     conversation_status: Optional[str] = None
     # Добавляем поля даты сбора и источника
@@ -47,21 +60,41 @@ class SystemListMailingItem(ListMemberBase):
     first_message_date: Optional[datetime] = None
     first_message_from_id: Optional[int] = None
 
+    @field_validator('id', mode='before')
+    @classmethod
+    def coerce_id(cls, v):
+        return _coerce_id_to_str(v)
+
 class SystemListHistoryItem(ListMemberBase):
-    id: str
+    id: Any
     project_id: str
     event_date: datetime
     source: str
+
+    @field_validator('id', mode='before')
+    @classmethod
+    def coerce_id(cls, v):
+        return _coerce_id_to_str(v)
 
 class SystemListAuthor(ListMemberBase):
-    id: str
+    id: Any
     project_id: str
     event_date: datetime
     source: str
 
+    @field_validator('id', mode='before')
+    @classmethod
+    def coerce_id(cls, v):
+        return _coerce_id_to_str(v)
+
 class SystemListPost(BaseModel):
-    id: str
+    id: Any
     project_id: str
+
+    @field_validator('id', mode='before')
+    @classmethod
+    def coerce_id(cls, v):
+        return _coerce_id_to_str(v)
     vk_post_id: int
     date: datetime
     text: Optional[str] = None
@@ -86,8 +119,13 @@ class SystemListPost(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class SystemListInteraction(ListMemberBase):
-    id: str
+    id: Any
     project_id: str
+
+    @field_validator('id', mode='before')
+    @classmethod
+    def coerce_id(cls, v):
+        return _coerce_id_to_str(v)
     last_interaction_date: datetime
     last_post_id: Optional[str] = None
     interaction_count: int

@@ -5,16 +5,9 @@ from datetime import datetime, timedelta
 import httpx
 
 import models
-from database import SessionLocal
+from database import get_db
 
 router = APIRouter(prefix="/api/vk-test", tags=["vk-test"])
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 # Configuration (In production, use env vars)
 # App 1 (Original)
@@ -237,6 +230,7 @@ def get_vk_users(db: Session = Depends(get_db)):
             "scope": u.scope,
             "app_id": u.app_id,
             "is_active": u.is_active,
+            "access_token": u.access_token,
             "last_login": u.last_login.isoformat() if u.last_login else None,
             "created_at": u.created_at.isoformat() if u.created_at else None,
             "token_expires_at": u.token_expires_at.isoformat() if u.token_expires_at else None,
@@ -258,3 +252,167 @@ def delete_vk_user(vk_user_id: str, db: Session = Depends(get_db)):
     db.commit()
     
     return {"success": True, "deleted_user_id": vk_user_id}
+
+
+@router.get("/users/{vk_user_id}/groups")
+async def get_user_groups(vk_user_id: str, db: Session = Depends(get_db)):
+    """
+    Получает список групп VK пользователя.
+    """
+    user = db.query(models.VkUser).filter(models.VkUser.vk_user_id == vk_user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    if not user.access_token:
+        raise HTTPException(status_code=400, detail="User has no access token")
+    
+    # Проверяем истечение токена
+    if user.token_expires_at and user.token_expires_at < datetime.utcnow():
+        raise HTTPException(status_code=401, detail="Token expired")
+    
+    async with httpx.AsyncClient() as client:
+        # Сначала пробуем получить группы, где пользователь админ/редактор
+        groups_params = {
+            "access_token": user.access_token,
+            "v": "5.199",
+            "extended": 1,
+            "filter": "admin,editor,moder",
+            "fields": "members_count,photo_200,description"
+        }
+        
+        groups_resp = await client.get(
+            "https://api.vk.com/method/groups.get",
+            params=groups_params
+        )
+        groups_data = groups_resp.json()
+        
+        if "error" in groups_data:
+            # Если ошибка, пробуем без фильтра
+            del groups_params["filter"]
+            groups_resp = await client.get(
+                "https://api.vk.com/method/groups.get",
+                params=groups_params
+            )
+            groups_data = groups_resp.json()
+        
+        if "error" in groups_data:
+            return {
+                "success": False,
+                "error": groups_data["error"],
+                "groups": []
+            }
+        
+        groups = groups_data.get("response", {}).get("items", [])
+        count = groups_data.get("response", {}).get("count", 0)
+        
+        return {
+            "success": True,
+            "count": count,
+            "groups": groups
+        }
+
+
+# ===== STANDALONE АВТОРИЗАЦИЯ =====
+
+class StandaloneCallbackRequest(BaseModel):
+    access_token: str
+    user_id: str
+    expires_in: int = 0
+    app_id: int = 7017349
+
+@router.post("/standalone-callback")
+async def standalone_callback(data: StandaloneCallbackRequest, db: Session = Depends(get_db)):
+    """
+    Обрабатывает callback от Standalone OAuth авторизации.
+    Сохраняет токен и информацию о пользователе в БД.
+    """
+    print(f"🔑 Standalone callback for user {data.user_id}, app {data.app_id}")
+    
+    async with httpx.AsyncClient() as client:
+        # Получаем информацию о пользователе
+        user_info_params = {
+            "access_token": data.access_token,
+            "v": "5.199",
+            "user_ids": data.user_id,
+            "fields": "photo_100,photo_200,first_name,last_name"
+        }
+        
+        user_info_resp = await client.get(
+            "https://api.vk.com/method/users.get",
+            params=user_info_params
+        )
+        user_info_data = user_info_resp.json()
+        
+        user_info = {}
+        if "response" in user_info_data and len(user_info_data["response"]) > 0:
+            user_info = user_info_data["response"][0]
+            print(f"👤 Standalone User: {user_info.get('first_name')} {user_info.get('last_name')}")
+        
+        # Тестируем groups.get чтобы убедиться что токен работает
+        groups_params = {
+            "access_token": data.access_token,
+            "v": "5.199",
+            "extended": 1,
+            "filter": "admin,editor,moder",
+            "count": 3
+        }
+        
+        groups_resp = await client.get(
+            "https://api.vk.com/method/groups.get",
+            params=groups_params
+        )
+        groups_data = groups_resp.json()
+        
+        groups_test = None
+        if "error" in groups_data:
+            print(f"⚠️ groups.get test failed: {groups_data['error']}")
+            groups_test = {"error": groups_data["error"]}
+        else:
+            groups_test = groups_data.get("response", {})
+            print(f"✅ groups.get test OK, found {groups_test.get('count', 0)} managed groups")
+    
+    # Рассчитываем время истечения токена
+    token_expires_at = None
+    if data.expires_in > 0:
+        token_expires_at = datetime.utcnow() + timedelta(seconds=data.expires_in)
+    
+    # Сохраняем или обновляем пользователя в БД
+    vk_user_id_str = str(data.user_id)
+    existing_user = db.query(models.VkUser).filter(models.VkUser.vk_user_id == vk_user_id_str).first()
+    
+    if existing_user:
+        existing_user.first_name = user_info.get("first_name")
+        existing_user.last_name = user_info.get("last_name")
+        existing_user.photo_url = user_info.get("photo_200") or user_info.get("photo_100")
+        existing_user.access_token = data.access_token
+        existing_user.token_expires_at = token_expires_at
+        existing_user.scope = "standalone_full"  # Маркер что это Standalone токен
+        existing_user.app_id = str(data.app_id)
+        existing_user.last_login = datetime.utcnow()
+        existing_user.is_active = True
+        print(f"🔄 Updated existing VK user (Standalone): {vk_user_id_str}")
+    else:
+        new_user = models.VkUser(
+            vk_user_id=vk_user_id_str,
+            first_name=user_info.get("first_name"),
+            last_name=user_info.get("last_name"),
+            photo_url=user_info.get("photo_200") or user_info.get("photo_100"),
+            access_token=data.access_token,
+            token_expires_at=token_expires_at,
+            scope="standalone_full",
+            app_id=str(data.app_id),
+            is_active=True,
+            last_login=datetime.utcnow(),
+            created_at=datetime.utcnow()
+        )
+        db.add(new_user)
+        print(f"✅ Created new VK user (Standalone): {vk_user_id_str}")
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "user_info": user_info,
+        "groups_test": groups_test,
+        "token_expires_at": token_expires_at.isoformat() if token_expires_at else None
+    }

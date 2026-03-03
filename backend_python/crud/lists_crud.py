@@ -5,7 +5,6 @@
 
 from .lists.meta import get_list_meta, update_list_meta
 from .lists.stats import get_list_stats_data
-from .lists.retrieval import get_subscribers, get_subscribers_count
 from .lists.subscribers import (
     get_all_subscriber_vk_ids,
     bulk_add_subscribers,
@@ -28,15 +27,15 @@ from .lists.posts import (
     delete_all_posts # New
 )
 from .lists.interactions import (
-    get_interactions, 
     bulk_upsert_interactions,
     get_all_interaction_vk_ids,
     bulk_update_interaction_users,
-    delete_all_interactions # New
+    delete_all_interactions
 )
 from .lists.mailing import (
     bulk_upsert_mailing,
     get_all_mailing_vk_ids,
+    get_mailing_user_by_vk_id, # Получение одного юзера рассылки по vk_user_id
     delete_all_mailing # New
 )
 # NEW

@@ -6,17 +6,10 @@ import json
 
 import schemas
 import services.market_service as market_service
-from database import SessionLocal
+from database import get_db
 from config import settings
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/getData", response_model=schemas.MarketDataResponse)
 def get_data(payload: schemas.ProjectIdPayload, db: Session = Depends(get_db)):
@@ -48,6 +41,17 @@ def create_album(payload: schemas.CreateAlbumPayload, db: Session = Depends(get_
     """Создает новую подборку товаров."""
     return market_service.create_market_album(db, payload.projectId, payload.title, settings.vk_user_token)
 
+@router.post("/editAlbum", response_model=schemas.MarketAlbum)
+def edit_album(payload: schemas.EditMarketAlbumPayload, db: Session = Depends(get_db)):
+    """Редактирует название подборки товаров."""
+    return market_service.edit_market_album(db, payload.projectId, payload.albumId, payload.title, settings.vk_user_token)
+
+@router.post("/deleteAlbum", response_model=schemas.GenericSuccess)
+def delete_album(payload: schemas.DeleteMarketAlbumPayload, db: Session = Depends(get_db)):
+    """Удаляет подборку товаров."""
+    market_service.delete_market_album(db, payload.projectId, payload.albumId, settings.vk_user_token)
+    return {"success": True}
+
 @router.post("/createItem", response_model=schemas.MarketItem)
 def create_item(
     projectId: str = Form(...),
@@ -58,9 +62,17 @@ def create_item(
     db: Session = Depends(get_db)
 ):
     """Создает один товар, опционально с файлом изображения или ссылкой."""
+    print(f"\nROUTER [createItem]: Входящие данные:")
+    print(f"  > projectId: {projectId}")
+    print(f"  > itemData (raw JSON): {itemData}")
+    print(f"  > photoUrl: {photoUrl}")
+    print(f"  > useDefaultImage: {useDefaultImage}")
+    print(f"  > file: {file.filename if file else 'None'}")
     try:
         item_pydantic = schemas.NewMarketItemPayload.model_validate_json(itemData)
+        print(f"  > Parsed payload: name={item_pydantic.name}, category_id={item_pydantic.category_id}, price={item_pydantic.price}, old_price={item_pydantic.old_price}, sku={item_pydantic.sku}, album_id={item_pydantic.album_id}")
     except Exception as e:
+        print(f"  > PARSE ERROR: {e}")
         raise HTTPException(status_code=422, detail=f"Invalid JSON format for itemData: {e}")
     return market_service.create_market_item(db, projectId, item_pydantic, settings.vk_user_token, file, photoUrl, useDefaultImage)
 

@@ -5,16 +5,9 @@ from typing import List
 # Используем __init__.py для импорта, чтобы сохранить консистентность
 import schemas
 import services.market_ai_service as market_ai_service
-from database import SessionLocal
+from database import get_db
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/suggestCategory", response_model=schemas.MarketCategory)
 def suggest_market_category(payload: schemas.SuggestMarketCategoryPayload, db: Session = Depends(get_db)):

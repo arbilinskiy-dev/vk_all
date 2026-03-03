@@ -33,7 +33,7 @@ export const AuthorizeAccountModal: React.FC<AuthorizeAccountModalProps> = ({ ac
     // Логика приоритета: Если введено кастомное значение, используем его. Иначе - выбранный пресет.
     const currentAppId = customAppId.trim() ? customAppId.trim() : selectedPresetId;
     
-    const authUrl = `https://oauth.vk.com/authorize?client_id=${currentAppId}&display=page&redirect_uri=https://oauth.vk.com/blank.html&scope=offline,notifications,email,ads,adsmanagement,docs,market,photos,video,pages,status,notes,wall,groups,friends,messages,stats,stories&response_type=token&v=5.199`;
+    const authUrl = `https://oauth.vk.com/authorize?client_id=${currentAppId}&display=page&redirect_uri=https://oauth.vk.com/blank.html&scope=notify,friends,photos,audio,video,stories,pages,notes,wall,ads,offline,docs,groups,notifications,stats,email,market&response_type=token&v=5.199`;
 
     const handlePresetClick = (id: string) => {
         setSelectedPresetId(id);

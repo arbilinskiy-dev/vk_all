@@ -13,8 +13,12 @@ export const PublishConfirmationModal: React.FC<{
         setIsPublishing(true);
         try {
             await onConfirm(post);
+            // Успешная публикация — закрываем модалку
+            onClose();
         } catch (error) {
-            // Ошибка обрабатывается родителем, но нам все равно нужно сбросить состояние загрузки
+            // Ошибка обрабатывается родителем
+        } finally {
+            // Всегда сбрасываем состояние загрузки, даже если рефреш данных упал
             setIsPublishing(false);
         }
     };

@@ -40,6 +40,7 @@ class MarketItem(BaseModel):
     sku: Optional[str] = None
     rating: Optional[float] = None
     reviews_count: Optional[int] = None
+    photo_resized_warning: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

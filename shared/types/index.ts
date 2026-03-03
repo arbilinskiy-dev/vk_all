@@ -2,7 +2,8 @@
 export interface Project {
     id: string;
     name: string;
-    team?: string;
+    team?: string;   // Устаревшее поле, сохранено для обратной совместимости
+    teams?: string[]; // Массив команд проекта
     disabled?: boolean;
     archived?: boolean;
     sort_order?: number;
@@ -34,9 +35,21 @@ export interface User {
 export interface AuthUser {
     username: string;
     role: 'admin' | 'user';
+    /** ФИО пользователя (из поля full_name в БД) */
+    full_name?: string;
     // VK авторизация (опционально)
     vk_user_id?: string;
     photo_url?: string;
+}
+
+// Данные опроса для создания через VK API (polls.create)
+export interface PollData {
+    question: string;              // Текст вопроса
+    answers: string[];             // Варианты ответов (от 1 до 10, каждый до 100 символов)
+    is_anonymous?: boolean;        // Анонимное голосование (по умолчанию false)
+    is_multiple?: boolean;         // Множественный выбор (по умолчанию false)
+    end_date?: number;             // Дата завершения опроса (Unix timestamp), 0 = бессрочный
+    disable_unvote?: boolean;      // Запретить отмену голоса
 }
 
 export interface Attachment {
@@ -46,6 +59,11 @@ export interface Attachment {
     description?: string;
     owner_id?: number;
     access_key?: string;
+    // Расширенные поля для видео
+    thumbnail_url?: string;   // URL превью-кадра видео
+    player_url?: string;      // URL встроенного плеера VK
+    // Данные для создания опроса (используется при публикации — polls.create вызывается на лету)
+    poll_data?: PollData;
 }
 
 export interface PhotoAttachment extends Attachment {
@@ -89,18 +107,28 @@ export interface ScheduledPost {
     vkPostUrl?: string;
     tags?: Tag[];
     
-    status?: 'pending_publication' | 'publishing' | 'error' | 'possible_error';
+    status?: 'pending_publication' | 'error';
 
     // Новые поля для автоматизации
     title?: string;
     description?: string;
     is_active?: boolean;
+    
+    // Поля для связи с автоматизациями (Конкурс 2.0 и т.д.)
+    post_type?: string;  // 'contest_v2_start', etc.
+    related_id?: string; // ID связанной сущности
+
+    // Флаг закрепления поста на стене при публикации
+    is_pinned?: boolean;
+
+    // Текст первого комментария (публикуется от имени сообщества)
+    first_comment_text?: string;
 }
 
 export interface SystemPost extends ScheduledPost {
     publication_date: string;
-    status: 'pending_publication' | 'publishing' | 'error' | 'possible_error';
-    post_type: 'regular' | 'contest_winner' | 'ai_feed' | 'GENERAL_CONTEST_START' | 'GENERAL_CONTEST_END' | 'general_contest_start' | 'general_contest_result';
+    status: 'pending_publication' | 'error';
+    post_type: 'regular' | 'contest_winner' | 'ai_feed' | 'GENERAL_CONTEST_START' | 'GENERAL_CONTEST_END' | 'general_contest_start' | 'general_contest_result' | 'contest_v2_start';
     images: any; 
     
     // Новые поля для автоматизации
@@ -203,6 +231,8 @@ export interface MarketItem {
     sku?: string;
     reviews_count?: number;
     rating?: number;
+    /** Предупреждение о том, что фото было автоматически увеличено до мин. размера VK (400x400) */
+    photo_resized_warning?: string;
 }
 
 export interface ProjectListMeta {
@@ -248,6 +278,7 @@ export interface SystemListSubscriber {
     deactivated?: string;
     is_closed?: boolean;
     can_access_closed?: boolean;
+    can_write_private_message?: boolean;
     source: string;
 }
 
@@ -335,6 +366,13 @@ export interface AccountStats {
     success_count: number;
     error_count: number;
     items: LogStatItem[];
+}
+
+// Сравнительная статистика по нескольким аккаунтам
+export interface CompareStats {
+    accounts: string[];  // Список ключей аккаунтов ('env' или UUID)
+    methods: string[];   // Список методов, отсортированных по популярности
+    stats_data: Record<string, Record<string, number>>;  // { account_key: { method: count } }
 }
 
 export interface AiToken {
@@ -427,6 +465,7 @@ export interface UnifiedStory {
     date: number; // Unix timestamp for display order
     type: string;
     preview: string | null;
+    video_url: string | null; // URL видеофайла для воспроизведения (только для type='video')
     link: string | null;
     
     // Status flags

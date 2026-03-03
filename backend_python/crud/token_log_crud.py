@@ -74,6 +74,16 @@ def clear_logs(db: Session, account_id: str = None):
     query.delete(synchronize_session=False)
     db.commit()
 
+def clear_old_logs(db: Session, older_than_days: int = 30) -> int:
+    """Удаляет логи VK API вызовов старше N дней. Используется в cron-задаче ротации."""
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+    count = db.query(models.TokenLog).filter(
+        models.TokenLog.timestamp < cutoff
+    ).delete(synchronize_session=False)
+    db.commit()
+    return count
+
 def delete_log(db: Session, log_id: str):
     """Удаляет одну запись лога по ID."""
     db.query(models.TokenLog).filter(models.TokenLog.id == log_id).delete(synchronize_session=False)
@@ -178,3 +188,40 @@ def get_logs_for_chart(
 
     # Сортируем по времени, чтобы упростить агрегацию
     return query.order_by(models.TokenLog.timestamp.asc()).all()
+
+
+def get_compare_stats(db: Session, account_ids: List[str]) -> List[tuple]:
+    """
+    Получает сравнительную статистику по нескольким аккаунтам.
+    Агрегирует количество вызовов по методам для каждого аккаунта.
+    
+    Возвращает: [(account_id/is_env, method, count), ...]
+    """
+    # Строим условия для фильтрации по нескольким аккаунтам
+    conditions = []
+    
+    if 'env' in account_ids:
+        conditions.append(models.TokenLog.is_env_token == True)
+    
+    uuids = [id for id in account_ids if id != 'env']
+    if uuids:
+        conditions.append(models.TokenLog.account_id.in_(uuids))
+    
+    if not conditions:
+        return []
+    
+    # Запрос с группировкой по аккаунту и методу
+    query = db.query(
+        models.TokenLog.account_id,
+        models.TokenLog.is_env_token,
+        models.TokenLog.method,
+        func.count(models.TokenLog.id).label('count')
+    ).filter(
+        or_(*conditions)
+    ).group_by(
+        models.TokenLog.account_id,
+        models.TokenLog.is_env_token,
+        models.TokenLog.method
+    ).order_by(desc('count'))
+    
+    return query.all()

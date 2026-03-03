@@ -14,6 +14,7 @@ class InitialDataResponse(BaseModel):
     allPosts: Dict = {}
     suggestedPostCounts: Dict[str, int]
     reviewsContestStatuses: Dict[str, ContestStatus] = {} # {projectId: {isActive, promoCount}}
+    storiesAutomationStatuses: Dict[str, bool] = {} # {projectId: is_active}
 
 class AllPostsForProjectsResponse(BaseModel):
     allPosts: Dict[str, List[ScheduledPost]]
@@ -59,8 +60,18 @@ class DeletePublishedPostResponse(GenericSuccess):
 class CorrectedTextResponse(BaseModel):
     correctedText: str
 
+# Элемент ответа массовой коррекции предложенных постов
+class BulkCorrectedPostItem(BaseModel):
+    id: str
+    correctedText: str
+
+# Ответ массовой коррекции всех предложенных постов
+class BulkCorrectedSuggestedPostsResponse(BaseModel):
+    results: List[BulkCorrectedPostItem]
+
 class GeneratedTextResponse(BaseModel):
     generatedText: str
+    modelUsed: Optional[str] = None
 
 class GeneratedBatchTextResponse(BaseModel):
     variations: List[str]
@@ -115,6 +126,11 @@ class GetGlobalVariablesForProjectResponse(BaseModel):
     definitions: List[GlobalVariableDefinition]
     values: List[ProjectGlobalVariableValue]
 
+class GetGlobalVariablesForMultipleProjectsResponse(BaseModel):
+    """Батч-ответ: определения + значения для всех запрошенных проектов."""
+    definitions: List[GlobalVariableDefinition]
+    valuesByProject: Dict[str, List[ProjectGlobalVariableValue]]
+
 # --- Lists Responses ---
 class SystemListSubscribersResponse(BaseModel):
     meta: ProjectListMeta
@@ -147,6 +163,13 @@ class SystemListPostsResponse(BaseModel):
 class SystemListInteractionsResponse(BaseModel):
     meta: ProjectListMeta
     items: List[SystemListInteraction]
+    total_count: int
+    page: int
+    page_size: int
+
+class UserPostsResponse(BaseModel):
+    """Ответ: посты конкретного пользователя (автора) в сообществе."""
+    items: List[SystemListPost]
     total_count: int
     page: int
     page_size: int
@@ -241,7 +264,15 @@ class TaskStatusResponse(BaseModel):
     message: Optional[str] = None
     error: Optional[str] = None
     result: Optional[Any] = None
+    # Временные метки
+    created_at: Optional[float] = None
     updated_at: Optional[float] = None
+    finished_at: Optional[float] = None
+    # Вложенный прогресс (для bulk-операций)
+    sub_loaded: Optional[int] = None
+    sub_total: Optional[int] = None
+    sub_message: Optional[str] = None
+    # Метаданные
     meta: Optional[Dict[str, str]] = None
 
 class TaskListResponse(BaseModel):
@@ -281,6 +312,13 @@ class ChartDataPoint(BaseModel):
 class AccountChartResponse(BaseModel):
     data: List[ChartDataPoint]
 
+class CompareStatsResponse(BaseModel):
+    """Ответ со сравнительной статистикой по нескольким аккаунтам."""
+    accounts: List[str]  # Список ключей аккаунтов ('env' или UUID)
+    methods: List[str]   # Список методов, отсортированных по популярности
+    stats_data: Dict[str, Dict[str, int]]  # { account_key: { method: count, ... }, ... }
+
+
 # --- Project Context Responses (NEW) ---
 class ProjectContextResponse(BaseModel):
     fields: List[ProjectContextField]
@@ -289,6 +327,30 @@ class ProjectContextResponse(BaseModel):
 class ProjectSpecificContextResponse(BaseModel):
     project_id: str
     values: Dict[str, str] # { "Название поля": "Значение" }
+
+# --- Promote to Admins Responses ---
+class PromoteUserResult(BaseModel):
+    """Результат назначения одного пользователя в одной группе."""
+    group_id: int
+    group_name: str
+    user_id: int
+    user_name: str
+    was_member: bool           # Состоял ли в группе до операции
+    joined: bool               # Успешно ли вступил (если не был участником)
+    promoted: bool             # Успешно ли назначен админом
+    already_admin: bool        # Уже был админом
+    error: Optional[str] = None
+    recommendation: Optional[str] = None  # Рекомендация пользователю при ошибке
+
+class PromoteToAdminsResponse(BaseModel):
+    """Результат массового назначения админов."""
+    success: bool
+    total_pairs: int           # Всего пар (группа × пользователь)
+    promoted_count: int        # Успешно назначено
+    already_admin_count: int   # Уже были админами
+    joined_count: int          # Пришлось вступить в группу
+    error_count: int           # Ошибки
+    results: List[PromoteUserResult]
 
 # --- AI Logs Responses ---
 class GetAiLogsResponse(BaseModel):

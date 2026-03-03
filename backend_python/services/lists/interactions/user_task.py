@@ -1,32 +1,34 @@
 
 import crud
 import models
+from models_library.interactions import PostInteraction
 from services import task_monitor
 from services.lists.list_sync_utils import get_all_project_tokens, fetch_users_smart_parallel
 from crud.lists.utils import deduplicate_users
+from crud.lists.interactions import get_interaction_user_count
 from database import SessionLocal
 
 def refresh_interaction_users_task(task_id: str, project_id: str, list_type: str, user_token: str):
     """
     Фоновая задача обновления профилей взаимодействий (Split Session).
+    Использует PostInteraction + VkProfile (нормализованная архитектура).
     """
     # --- Phase 1: Read ---
     all_vk_ids = []
     unique_tokens = []
-    model = None
 
-    if list_type == 'likes': model = models.SystemListLikes
-    elif list_type == 'comments': model = models.SystemListComments
-    elif list_type == 'reposts': model = models.SystemListReposts
+    # Маппинг list_type → PostInteraction.type
+    event_type_map = {'likes': 'like', 'comments': 'comment', 'reposts': 'repost'}
+    event_type = event_type_map.get(list_type)
     
     db = SessionLocal()
     try:
-        if not model:
+        if not event_type:
             task_monitor.update_task(task_id, "error", error="Invalid list type")
             return
 
         # Удаляем дубликаты перед обработкой
-        deduplicate_users(db, model, project_id)
+        deduplicate_users(db, PostInteraction, project_id, event_type=event_type)
 
         all_vk_ids = crud.get_all_interaction_vk_ids(db, project_id, list_type)
         unique_tokens = get_all_project_tokens(db, user_token)
@@ -75,6 +77,16 @@ def refresh_interaction_users_task(task_id: str, project_id: str, list_type: str
         
         if updates:
             crud.bulk_update_interaction_users(db, project_id, list_type, updates)
+        
+        # Обновляем метаданные (уникальные пользователи для данного типа)
+        from services.lists.list_sync_utils import get_rounded_timestamp
+        meta_count_field = f"{list_type}_count"
+        meta_date_field = f"{list_type}_last_updated"
+        real_count = get_interaction_user_count(db, project_id, list_type)
+        crud.update_list_meta(db, project_id, {
+            meta_count_field: real_count,
+            meta_date_field: get_rounded_timestamp(),
+        })
         
         task_monitor.update_task(task_id, "done")
 

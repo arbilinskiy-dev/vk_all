@@ -26,7 +26,7 @@ export const AccordionSection: React.FC<AccordionSectionProps> = ({ title, secti
             </div>
             <div
                 id={`section-content-${sectionKey}`}
-                className={`transition-all duration-500 ease-in-out overflow-hidden ${isOpen ? 'max-h-[800px] opacity-100 pb-4 px-1' : 'max-h-0 opacity-0'}`}
+                className={`transition-all duration-500 ease-in-out overflow-hidden ${isOpen ? 'max-h-[4000px] opacity-100 pb-4 px-1' : 'max-h-0 opacity-0'}`}
             >
                 {children}
             </div>

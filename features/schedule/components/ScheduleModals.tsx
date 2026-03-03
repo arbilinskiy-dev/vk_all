@@ -14,6 +14,7 @@ import { ConfirmationModal } from '../../../shared/components/modals/Confirmatio
 import { ContestWinnerPreviewModal } from './modals/ContestWinnerPreviewModal';
 import { AiFeedPreviewModal } from './modals/AiFeedPreviewModal'; // NEW
 import { GeneralContestPreviewModal } from './modals/GeneralContestPreviewModal'; // FOR GENERAL CONTEST
+import { ContestV2PublishedPreviewModal } from './modals/ContestV2PublishedPreviewModal'; // Конкурс 2.0 - опубликованный пост
 import * as api from '../../../services/api';
 import { UnifiedPost } from '../hooks/useScheduleData';
 
@@ -32,6 +33,7 @@ interface ScheduleModalsProps {
     onNavigateToContest?: () => void; 
     onNavigateToGeneralContest?: (contestId?: string) => void;
     onNavigateToAiPosts?: (postId?: string) => void; // New Prop
+    onNavigateToContestV2?: (contestId: string, projectId: string) => void; // Для Конкурс 2.0
 }
 
 export const ScheduleModals: React.FC<ScheduleModalsProps> = ({
@@ -47,25 +49,10 @@ export const ScheduleModals: React.FC<ScheduleModalsProps> = ({
     onConfirmPublish,
     onNavigateToContest,
     onNavigateToGeneralContest,
-    onNavigateToAiPosts
+    onNavigateToAiPosts,
+    onNavigateToContestV2
 }) => {
     const now = new Date();
-    
-    const handleConfirmCancelPublication = async () => {
-        if (!modalState.cancellingPublicationPost) return;
-        modalActions.setIsActionRunning(true);
-        try {
-            await api.deleteSystemPost(modalState.cancellingPublicationPost.id);
-            window.showAppToast?.("Системный пост успешно удален.", 'success');
-            await dataActions.onSystemPostsUpdate([project.id]);
-        } catch (error) {
-            const msg = error instanceof Error ? error.message : "Произошла ошибка";
-            window.showAppToast?.(`Не удалось удалить системный пост: ${msg}`, 'error');
-        } finally {
-            modalActions.setIsActionRunning(false);
-            modalActions.setCancellingPublicationPost(null);
-        }
-    };
 
     return (
         <>
@@ -122,6 +109,7 @@ export const ScheduleModals: React.FC<ScheduleModalsProps> = ({
                     onDelete={(post) => { modalActions.setViewingPost(null); modalActions.setDeletingPost(post); }}
                     onPublishNow={(post) => { modalActions.setViewingPost(null); modalActions.setPublishingPost(post); }}
                     onUpdateProject={onUpdateProject}
+                    onGoToContestSettings={onNavigateToContestV2}
                 />
             )}
             {modalState.editingPost && (
@@ -178,6 +166,23 @@ export const ScheduleModals: React.FC<ScheduleModalsProps> = ({
                     }}
                 />
             )}
+            {/* Модалка для превью опубликованного поста Конкурс 2.0 */}
+            {modalState.viewingContestV2PublishedPost && (
+                <ContestV2PublishedPreviewModal
+                    post={modalState.viewingContestV2PublishedPost}
+                    onClose={() => modalActions.setViewingContestV2PublishedPost(null)}
+                    onNavigateToSettings={() => {
+                        modalActions.setViewingContestV2PublishedPost(null);
+                        if (onNavigateToContestV2) {
+                            // Переходим в настройки конкурса 2.0
+                            const relatedId = modalState.viewingContestV2PublishedPost.related_id;
+                            if (relatedId) {
+                                onNavigateToContestV2(relatedId, project.id);
+                            }
+                        }
+                    }}
+                />
+            )}
             {modalState.deletingPost && (
                 <DeleteConfirmationModal
                     itemType="пост"
@@ -196,8 +201,7 @@ export const ScheduleModals: React.FC<ScheduleModalsProps> = ({
                     onClose={() => interactionActions.setBulkDeleteTargetCount(0)}
                     onConfirm={() => interactionActions.handleConfirmBulkDelete(
                         () => interactionActions.setBulkDeleteTargetCount(0),
-                        dataActions.handleDelete,
-                        dataActions.handleDeleteNote
+                        dataActions.handleBulkDeleteOnly
                     )}
                     isDeleting={loadingStates.isBulkDeleting}
                 />
@@ -236,28 +240,6 @@ export const ScheduleModals: React.FC<ScheduleModalsProps> = ({
                     onCancel={() => modalActions.setMovingToScheduledPost(null)}
                     isConfirming={modalState.isActionRunning}
                     confirmText="Да, перенести"
-                />
-            )}
-            {modalState.confirmingPublicationPost && (
-                 <ConfirmationModal
-                    title="Подтвердить публикацию"
-                    message={`Вы уверены, что пост опубликован корректно? Запись о возможной ошибке будет удалена из системы.`}
-                    onConfirm={() => modalActions.handleConfirmSystemPublication(modalState.confirmingPublicationPost, dataActions.onSystemPostsUpdate)}
-                    onCancel={() => modalActions.setConfirmingPublicationPost(null)}
-                    isConfirming={modalState.isActionRunning}
-                    confirmText="Да, подтверждаю"
-                    confirmButtonVariant="success"
-                />
-            )}
-            {modalState.cancellingPublicationPost && (
-                 <ConfirmationModal
-                    title="Отменить проверку публикации?"
-                    message={`Вы уверены, что хотите отменить проверку и удалить этот системный пост? Это действие необратимо.`}
-                    onConfirm={handleConfirmCancelPublication}
-                    onCancel={() => modalActions.setCancellingPublicationPost(null)}
-                    isConfirming={modalState.isActionRunning}
-                    confirmText="Да, удалить"
-                    confirmButtonVariant="danger"
                 />
             )}
             {modalState.viewingGeneralContestPost && (

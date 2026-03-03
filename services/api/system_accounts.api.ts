@@ -1,5 +1,5 @@
 
-import { SystemAccount, TokenLog, AccountStats } from '../../shared/types';
+import { SystemAccount, TokenLog, AccountStats, CompareStats } from '../../shared/types';
 import { callApi } from '../../shared/utils/apiClient';
 
 // --- SYSTEM ACCOUNTS API ---
@@ -113,4 +113,11 @@ export const getAccountChartData = async (
         accountId, granularity, metric, projectId: projectId === 'all' ? undefined : projectId 
     });
     return response;
+};
+
+/**
+ * Получает сравнительную статистику использования методов по нескольким аккаунтам.
+ */
+export const getCompareStats = async (accountIds: string[]): Promise<CompareStats> => {
+    return callApi<CompareStats>('system-accounts/stats/compare', { accountIds });
 };

@@ -59,7 +59,7 @@ export const AddBlacklistModal: React.FC<AddBlacklistModalProps> = ({ projectId,
                             onChange={(e) => setUrls(e.target.value)}
                             rows={5}
                             className="w-full border rounded-md p-2 text-sm border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 custom-scrollbar resize-none transition-shadow"
-                            placeholder="https://vk.com/id12345&#10;https://vk.com/durov"
+                            placeholder="https://vk.com/id12345&#10;https://vk.ru/durov"
                             disabled={isSaving}
                         />
                     </div>

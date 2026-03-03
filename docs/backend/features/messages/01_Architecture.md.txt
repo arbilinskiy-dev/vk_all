@@ -1,0 +1,165 @@
+
+# Архитектура модуля «Сообщения сообщества»
+
+**Роутеры:**
+- `backend_python/routers/messages.py` — основной роутер (история, отправка, SSE, прочтение)
+- `backend_python/routers/messages_stats.py` — статистика нагрузки
+
+**Сервисный пакет:** `backend_python/services/messages/`
+**CRUD:** `backend_python/crud/messages_crud.py`, `message_read_crud.py`, `message_stats_crud.py`
+**Pydantic-схемы:** `backend_python/schemas/messages_schemas.py`
+
+---
+
+## 1. Назначение модуля
+
+Модуль обеспечивает полный цикл работы с личными сообщениями сообщества ВКонтакте:
+
+- **Чтение** — загрузка и кэширование истории диалогов из VK API `messages.getHistory`
+- **Отправка** — отправка сообщений через VK API `messages.send`
+- **Real-time** — push-уведомления о новых сообщениях, прочтении и печати через SSE
+- **Прочитанность** — общий для всех менеджеров статус прочтения диалогов
+- **Статистика** — кросс-проектный дашборд нагрузки (входящие/исходящие, пиковые часы)
+- **Информация о пользователях** — авто-обновление профилей из VK API (`users.get`)
+
+---
+
+## 2. Структура пакетов
+
+### 2.1. Роутер (`routers/messages.py`)
+
+Тонкий хаб — принимает HTTP-запросы, валидирует Pydantic-схемы, делегирует всю логику в сервисы.
+
+### 2.2. Сервисный пакет (`services/messages/`)
+
+| Файл | Назначение |
+|---|---|
+| `__init__.py` | Документация пакета, список подмодулей |
+| `vk_client.py` | Получение проекта/токенов, прямые запросы к VK API |
+| `history_service.py` | История сообщений: VK API → upsert в БД → чтение из БД |
+| `parallel_loader.py` | Параллельная загрузка ВСЕХ сообщений (ThreadPoolExecutor) |
+| `send_service.py` | Отправка сообщений через `messages.send` + авто-прочтение |
+| `read_service.py` | Статусы прочитанности + SSE-публикация событий |
+| `sse_service.py` | SSE-генераторы для push-потоков (глобальный + по проекту) |
+| `sync_service.py` | Фоновая до-синхронизация новых сообщений из VK API |
+| `user_info_service.py` | Авто-обновление профиля пользователя (VK API `users.get`, TTL 24ч) |
+| `memory_cache.py` | In-memory кэш (TTL 5 мин) для снижения нагрузки на БД |
+| `conversations_init_service.py` | Единый эндпоинт инициализации (замена 4-х запросов) |
+
+### 2.3. CRUD-слой
+
+| Файл | Назначение |
+|---|---|
+| `crud/messages_crud.py` | Кэш сообщений: upsert, чтение, метаданные, направленные счётчики |
+| `crud/message_read_crud.py` | Статусы прочтения: mark-read, unread-counts (пакетно) |
+| `crud/message_stats_crud.py` | Хаб-реэкспорт из `message_stats/` (write, read, sync) |
+| `crud/message_stats/write.py` | Запись факта сообщения (вызывается из VK Callback) |
+| `crud/message_stats/read.py` | Агрегация для дашборда (сводки, графики, таблицы) |
+| `crud/message_stats/sync.py` | Синхронизация статистики из накопленных callback-логов |
+
+### 2.4. Pydantic-схемы (`schemas/messages_schemas.py`)
+
+| Схема | Назначение |
+|---|---|
+| `LoadAllRequest` | Запрос загрузки ВСЕХ сообщений диалога |
+| `SendMessageRequest` | Отправка: text + sender_id/sender_name |
+| `MarkReadRequest` | Пометка диалога как прочитанного |
+| `MarkAllReadRequest` | Пометка ВСЕХ диалогов проекта прочитанными |
+| `MarkUnreadRequest` | Пометка диалога как непрочитанного |
+| `DialogFocusRequest` | Установка/снятие фокуса менеджера на диалоге |
+| `TypingStatusRequest` | Отправка статуса «печатает» через VK API |
+| `ConversationsInitRequest` | Единая инициализация (page + sort_unread_first) |
+
+---
+
+## 3. Ключевые архитектурные решения
+
+### 3.1. Двухуровневое кэширование
+
+```
+VK API ──→ PostgreSQL/SQLite (persistent) ──→ Memory Cache (TTL 5 мин) ──→ Клиент
+```
+
+1. **БД-кэш** (`CachedMessage`, `MessageCacheMeta`) — persistent-хранение. При каждом входе в диалог делается upsert последних 200 сообщений из VK API.
+2. **Memory-кэш** (`memory_cache.py`) — in-memory dict с TTL 5 минут и thread-safe доступом. Снижает нагрузку при повторных запросах.
+
+### 3.2. Always-fresh стратегия
+
+В отличие от TTL-подхода, при каждом входе в диалог **всегда** запрашиваются последние 200 сообщений из VK API и делается upsert. Если VK API недоступен — fallback на данные из БД.
+
+### 3.3. Bulk Upsert (INSERT ... ON CONFLICT DO UPDATE)
+
+Сообщения сохраняются одним bulk-запросом. Поддерживаются оба диалекта:
+- **PostgreSQL** — `INSERT ... ON CONFLICT DO UPDATE` с COALESCE для `sent_by_id`/`sent_by_name`
+- **SQLite** — `INSERT OR REPLACE`
+
+### 3.4. Параллельная загрузка всех сообщений
+
+При наличии ≥ 2 токенов сообщества и > 400 сообщений используется `ThreadPoolExecutor`:
+- Offset-диапазоны распределяются round-robin между токенами
+- Задержка 1.5с между стартом воркеров (VK flood protection)
+- Retry для проваленных диапазонов
+- Fallback на последовательную загрузку при 1 токене
+
+### 3.5. Единый эндпоинт инициализации
+
+`POST /messages/conversations-init` заменяет 4 последовательных запроса:
+1. `getSubscribers` (обычная страница)
+2. `getSubscribers` (непрочитанные)
+3. `getUnreadCounts`
+4. `getLastMessages`
+
+Экономия ~500ms–1s за счёт устранения network waterfall. Все SQL-запросы в одной DB-сессии.
+
+---
+
+## 4. Модели базы данных
+
+### CachedMessage
+Кэш сообщений VK API в локальной БД.
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | String PK | Синтетический: `{project_id}_{vk_message_id}` |
+| `project_id` | String | ID проекта |
+| `vk_user_id` | Integer | VK user_id собеседника |
+| `vk_message_id` | Integer | ID сообщения в VK |
+| `from_id` | Integer | Автор (>0 = пользователь, <0 = сообщество) |
+| `peer_id` | Integer | ID беседы |
+| `text` | Text | Текст сообщения |
+| `date` | Integer | Unix timestamp |
+| `is_outgoing` | Boolean | Исходящее ли |
+| `is_read` | Boolean | Прочитано ли (из VK) |
+| `attachments_json` | Text | JSON вложений |
+| `keyboard_json` | Text | JSON клавиатуры бота |
+| `payload_json` | Text | Payload кнопки бота |
+| `sent_by_id` | String | ID менеджера (наша система) |
+| `sent_by_name` | String | Имя менеджера |
+
+### MessageCacheMeta
+Метаданные кэша для пары (проект, пользователь).
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | String PK | `{project_id}_{vk_user_id}` |
+| `project_id` | String | ID проекта |
+| `vk_user_id` | Integer | VK user_id |
+| `last_synced_at` | Float | Unix timestamp последней синхронизации |
+| `total_count` | Integer | Всего сообщений (из VK API) |
+| `cached_count` | Integer | Сколько закэшировано |
+| `is_fully_loaded` | Boolean | Все ли загружены |
+| `incoming_count` | Integer | Входящих сообщений |
+| `outgoing_count` | Integer | Исходящих сообщений |
+
+### MessageReadStatus
+Статус прочтения диалога (общий для всех менеджеров).
+
+| Поле | Тип | Описание |
+|---|---|---|
+| `id` | String PK | `{project_id}_{vk_user_id}` |
+| `project_id` | String | ID проекта |
+| `vk_user_id` | Integer | VK user_id |
+| `last_read_message_id` | Integer | ID сообщения, до которого прочитано |
+| `read_at` | Float | Когда прочитано |
+| `read_by` | String | Кто прочитал (manager_id) |
+

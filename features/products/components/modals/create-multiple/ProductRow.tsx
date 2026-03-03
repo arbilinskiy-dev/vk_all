@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { NewProductRow } from '../../../types';
 import { MarketAlbum } from '../../../../../shared/types';
@@ -106,6 +105,7 @@ export const ProductRow: React.FC<ProductRowProps> = ({
 
     return (
         <tr 
+            data-tempid={row.tempId}
             className={`transition-colors cursor-pointer ${rowBgClass}`}
             onClick={() => onToggleSelection(row.tempId)}
         >

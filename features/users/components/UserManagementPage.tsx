@@ -6,6 +6,9 @@ import * as api from '../../../services/api';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfirmationModal } from '../../../shared/components/modals/ConfirmationModal';
 import { VkUsersTab } from './VkUsersTab';
+import { AuthLogsTab } from './AuthLogsTab';
+import { ActiveSessionsTab } from './ActiveSessionsTab';
+import { useAuth } from '../../auth/contexts/AuthContext';
 
 const UserTable: React.FC<{
     users: User[];
@@ -76,7 +79,9 @@ const UserTable: React.FC<{
 };
 
 export const UserManagementPage: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<'users' | 'vk_users'>('users');
+    const { user: currentUser } = useAuth();
+    const isAdmin = currentUser?.role === 'admin';
+    const [activeTab, setActiveTab] = useState<'users' | 'vk_users' | 'auth_logs' | 'active_sessions'>('users');
     
     const [initialUsers, setInitialUsers] = useState<User[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -181,6 +186,12 @@ export const UserManagementPage: React.FC = () => {
                     <div className="flex gap-4 min-w-max">
                         <button onClick={() => setActiveTab('users')} className={tabClass('users')}>Пользователи</button>
                         <button onClick={() => setActiveTab('vk_users')} className={tabClass('vk_users')}>VK Пользователи</button>
+                        {isAdmin && (
+                            <button onClick={() => setActiveTab('active_sessions')} className={tabClass('active_sessions')}>Активные сессии</button>
+                        )}
+                        {isAdmin && (
+                            <button onClick={() => setActiveTab('auth_logs')} className={tabClass('auth_logs')}>Логи авторизации</button>
+                        )}
                     </div>
                 </div>
                 {activeTab === 'users' && (
@@ -216,6 +227,16 @@ export const UserManagementPage: React.FC = () => {
                 {activeTab === 'vk_users' && (
                     <div className="p-4 overflow-auto custom-scrollbar h-full">
                         <VkUsersTab />
+                    </div>
+                )}
+                {activeTab === 'active_sessions' && isAdmin && (
+                    <div className="p-4 overflow-auto custom-scrollbar h-full">
+                        <ActiveSessionsTab />
+                    </div>
+                )}
+                {activeTab === 'auth_logs' && isAdmin && (
+                    <div className="p-4 overflow-auto custom-scrollbar h-full">
+                        <AuthLogsTab />
                     </div>
                 )}
             </main>

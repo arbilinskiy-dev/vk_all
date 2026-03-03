@@ -22,6 +22,9 @@ export const useActiveTasks = () => {
     const [showDeleteSelectedConfirm, setShowDeleteSelectedConfirm] = useState(false);
     const [isDeletingAll, setIsDeletingAll] = useState(false);
     const [isDeletingSelected, setIsDeletingSelected] = useState(false);
+    
+    // Состояние вращения иконки при ручном обновлении
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // Загружаем список проектов для отображения имен
     useEffect(() => {
@@ -68,6 +71,14 @@ export const useActiveTasks = () => {
             fetchTasks();
         }, 3000);
         return () => clearInterval(intervalId);
+    }, [fetchTasks]);
+
+    // === Ручное обновление (мягкое — иконка крутится, контент остаётся) ===
+
+    const handleRefresh = useCallback(async () => {
+        setIsRefreshing(true);
+        await fetchTasks();
+        setIsRefreshing(false);
     }, [fetchTasks]);
 
     // === Обработчики удаления ===
@@ -177,6 +188,53 @@ export const useActiveTasks = () => {
         return new Date(timestamp * 1000).toLocaleTimeString('ru-RU');
     };
 
+    /**
+     * Форматирует длительность задачи в удобочитаемый формат
+     */
+    const formatDuration = (task: TaskStatusResponse): string => {
+        if (!task.created_at) return '-';
+        
+        // Если задача завершена, показываем итоговую длительность
+        if (task.finished_at) {
+            const seconds = task.finished_at - task.created_at;
+            return formatSeconds(seconds);
+        }
+        
+        // Если задача в процессе, показываем текущую длительность
+        if (task.status !== 'done' && task.status !== 'error') {
+            const now = Date.now() / 1000;
+            const seconds = now - task.created_at;
+            return formatSeconds(seconds) + '...';
+        }
+        
+        return '-';
+    };
+
+    /**
+     * Конвертирует секунды в формат "X мин Y сек"
+     */
+    const formatSeconds = (seconds: number): string => {
+        if (seconds < 0) return '-';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        if (mins === 0) {
+            return `${secs} сек`;
+        }
+        return `${mins} мин ${secs} сек`;
+    };
+
+    /**
+     * Склонение слова «задача» для русского языка.
+     * 1 задачу, 2 задачи, 5 задач
+     */
+    const pluralTasks = (n: number): string => {
+        const mod10 = n % 10;
+        const mod100 = n % 100;
+        if (mod10 === 1 && mod100 !== 11) return `${n} выбранную задачу`;
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return `${n} выбранные задачи`;
+        return `${n} выбранных задач`;
+    };
+
     const getProjectName = (projectId?: string): React.ReactNode => {
         if (!projectId) return '-';
         if (projectId === 'GLOBAL') return <span className="text-indigo-700 font-bold">ГЛОБАЛЬНОЕ ОБНОВЛЕНИЕ</span>;
@@ -188,6 +246,7 @@ export const useActiveTasks = () => {
         state: {
             tasks,
             isLoading,
+            isRefreshing,
             selectedIds,
             taskToDeleteId,
             deletingTaskId,
@@ -199,6 +258,7 @@ export const useActiveTasks = () => {
         // Действия
         actions: {
             fetchTasks,
+            handleRefresh,
             setIsLoading,
             toggleSelect,
             toggleSelectAll,
@@ -214,7 +274,9 @@ export const useActiveTasks = () => {
         helpers: {
             getStatusBadge,
             formatTime,
+            formatDuration,
             getProjectName,
+            pluralTasks,
         },
     };
 };

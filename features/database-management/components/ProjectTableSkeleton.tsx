@@ -20,7 +20,7 @@ export const ProjectTableSkeleton: React.FC<ProjectTableSkeletonProps> = ({ colu
     const visibleCols = columns.filter(c => visibleColumns[c.key]);
 
     return (
-        <div className="overflow-x-auto bg-white rounded-lg shadow border border-gray-200">
+        <div className="overflow-x-auto bg-white rounded-lg shadow border border-gray-200 custom-scrollbar">
             <table className="w-full">
                 <thead className="bg-gray-50 border-b-2 border-gray-200">
                     <tr>

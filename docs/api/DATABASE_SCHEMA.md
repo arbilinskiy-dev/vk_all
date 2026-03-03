@@ -27,6 +27,8 @@
 | `sort_order` | Integer | Порядок сортировки |
 | `created_at` | DateTime | Дата создания |
 | `updated_at` | DateTime | Дата обновления |
+| `team` | String | Команда (устаревшее, для обратной совместимости) |
+| `teams` | Text (JSON) | JSON-массив команд проекта (например `["Команда А", "Сеть Н"]`) |
 | ... | ... | И другие настройки |
 
 #### `User` — Пользователи системы
@@ -87,6 +89,7 @@
 | `likes` | Integer | Лайки |
 | `reposts` | Integer | Репосты |
 | `comments` | Integer | Комментарии |
+| `is_pinned` | Boolean | Закреплён ли пост на стене (default: false) |
 | `last_updated` | String | Время обновления кеша |
 
 #### `ScheduledPost` — Отложенные посты (кеш)
@@ -114,9 +117,10 @@
 | `scheduled_time` | DateTime | Время публикации |
 | `text` | Text | Текст |
 | `attachments` | Text (JSON) | Вложения |
-| `status` | String | pending/publishing/published/error/cancelled |
+| `status` | String | pending_publication / error (статусы publishing и possible_error удалены) |
 | `vk_post_id` | Integer | ID поста после публикации |
 | `error_message` | Text | Ошибка при публикации |
+| `first_comment_text` | Text | Текст первого комментария от имени сообщества (nullable) |
 | `created_at` | DateTime | Дата создания |
 | `updated_at` | DateTime | Дата обновления |
 
@@ -451,6 +455,23 @@
 #### `StoriesAutomationLog` — Лог автоматизации историй
 Журнал выполнения автоматизации.
 
+| Колонка | Тип | Описание |
+|---------|-----|----------|
+| `id` | String (PK) | UUID |
+| `project_id` | String (FK) | ID проекта |
+| `vk_post_id` | Integer | ID поста, из которого создана история |
+| `story_id` | Integer | ID истории в VK |
+| `status` | String | Статус (success/error) |
+| `is_active` | Boolean | Активна ли история в VK (обновляется при refresh) |
+| `stats_finalized` | Boolean | Финализирована ли статистика (default: false). Если true — VK API запросы не отправляются |
+| `views` | Integer | Количество просмотров |
+| `replies` | Integer | Количество ответов |
+| `log` | Text | Лог операции |
+| `created_at` | DateTime | Дата создания |
+
+**Ограничения:**
+- `UniqueConstraint('project_id', 'vk_post_id')` — предотвращает дублирование историй при race condition между Gunicorn-воркерами.
+
 ---
 
 ### 2.10. Системные таблицы (`models_library/system.py`)
@@ -592,6 +613,35 @@
 
 ---
 
+### 2.15. Конкурсы 2.0 (`models_library/contest_v2.py`)
+
+#### `ContestV2` — Конкурсы нового поколения
+Основная модель конкурсов версии 2.0, интегрированных с расписанием.
+
+| Колонка | Тип | Описание |
+|---------|-----|----------|
+| `id` | String (PK) | UUID конкурса |
+| `project_id` | String (FK) | ID проекта |
+| `is_active` | Boolean | Активна ли механика |
+| `title` | String | Название конкурса |
+| `description` | Text | Описание |
+| `start_type` | String | `'new_post'` \| `'existing_post'` |
+| `existing_post_link` | String | Ссылка на существующий пост VK |
+| `start_post_date` | String | Дата публикации стартового поста |
+| `start_post_time` | String | Время публикации (HH:mm) |
+| `start_post_text` | Text | Текст стартового поста |
+| `start_post_images` | Text (JSON) | Массив изображений |
+| `status` | String | draft/scheduled/active/finished/archived |
+| `vk_start_post_id` | BigInteger | ID опубликованного поста в VK |
+| `created_at` | DateTime | Дата создания |
+| `updated_at` | DateTime | Дата обновления |
+
+**Связи:**
+- При `start_type='new_post'` автоматически создаётся `SystemPost` с `post_type='contest_v2_start'`
+- При публикации `SystemPost` статус конкурса переходит в `active`
+
+---
+
 ## 3. Типы данных
 
 ### `EncryptedString` (`models_library/types.py`)
@@ -620,4 +670,4 @@
 
 ---
 
-*Последнее обновление: 23 января 2026*
+*Последнее обновление: 5 февраля 2026*

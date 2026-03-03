@@ -18,6 +18,7 @@ export * from './api/note.api';
 export * from './api/post.api';
 export * from './api/project.api';
 export * from './api/stories.api'; // Export newly created stories API
+export * from './api/storyPublish.api'; // Прямая публикация историй (фото/видео)
 export * from './api/tag.api';
 export * from './api/lists.api';
 export * from './api/system_accounts.api';
@@ -25,4 +26,10 @@ export * from './api/project_context.api';
 export * from './api/ai_token.api';
 export * from './api/automations.api';
 export * from './api/automations_ai.api';
+export * from './api/automations_general.api';
+export * from './api/contestV2.api';
 export * from './api/vk.api';
+export * from './api/bulk_edit.api';
+export * from './api/batch.api';
+export * from './api/messages.api';
+export * from './api/messages_stats.api';

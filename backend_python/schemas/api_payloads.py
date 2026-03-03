@@ -20,6 +20,10 @@ class SavePostPayload(BaseModel):
     publishNow: Optional[bool] = False
     scheduleInVk: Optional[bool] = False
 
+class PinPostPayload(BaseModel):
+    postId: str  # Формат: owner_id_post_id (например, -123456_789)
+    projectId: str
+
 class PublishPostPayload(BaseModel):
     post: ScheduledPost
     projectId: str
@@ -31,6 +35,16 @@ class DeletePostPayload(BaseModel):
 class CorrectTextPayload(BaseModel):
     text: str
     projectId: str
+
+# Элемент массива для массовой коррекции предложенных постов
+class SuggestedPostItem(BaseModel):
+    id: str
+    text: str
+
+# Payload для массовой коррекции всех предложенных постов за один запрос к AI
+class BulkCorrectSuggestedPostsPayload(BaseModel):
+    projectId: str
+    posts: List[SuggestedPostItem]
 
 class AiVariablePayload(BaseModel):
     projectId: str
@@ -58,6 +72,17 @@ class ProcessTextPayload(BaseModel):
 class CreateAlbumPayload(BaseModel):
     projectId: str
     title: str
+
+class EditMarketAlbumPayload(BaseModel):
+    """Payload для редактирования названия подборки товаров."""
+    projectId: str
+    albumId: int
+    title: str
+
+class DeleteMarketAlbumPayload(BaseModel):
+    """Payload для удаления подборки товаров."""
+    projectId: str
+    albumId: int
 
 class AlbumPayload(BaseModel):
     projectId: str
@@ -213,6 +238,7 @@ class SystemListPayload(BaseModel):
     filterBdateMonth: Optional[str] = 'any' # any, 1, 2, ... 12, unknown
     filterPlatform: Optional[str] = 'any' # any, 1 (mobile), 2 (iphone), 4 (android), 7 (web)
     filterAge: Optional[str] = 'any' # NEW
+    filterUnread: Optional[str] = 'all' # all, unread (только для mailing — фильтр по непрочитанным)
     
     # Статистика
     statsPeriod: Optional[str] = 'all' # week, month, quarter, year, all, custom
@@ -233,6 +259,19 @@ class RefreshInteractionsPayload(BaseModel):
 class RefreshPostsPayload(BaseModel):
     projectId: str
     limit: Optional[str] = '1000' # '1000' or 'all'
+
+class UserPostsPayload(BaseModel):
+    """Payload для получения постов конкретного пользователя (по signer_id / post_author_id)."""
+    projectId: str
+    vkUserId: int
+    page: int = 1
+    pageSize: int = 20
+
+# --- Admin Bulk Operations Payloads ---
+class RefreshAllPostsPayload(BaseModel):
+    """Payload для массового обновления постов всех проектов."""
+    limit: Optional[str] = '1000' # '100', '1000' or 'all'
+    mode: Optional[str] = 'limit' # 'limit' or 'actual'
 
 # --- System Accounts Payloads ---
 class AddSystemAccountsPayload(BaseModel):
@@ -269,6 +308,11 @@ class AccountChartPayload(BaseModel):
     granularity: str # 'hour', 'day', 'week', 'month'
     projectId: Optional[str] = None # Фильтр по проекту
     metric: str # 'total', 'success', 'error'
+
+class CompareStatsPayload(BaseModel):
+    """Payload для получения сравнительной статистики по нескольким аккаунтам."""
+    accountIds: List[str]  # Список ID аккаунтов (включая 'env')
+
 
 # --- Project Context Payloads (NEW) ---
 class CreateContextFieldPayload(BaseModel):
@@ -313,3 +357,10 @@ class DeleteAiLogPayload(BaseModel):
 
 class DeleteAiLogsBatchPayload(BaseModel):
     logIds: List[int]  # AI логи используют Integer ID
+
+# --- Promote to Admins (назначение админов в группы) ---
+class PromoteToAdminsPayload(BaseModel):
+    """Payload для массового назначения системных страниц админами в группах."""
+    group_ids: List[int]           # ID групп VK (проектов)
+    user_ids: List[int]            # ID пользователей VK (системных страниц)
+    role: str = 'administrator'    # Роль: administrator, editor, moderator

@@ -8,6 +8,7 @@ import { ListType, ListGroup, FilterCanWrite } from '../types';
 import { useListState } from './useListState';
 import { useListFetching } from './useListFetching';
 import { useListPolling } from './useListPolling';
+import { useMailingSSEUpdater } from './useMailingSSEUpdater';
 
 interface UseSystemListsManagerProps {
     project: Project;
@@ -33,6 +34,17 @@ export const useSystemListsManager = ({ project, activeListGroup, onActiveListGr
 
     // 3. Инициализация логики фоновых задач (передаем также методы загрузки для обновления после завершения)
     const pollers = useListPolling(project, state, setters, fetchers);
+
+    // 4. Real-time обновление рассылки через SSE (при callback message_new →
+    //    бэкенд обновляет пользователя в SystemListMailing и шлёт SSE mailing_user_updated)
+    useMailingSSEUpdater({
+        projectId: project.id,
+        activeList: state.activeList,
+        searchQuery: state.searchQuery,
+        fetchItems: fetchers.fetchItems,
+        fetchStats: fetchers.fetchStats,
+        fetchMeta: fetchers.fetchMeta,
+    });
     
     // Реф для отслеживания первого рендера (для разрешения конфликта приоритетов)
     const isFirstRun = useRef(true);

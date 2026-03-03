@@ -4,9 +4,9 @@ import { callApi } from '../../shared/utils/apiClient';
 /**
  * Генерирует текст для поста с помощью AI.
  */
-export const generatePostText = async (prompt: string, systemPrompt?: string): Promise<string> => {
-    const result = await callApi<{ generatedText: string }>('ai/generatePostText', { prompt, system_prompt: systemPrompt });
-    return result.generatedText;
+export const generatePostText = async (prompt: string, systemPrompt?: string): Promise<{ generatedText: string; modelUsed?: string }> => {
+    const result = await callApi<{ generatedText: string; modelUsed?: string }>('ai/generatePostText', { prompt, system_prompt: systemPrompt });
+    return result;
 };
 
 /**
@@ -34,6 +34,21 @@ export const correctSuggestedPostText = async (text: string, projectId: string):
 };
 
 /**
+ * Массовая коррекция всех предложенных постов одним запросом к AI.
+ * Принимает массив [{id, text}], возвращает [{id, correctedText}].
+ */
+export const bulkCorrectSuggestedPosts = async (
+    projectId: string,
+    posts: { id: string; text: string }[]
+): Promise<{ id: string; correctedText: string }[]> => {
+    const result = await callApi<{ results: { id: string; correctedText: string }[] }>(
+        'ai/bulkCorrectSuggestedPosts',
+        { projectId, posts }
+    );
+    return result.results;
+};
+
+/**
  * Запускает "умную" настройку переменных проекта.
  */
 export const runAiVariableSetup = async (
@@ -50,7 +65,7 @@ export const runAiVariableSetup = async (
 /**
  * Отправляет текст поста на обработку (рерайт, исправление ошибок и др.).
  */
-export const processPostTextWithAI = async (text: string, action: 'rewrite' | 'fix_errors' | 'shorten' | 'expand' | 'add_emoji' | 'remove_emoji', projectId: string): Promise<string> => {
-    const result = await callApi<{ generatedText: string }>('ai/processPostText', { text, action, projectId });
-    return result.generatedText;
+export const processPostTextWithAI = async (text: string, action: 'rewrite' | 'fix_errors' | 'shorten' | 'expand' | 'add_emoji' | 'remove_emoji', projectId: string): Promise<{ generatedText: string; modelUsed?: string }> => {
+    const result = await callApi<{ generatedText: string; modelUsed?: string }>('ai/processPostText', { text, action, projectId });
+    return result;
 };

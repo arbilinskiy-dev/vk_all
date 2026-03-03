@@ -102,7 +102,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ contest, onChange, pro
                                 value={contest.existing_post_link || ''}
                                 onChange={e => onChange('existing_post_link', e.target.value)}
                                 className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-shadow"
-                                placeholder="https://vk.com/wall-xxxxxx_yyyyyy"
+                                placeholder="https://vk.com/wall-xxxxxx_yyyyyy или vk.ru/wall-..."
                             />
                             <p className="text-xs text-gray-500 mt-1">Скопируйте ссылку на пост из браузера или мобильного приложения.</p>
                         </div>

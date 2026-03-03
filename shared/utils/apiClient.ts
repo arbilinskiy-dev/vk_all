@@ -49,7 +49,14 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 export const callApi = async <T = any>(endpoint: string, payload: object = {}, method: string = 'POST'): Promise<T> => {
     const url = `${API_BASE_URL}/${endpoint}`;
     
-    const headers = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    
+    // Добавляем токен сессии в каждый запрос (если есть)
+    const sessionToken = sessionStorage.getItem('vk-planner-session-token');
+    if (sessionToken) {
+        headers['X-Session-Token'] = sessionToken;
+    }
+    
     const options: RequestInit = {
         method: method,
         headers: headers,
@@ -59,17 +66,11 @@ export const callApi = async <T = any>(endpoint: string, payload: object = {}, m
         options.body = JSON.stringify(payload);
     }
 
-    const MAX_RETRIES = 1;
-    const INITIAL_DELAY = 1000; // 1 second
+    const MAX_RETRIES = 3;
+    const INITIAL_DELAY = 1000; // 1 секунда, экспоненциальный бэкофф: 1с → 2с → 4с
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
-            console.log(`🚀 API Call [SENDING] (Attempt ${attempt + 1}/${MAX_RETRIES})
-URL: ${url}
-Method: ${method}
-Endpoint: ${endpoint}
-Payload:`, payload);
-
             const response = await fetch(url, options);
             
             // Handle non-JSON responses (like 500 Internal Server Error from Nginx/Gunicorn)
@@ -96,6 +97,12 @@ Payload:`, payload);
                    }
                 } else if(result.error) {
                     errorText = result.error;
+                }
+
+                // --- ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК: СЕССИЯ ИСТЕКЛА ---
+                // Если бэкенд вернул 401 — сессия протухла или невалидна
+                if (response.status === 401 && !endpoint.startsWith('auth/')) {
+                    window.dispatchEvent(new Event('vk-planner:session-expired'));
                 }
 
                 // --- ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК ОШИБОК AI ---

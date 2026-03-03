@@ -24,7 +24,7 @@ def refresh_subscriber_details_task(task_id: str, project_id: str, user_token: s
 
         # 1. Получаем список ID всех текущих подписчиков
         # Перед этим можно сделать дедупликацию, на всякий случай
-        deduplicate_users(db, models.SystemListSubscriber, project_id)
+        deduplicate_users(db, models.ProjectMember, project_id)
         
         all_vk_ids = list(crud.get_all_subscriber_vk_ids(db, project_id))
         unique_tokens = get_all_project_tokens(db, user_token)
@@ -83,7 +83,7 @@ def refresh_subscriber_details_task(task_id: str, project_id: str, user_token: s
         timestamp = get_rounded_timestamp()
         
         # Пересчитываем кол-во на всякий случай (после дедупликации)
-        real_count = db.query(models.SystemListSubscriber).filter(models.SystemListSubscriber.project_id == project_id).count()
+        real_count = db.query(models.ProjectMember).filter(models.ProjectMember.project_id == project_id).count()
         
         crud.update_list_meta(db, project_id, {
             "subscribers_last_updated": timestamp,

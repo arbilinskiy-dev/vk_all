@@ -7,11 +7,13 @@ import * as api from '../../../../services/api/automations.api';
 import { ConfirmationModal } from '../../../../shared/components/modals/ConfirmationModal';
 import { FinalizeResultModal } from './modals/FinalizeResultModal';
 import { useAuth } from '../../../../features/auth/contexts/AuthContext'; // Импорт useAuth
+import { Project } from '../../../../shared/types';
 
 interface PostsTabProps {
     // В текущей архитектуре ReviewsContestPage не передает projectId в PostsTab явно, 
     // но лучше бы передавал. Пока возьмем из контекста, если пропс не передан (для совместимости)
-    projectId?: string; 
+    projectId?: string;
+    project?: Project; // Добавляем проп project для доступа к communityToken
 }
 
 const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
@@ -26,14 +28,20 @@ const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     }
 };
 
-export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId }) => {
+export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId, project: propProject }) => {
     // Хак для получения ID, если он не передан сверху. 
     // В идеале ReviewsContestPage должен прокидывать его.
     const { projects, allScheduledPosts } = useProjects(); 
     const { user } = useAuth(); // Получаем пользователя
     
     // Пока используем проп, ожидая, что он будет
-    const projectId = propProjectId || ""; 
+    const projectId = propProjectId || "";
+    
+    // Получаем project из пропа или ищем в контексте
+    const project = propProject || projects.find(p => p.id === projectId);
+    
+    // Проверка наличия токена сообщества
+    const hasCommunityToken = Boolean(project?.communityToken); 
 
     const { entries, isLoading, isCollecting, error, handleCollectPosts, refresh } = useContestPosts(projectId);
     
@@ -50,12 +58,21 @@ export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId }) 
     const [showResultModal, setShowResultModal] = useState(false);
     
     const handleProcessEntries = async () => {
+        // Проверка наличия токена сообщества
+        if (!hasCommunityToken) {
+            window.showAppToast?.(
+                "Для комментирования необходим токен сообщества. Добавьте его в настройках проекта (раздел 'Интеграции').",
+                'error'
+            );
+            return;
+        }
+        
         setIsProcessing(true);
         try {
             await api.processContestEntries(projectId);
             await refresh();
         } catch (e) {
-            window.showAppToast?.("Ошибка при обработке участников: " + (e instanceof Error ? e.message : String(e)), 'error');
+            window.showAppToast?.("Ошибка при обработке постов: " + (e instanceof Error ? e.message : String(e)), 'error');
         } finally {
             setIsProcessing(false);
         }
@@ -105,13 +122,14 @@ export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId }) 
     
     const newEntriesCount = entries.filter(e => e.status === 'new').length;
     const readyEntriesCount = entries.filter(e => e.status === 'commented').length;
+    const uniqueAuthorsCount = new Set(entries.map(e => e.user_vk_id)).size;
 
     return (
         <div className="flex flex-col h-full opacity-0 animate-fade-in-up">
             <div className="flex items-center justify-between mb-4">
                  <div className="flex bg-white border border-gray-200 p-1 rounded-lg shadow-sm">
                     <button className="px-4 py-2 text-sm font-medium rounded-md bg-indigo-50 text-indigo-700">
-                        Все участники
+                        Все посты
                     </button>
                 </div>
                 
@@ -131,7 +149,7 @@ export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId }) 
                             onClick={handleClearClick}
                             disabled={isClearing}
                             className="p-2 text-red-500 bg-white border border-red-200 rounded-md hover:bg-red-50 disabled:opacity-50 transition-colors shadow-sm"
-                            title="Полностью очистить список участников (для тестов)"
+                            title="Полностью очистить список постов (для тестов)"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -141,9 +159,9 @@ export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId }) 
                     
                     <button 
                         onClick={handleProcessEntries}
-                        disabled={isProcessing || newEntriesCount === 0}
+                        disabled={isProcessing || newEntriesCount === 0 || !hasCommunityToken}
                         className="px-4 py-2 text-sm font-medium rounded-md bg-white border border-green-600 text-green-700 hover:bg-green-50 disabled:opacity-50 disabled:border-gray-300 disabled:text-gray-400 flex items-center gap-2 shadow-sm transition-colors"
-                        title="Присвоить номера новым участникам"
+                        title={!hasCommunityToken ? "Для комментирования необходим токен сообщества в настройках проекта" : "Присвоить номера новым постам"}
                     >
                         {isProcessing ? <div className="loader h-4 w-4 border-2 border-green-600 border-t-transparent"></div> : <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>}
                         Прокомментировать ({newEntriesCount})
@@ -153,7 +171,7 @@ export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId }) 
                         onClick={handleFinalizeClick}
                         disabled={isProcessing || readyEntriesCount === 0}
                         className="px-4 py-2 text-sm font-medium rounded-md bg-white border border-amber-500 text-amber-600 hover:bg-amber-50 disabled:opacity-50 disabled:border-gray-300 disabled:text-gray-400 flex items-center gap-2 shadow-sm transition-colors"
-                        title="Выбрать победителя и опубликовать итоги"
+                        title="Выбрать пост-победитель и опубликовать итоги"
                     >
                         {isProcessing ? <div className="loader h-4 w-4 border-2 border-amber-600 border-t-transparent"></div> : <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>}
                         Подвести итоги ({readyEntriesCount})
@@ -173,7 +191,8 @@ export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId }) 
             <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden flex-grow flex flex-col">
                 <div className="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
                     <div className="text-sm text-gray-500">
-                        Найдено участников: <strong>{entries.length}</strong>
+                        Найдено постов: <strong>{entries.length}</strong>
+                        <span className="ml-3">Уникальных авторов: <strong>{uniqueAuthorsCount}</strong></span>
                     </div>
                 </div>
                 
@@ -181,7 +200,7 @@ export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId }) 
                     {entries.length === 0 ? (
                          <div className="flex flex-col items-center justify-center h-64 text-gray-400">
                              <p>Список пуст.</p>
-                             <p className="text-sm mt-1">Нажмите "Собрать посты", чтобы найти участников.</p>
+                             <p className="text-sm mt-1">Нажмите "Собрать посты", чтобы найти отзывы.</p>
                          </div>
                     ) : (
                         <table className="w-full text-sm text-left">
@@ -226,7 +245,9 @@ export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId }) 
                                             )}
                                         </td>
                                         <td className="px-4 py-3 text-gray-500 text-xs">
-                                            {new Date(p.created_at).toLocaleDateString()}
+                                            {p.post_date
+                                                ? new Date(p.post_date).toLocaleDateString()
+                                                : new Date(p.created_at).toLocaleDateString()}
                                         </td>
                                         <td className="px-4 py-3 text-right">
                                             <a 
@@ -252,7 +273,7 @@ export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId }) 
             {showFinalizeConfirm && (
                 <ConfirmationModal
                     title="Подвести итоги конкурса?"
-                    message={`Вы уверены, что хотите подвести итоги?\n\nБудет выбран 1 случайный победитель из ${readyEntriesCount} участников (статус "Принят").\nСистема опубликует пост с результатами на стене и попытается отправить приз победителю.`}
+                    message={`Вы уверены, что хотите подвести итоги?\n\nБудет выбран 1 случайный пост-победитель из ${readyEntriesCount} постов (статус "Принят").\nАвтору победившего поста будет отправлен приз и опубликован пост с результатами.`}
                     onConfirm={handleFinalizeConfirm}
                     onCancel={() => setShowFinalizeConfirm(false)}
                     confirmText="Да, подвести итоги"
@@ -264,8 +285,8 @@ export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId }) 
             
             {showClearConfirm && (
                 <ConfirmationModal
-                    title="Очистить базу участников?"
-                    message="ВНИМАНИЕ: Вы собираетесь удалить ВСЕХ участников текущего конкурса из базы данных. \n\nЭто действие необратимо. Статусы 'Победитель' и 'Использован' будут потеряны. Вы уверены?"
+                    title="Очистить базу постов?"
+                    message="ВНИМАНИЕ: Вы собираетесь удалить ВСЕ посты текущего конкурса из базы данных. \n\nЭто действие необратимо. Статусы 'Победитель' и 'Использован' будут потеряны. Вы уверены?"
                     onConfirm={handleClearConfirm}
                     onCancel={() => setShowClearConfirm(false)}
                     confirmText="Да, очистить"

@@ -79,13 +79,18 @@ SavePostPayload = api_payloads_module.SavePostPayload
 PublishPostPayload = api_payloads_module.PublishPostPayload
 DeletePostPayload = api_payloads_module.DeletePostPayload
 CorrectTextPayload = api_payloads_module.CorrectTextPayload
+SuggestedPostItem = api_payloads_module.SuggestedPostItem
+BulkCorrectSuggestedPostsPayload = api_payloads_module.BulkCorrectSuggestedPostsPayload
 AiVariablePayload = api_payloads_module.AiVariablePayload
 GenerateTextPayload = api_payloads_module.GenerateTextPayload
 GenerateBatchTextPayload = api_payloads_module.GenerateBatchTextPayload # Новый экспорт
 ProcessTextPayload = api_payloads_module.ProcessTextPayload 
 CreateAlbumPayload = api_payloads_module.CreateAlbumPayload
+EditMarketAlbumPayload = api_payloads_module.EditMarketAlbumPayload
+DeleteMarketAlbumPayload = api_payloads_module.DeleteMarketAlbumPayload
 AlbumPayload = api_payloads_module.AlbumPayload
 PhotosPayload = api_payloads_module.PhotosPayload
+PinPostPayload = api_payloads_module.PinPostPayload
 AlbumRefreshPayload = api_payloads_module.AlbumRefreshPayload
 PhotosRefreshPayload = api_payloads_module.PhotosRefreshPayload
 SaveNotePayload = api_payloads_module.SaveNotePayload
@@ -140,6 +145,8 @@ SystemListPayload = api_payloads_module.SystemListPayload
 AnalyzeMailingPayload = api_payloads_module.AnalyzeMailingPayload # NEW
 RefreshInteractionsPayload = api_payloads_module.RefreshInteractionsPayload
 RefreshPostsPayload = api_payloads_module.RefreshPostsPayload
+RefreshAllPostsPayload = api_payloads_module.RefreshAllPostsPayload # Admin bulk operations
+UserPostsPayload = api_payloads_module.UserPostsPayload # Посты пользователя (автора)
 
 # Схемы для системных аккаунтов
 AddSystemAccountsPayload = api_payloads_module.AddSystemAccountsPayload
@@ -153,6 +160,7 @@ ClearLogsPayload = api_payloads_module.ClearLogsPayload
 DeleteLogPayload = api_payloads_module.DeleteLogPayload
 DeleteLogsBatchPayload = api_payloads_module.DeleteLogsBatchPayload
 AccountChartPayload = api_payloads_module.AccountChartPayload
+CompareStatsPayload = api_payloads_module.CompareStatsPayload
 
 # Схемы для контекста проектов
 CreateContextFieldPayload = api_payloads_module.CreateContextFieldPayload
@@ -167,6 +175,9 @@ ClearAiLogsPayload = api_payloads_module.ClearAiLogsPayload
 DeleteAiLogPayload = api_payloads_module.DeleteAiLogPayload
 DeleteAiLogsBatchPayload = api_payloads_module.DeleteAiLogsBatchPayload
 
+# Схемы для назначения админов
+PromoteToAdminsPayload = api_payloads_module.PromoteToAdminsPayload
+
 InitialDataResponse = api_responses_module.InitialDataResponse
 AllPostsForProjectsResponse = api_responses_module.AllPostsForProjectsResponse
 ForceRefreshResponse = api_responses_module.ForceRefreshResponse
@@ -178,6 +189,8 @@ PhotosResponse = api_responses_module.PhotosResponse
 GenericSuccess = api_responses_module.GenericSuccess
 DeletePublishedPostResponse = api_responses_module.DeletePublishedPostResponse
 CorrectedTextResponse = api_responses_module.CorrectedTextResponse
+BulkCorrectedPostItem = api_responses_module.BulkCorrectedPostItem
+BulkCorrectedSuggestedPostsResponse = api_responses_module.BulkCorrectedSuggestedPostsResponse
 GeneratedTextResponse = api_responses_module.GeneratedTextResponse
 GeneratedBatchTextResponse = api_responses_module.GeneratedBatchTextResponse # Новый экспорт
 PostCountResponse = api_responses_module.PostCountResponse
@@ -195,6 +208,7 @@ FinalizeContestResponse = api_responses_module.FinalizeContestResponse
 
 # Схемы для глобальных переменных
 GetGlobalVariablesForProjectResponse = api_responses_module.GetGlobalVariablesForProjectResponse
+GetGlobalVariablesForMultipleProjectsResponse = api_responses_module.GetGlobalVariablesForMultipleProjectsResponse
 
 # Схемы для списков (НОВЫЕ)
 SystemListSubscribersResponse = api_responses_module.SystemListSubscribersResponse
@@ -203,6 +217,7 @@ SystemListHistoryResponse = api_responses_module.SystemListHistoryResponse
 SystemListPostsResponse = api_responses_module.SystemListPostsResponse
 SystemListInteractionsResponse = api_responses_module.SystemListInteractionsResponse
 SystemListAuthorsResponse = api_responses_module.SystemListAuthorsResponse # NEW
+UserPostsResponse = api_responses_module.UserPostsResponse # Посты пользователя
 SystemListMetaResponse = api_responses_module.SystemListMetaResponse
 ListStatsResponse = api_responses_module.ListStatsResponse
 
@@ -220,6 +235,7 @@ LogStatItem = api_responses_module.LogStatItem
 AccountStatsResponse = api_responses_module.AccountStatsResponse
 ChartDataPoint = api_responses_module.ChartDataPoint
 AccountChartResponse = api_responses_module.AccountChartResponse
+CompareStatsResponse = api_responses_module.CompareStatsResponse
 
 # Схемы для контекста проектов
 ProjectContextResponse = api_responses_module.ProjectContextResponse
@@ -228,3 +244,24 @@ ProjectSpecificContextResponse = api_responses_module.ProjectSpecificContextResp
 # Схемы для AI логов
 GetAiLogsResponse = api_responses_module.GetAiLogsResponse
 ScheduleRefreshResponse = api_responses_module.ScheduleRefreshResponse
+
+# Схемы для назначения админов
+PromoteUserResult = api_responses_module.PromoteUserResult
+PromoteToAdminsResponse = api_responses_module.PromoteToAdminsResponse
+
+# Схемы для массового редактирования постов
+from . import bulk_edit as bulk_edit_module
+BulkEditSearchRequest = bulk_edit_module.BulkEditSearchRequest
+BulkEditSearchResponse = bulk_edit_module.BulkEditSearchResponse
+BulkEditApplyRequest = bulk_edit_module.BulkEditApplyRequest
+BulkEditApplyResponse = bulk_edit_module.BulkEditApplyResponse
+BulkEditTaskStatus = bulk_edit_module.BulkEditTaskStatus
+TaskProgress = bulk_edit_module.TaskProgress
+TaskError = bulk_edit_module.TaskError
+FoundPost = bulk_edit_module.FoundPost
+PostToEdit = bulk_edit_module.PostToEdit
+BulkEditChanges = bulk_edit_module.BulkEditChanges
+SearchStats = bulk_edit_module.SearchStats
+SourcePostInfo = bulk_edit_module.SourcePostInfo
+MatchCriteria = bulk_edit_module.MatchCriteria
+TargetPostTypes = bulk_edit_module.TargetPostTypes

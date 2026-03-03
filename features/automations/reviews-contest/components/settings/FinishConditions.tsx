@@ -20,12 +20,12 @@ export const FinishConditions: React.FC<FinishConditionsProps> = ({ settings, on
         <div className="space-y-4 opacity-0 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
             <h3 className="text-lg font-bold text-gray-800 border-b pb-2">Условия подведения итогов</h3>
             
-            <div className="bg-gray-200 p-1 rounded-lg flex space-x-1">
+            <div className="bg-gray-200 p-1 rounded-lg flex flex-wrap gap-1">
                 {finishOptions.map(option => (
                     <button
                         key={option.id}
                         onClick={() => onChange('finishCondition', option.id)}
-                        className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap focus:outline-none ${
+                        className={`flex-1 min-w-[120px] px-3 py-2 text-sm font-medium rounded-md transition-all text-center leading-tight focus:outline-none ${
                             settings.finishCondition === option.id
                                 ? 'bg-white text-indigo-600 shadow-sm'
                                 : 'text-gray-600 hover:bg-gray-300'

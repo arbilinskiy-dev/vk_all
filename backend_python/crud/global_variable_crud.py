@@ -11,7 +11,20 @@ def get_all_definitions(db: Session) -> List[models.GlobalVariableDefinition]:
 def get_values_by_project_id(db: Session, project_id: str) -> List[models.ProjectGlobalVariableValue]:
     return db.query(models.ProjectGlobalVariableValue).filter(models.ProjectGlobalVariableValue.project_id == project_id).all()
 
-def update_all_definitions(db: Session, definitions_data: List[GlobalVariableDefinition]):
+def get_values_by_project_ids(db: Session, project_ids: List[str]) -> List[models.ProjectGlobalVariableValue]:
+    """Загрузка значений глобальных переменных для нескольких проектов одним запросом к БД."""
+    if not project_ids:
+        return []
+    return db.query(models.ProjectGlobalVariableValue).filter(
+        models.ProjectGlobalVariableValue.project_id.in_(project_ids)
+    ).all()
+
+def update_all_definitions(db: Session, definitions_data: List[GlobalVariableDefinition]) -> dict:
+    """
+    Обновляет все определения глобальных переменных.
+    Возвращает маппинг {old_temporary_id: new_real_id} для новых определений,
+    чтобы клиент мог обновить definition_id в значениях.
+    """
     all_current_def_ids = {str(d.id) for d in db.query(models.GlobalVariableDefinition.id).all()}
     all_incoming_def_ids = {d.id for d in definitions_data if not d.id.startswith('new-')}
 
@@ -21,10 +34,14 @@ def update_all_definitions(db: Session, definitions_data: List[GlobalVariableDef
         db.query(models.GlobalVariableDefinition).filter(models.GlobalVariableDefinition.id.in_(ids_to_delete)).delete(synchronize_session=False)
 
     # 2. Обновляем существующие и создаем новые определения
+    # Маппинг временных ID в реальные UUID
+    id_mapping = {}
     for def_data in definitions_data:
         if def_data.id.startswith('new-'):
+            real_id = str(uuid.uuid4())
+            id_mapping[def_data.id] = real_id
             new_db_def = models.GlobalVariableDefinition(
-                id=str(uuid.uuid4()),
+                id=real_id,
                 name=def_data.name,
                 placeholder_key=def_data.placeholder_key,
                 note=def_data.note
@@ -38,6 +55,7 @@ def update_all_definitions(db: Session, definitions_data: List[GlobalVariableDef
                 db_def.note = def_data.note
     
     db.commit()
+    return id_mapping
 
 def update_values_for_project(db: Session, project_id: str, values_data: List[Dict[str, str]]):
     # Операция upsert (update/insert). Проще всего удалить все старые значения для проекта и вставить новые.

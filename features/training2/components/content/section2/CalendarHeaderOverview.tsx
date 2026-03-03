@@ -1,0 +1,386 @@
+import React from 'react';
+import { ContentProps } from '../shared';
+import { CalendarHeaderSandbox } from './CalendarHeaderSandbox';
+
+// =====================================================================
+// Основной компонент: Обзор шапки календаря
+// =====================================================================
+export const CalendarHeaderOverview: React.FC<ContentProps> = ({ title }) => {
+    return (
+        <article className="prose prose-indigo max-w-none">
+            {/* Заголовок */}
+            <h1 className="!text-3xl !font-bold !tracking-tight !text-gray-900 !border-b !pb-4 !mb-6">{title}</h1>
+
+            <p className="!text-base !leading-relaxed !text-gray-700">
+                <strong>Шапка календаря</strong> — это панель инструментов над сеткой календаря, 
+                которая содержит <strong>все необходимые элементы для навигации и управления контентом</strong>. 
+                Это твой главный инструмент для работы с календарём постов и заметок.
+            </p>
+
+            <div className="not-prose bg-indigo-50 border border-indigo-200 rounded-lg p-4 my-6">
+                <p className="text-sm text-indigo-800">
+                    <strong>Главная идея:</strong> Шапка календаря — это "пульт управления" временем. 
+                    Здесь собраны все инструменты для навигации, переключения режимов, обновления данных 
+                    и массовых операций.
+                </p>
+            </div>
+
+            <hr className="!my-10" />
+
+            {/* Интерактивная демонстрация */}
+            <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">Как выглядит и работает шапка?</h2>
+
+            <p className="!text-base !leading-relaxed !text-gray-700">
+                Шапка располагается прямо над сеткой календаря и визуально разделена на две части: 
+                <strong>левую</strong> (навигация и просмотр) и <strong>правую</strong> (действия и управление). 
+                Попробуй интерактивную демонстрацию ниже:
+            </p>
+
+            <CalendarHeaderSandbox />
+
+            <hr className="!my-10" />
+
+            {/* Из чего состоит */}
+            <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">Из чего состоит шапка календаря?</h2>
+
+            <p className="!text-base !leading-relaxed !text-gray-700">
+                Шапка календаря состоит из <strong>7 главных инструментов</strong>, каждый из которых решает свою задачу:
+            </p>
+
+            <div className="not-prose space-y-4 my-8">
+                {/* Инструмент 1 */}
+                <div className="border-l-4 border-blue-400 pl-4 py-3 bg-blue-50 rounded-r-lg">
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <span className="text-lg font-bold text-blue-700">1️⃣</span>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-blue-900 mb-2">Навигация по датам</h3>
+                            <p className="text-sm text-gray-700">
+                                Единый блок с тремя кнопками (стрелки назад/вперёд и "Сегодня") для переключения между неделями. 
+                                Позволяют быстро перемещаться по календарю и возвращаться к текущей дате.
+                            </p>
+                            <p className="text-xs text-gray-600 mt-2">
+                                📌 <strong>Что узнаешь:</strong> Как работают кнопки навигации, правило "лента времени", 
+                                взаимодействие с режимами просмотра.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Инструмент 2 */}
+                <div className="border-l-4 border-green-400 pl-4 py-3 bg-green-50 rounded-r-lg">
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <span className="text-lg font-bold text-green-700">2️⃣</span>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-green-900 mb-2">Режимы отображения</h3>
+                            <p className="text-sm text-gray-700">
+                                Переключатель с двумя кнопками в одном блоке (с серым фоном и белой активной кнопкой) между режимами 
+                                "Неделя" (Пн-Вс) и "Сегодня" (7 дней от сегодня). Каждый режим подходит для разных сценариев работы.
+                            </p>
+                            <p className="text-xs text-gray-600 mt-2">
+                                📌 <strong>Что узнаешь:</strong> В чём разница между режимами, когда использовать 
+                                каждый, как они работают с навигацией. Обрати внимание: это НЕ табы с подчёркиванием, 
+                                а переключатель с белым фоном активной кнопки — сделано для компактности.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Инструмент 3 */}
+                <div className="border-l-4 border-purple-400 pl-4 py-3 bg-purple-50 rounded-r-lg">
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <span className="text-lg font-bold text-purple-700">3️⃣</span>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-purple-900 mb-2">Управление видимостью заметок</h3>
+                            <p className="text-sm text-gray-700">
+                                Кнопка с иконкой видимости для управления отображением заметок в календаре. 
+                                Переключает между тремя режимами: развёрнуто (все поля видны), свёрнуто (только заголовок), скрыто (не видны вообще).
+                            </p>
+                            <p className="text-xs text-gray-600 mt-2">
+                                📌 <strong>Что узнаешь:</strong> Как работают три режима видимости, когда сворачивать 
+                                заметки для экономии места, когда скрывать полностью.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Инструмент 4 */}
+                <div className="border-l-4 border-orange-400 pl-4 py-3 bg-orange-50 rounded-r-lg">
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <span className="text-lg font-bold text-orange-700">4️⃣</span>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-orange-900 mb-2">Кнопка "Обновить"</h3>
+                            <p className="text-sm text-gray-700">
+                                Кнопка, которая при нажатии открывает <strong>горизонтальную панель справа</strong> (не выпадающее меню вниз!) 
+                                с 7 вариантами обновления: Опубликованные, Отложенные, Системные, Истории, Обновление тегов (автоматическая перерасстановка), Заметки и "Всё". 
+                                Панель выезжает плавно с анимацией.
+                            </p>
+                            <p className="text-xs text-gray-600 mt-2">
+                                📌 <strong>Что узнаешь:</strong> Зачем нужно выборочное обновление, как работает 
+                                каждый тип, что даёт обновление тегов, когда обновлять все данные сразу.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Инструмент 5 */}
+                <div className="border-l-4 border-red-400 pl-4 py-3 bg-red-50 rounded-r-lg">
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <span className="text-lg font-bold text-red-700">5️⃣</span>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-red-900 mb-2">Массовые действия</h3>
+                            <p className="text-sm text-gray-700">
+                                Кнопка "Выбрать" активирует режим массового выделения постов и заметок. 
+                                При активации <strong>текст кнопки меняется на "Отмена"</strong>, и справа выезжает панель 
+                                с действиями (показывает количество выбранных, кнопки "Снять выделение" и "Удалить").
+                            </p>
+                            <p className="text-xs text-gray-600 mt-2">
+                                📌 <strong>Что узнаешь:</strong> Как работает режим выбора, какие действия доступны, 
+                                как отменить выбор, почему панель выезжает только при наличии выбранных элементов.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Инструмент 6 */}
+                <div className="border-l-4 border-teal-400 pl-4 py-3 bg-teal-50 rounded-r-lg">
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-teal-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <span className="text-lg font-bold text-teal-700">6️⃣</span>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-teal-900 mb-2">Управление тегами и их видимость</h3>
+                            <p className="text-sm text-gray-700">
+                                <strong>Две отдельные кнопки:</strong> первая (иконка бирки) открывает всплывающее окно для управления 
+                                тегами (создание, редактирование, удаление), вторая (иконка глаза) переключает видимость тегов 
+                                в календаре (показать/скрыть).
+                            </p>
+                            <p className="text-xs text-gray-600 mt-2">
+                                📌 <strong>Что узнаешь:</strong> Разница между управлением тегами и их видимостью, 
+                                когда открывать окно настройки, когда просто скрывать теги для удобства просмотра.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Инструмент 7 */}
+                <div className="border-l-4 border-indigo-400 pl-4 py-3 bg-indigo-50 rounded-r-lg">
+                    <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <span className="text-lg font-bold text-indigo-700">7️⃣</span>
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-indigo-900 mb-2">Поиск и создание заметки</h3>
+                            <p className="text-sm text-gray-700">
+                                <strong>Поиск постов:</strong> поле ввода с иконкой лупы для быстрого поиска постов по тексту. 
+                                При вводе под полем появляются найденные посты, клик по посту переводит календарь на эту дату. 
+                                <strong>Создание заметки:</strong> кнопка с иконкой карандаша для создания новой заметки 
+                                с автоматической установкой текущей даты — более очевидный способ, чем двойной клик по ячейке.
+                            </p>
+                            <p className="text-xs text-gray-600 mt-2">
+                                📌 <strong>Что узнаешь:</strong> Как работает поиск постов, разница между кнопкой создания 
+                                и двойным кликом по ячейке, когда использовать каждый способ.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <hr className="!my-10" />
+
+            {/* Логика расположения */}
+            <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">
+                Почему инструменты расположены именно так?
+            </h2>
+
+            <p className="!text-base !leading-relaxed !text-gray-700">
+                Расположение элементов в шапке не случайно — оно подчиняется логике использования:
+            </p>
+
+            <div className="not-prose my-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
+                        <span className="text-xl">←</span>
+                        Левая часть: Навигация и просмотр
+                    </h4>
+                    <ul className="text-sm text-gray-700 space-y-1">
+                        <li>• <strong>Отображение месяца и дат</strong> — текущий период просмотра</li>
+                        <li>• <strong>Режимы отображения</strong> — как смотреть на календарь (переключатель)</li>
+                        <li>• <strong>Навигация по датам</strong> — единый блок с стрелками и "Сегодня"</li>
+                        <li>• <strong>Поиск постов</strong> — быстрый поиск по тексту с переходом</li>
+                    </ul>
+                    <p className="text-xs text-gray-600 mt-3">
+                        Эти инструменты используются <strong>постоянно</strong> и должны быть 
+                        под левой рукой (для правшей).
+                    </p>
+                </div>
+
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <h4 className="font-bold text-green-900 mb-2 flex items-center gap-2">
+                        Правая часть: Действия и управление
+                        <span className="text-xl">→</span>
+                    </h4>
+                    <ul className="text-sm text-gray-700 space-y-1">
+                        <li>• <strong>Создание заметки</strong> — кнопка с иконкой карандаша</li>
+                        <li>• <strong>Видимость заметок</strong> — 3 состояния (развёрнуто/свёрнуто/скрыто)</li>
+                        <li>• <strong>Управление тегами</strong> — всплывающее окно настройки</li>
+                        <li>• <strong>Видимость тегов</strong> — показать/скрыть (отдельная кнопка)</li>
+                        <li>• <strong>Обновление</strong> — горизонтальная панель с 7 вариантами</li>
+                        <li>• <strong>Массовые действия</strong> — "Выбрать" → "Отмена" + панель</li>
+                    </ul>
+                    <p className="text-xs text-gray-600 mt-3">
+                        Эти инструменты используются <strong>периодически</strong> и логически 
+                        сгруппированы по типу действия.
+                    </p>
+                </div>
+            </div>
+
+            <hr className="!my-10" />
+
+            {/* Что изучить дальше */}
+            <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">
+                Что изучить дальше?
+            </h2>
+
+            <p className="!text-base !leading-relaxed !text-gray-700">
+                Теперь, когда ты понимаешь общую структуру шапки календаря, изучи каждый инструмент подробнее:
+            </p>
+
+            <div className="not-prose my-6">
+                <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-lg p-6">
+                    <h3 className="font-bold text-indigo-900 mb-4 flex items-center gap-2">
+                        <span className="text-xl">📚</span>
+                        Рекомендованный порядок изучения:
+                    </h3>
+                    <ol className="space-y-2 text-sm text-gray-700">
+                        <li className="flex items-start gap-2">
+                            <span className="font-bold text-indigo-600 flex-shrink-0">1.</span>
+                            <span>
+                                <strong>Навигация по датам</strong> — базовое перемещение единым блоком кнопок, 
+                                без которого невозможна работа с календарём.
+                            </span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="font-bold text-indigo-600 flex-shrink-0">2.</span>
+                            <span>
+                                <strong>Режимы отображения</strong> — понять разницу между "Неделя" и "Сегодня", 
+                                выбрать свой стиль работы. Обратить внимание на дизайн переключателя с белой активной кнопкой.
+                            </span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="font-bold text-indigo-600 flex-shrink-0">3.</span>
+                            <span>
+                                <strong>Поиск постов</strong> — быстрый способ найти нужный пост 
+                                и перейти к нему в календаре.
+                            </span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="font-bold text-indigo-600 flex-shrink-0">4.</span>
+                            <span>
+                                <strong>Управление видимостью заметок</strong> — научиться переключать между 
+                                тремя режимами отображения заметок.
+                            </span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="font-bold text-indigo-600 flex-shrink-0">5.</span>
+                            <span>
+                                <strong>Теги (управление и видимость)</strong> — понять разницу между 
+                                двумя кнопками тегов: всплывающим окном настройки и простым скрытием.
+                            </span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="font-bold text-indigo-600 flex-shrink-0">6.</span>
+                            <span>
+                                <strong>Кнопка "Обновить"</strong> — понять, как работает горизонтальная панель 
+                                с 7 вариантами обновления данных из ВКонтакте.
+                            </span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="font-bold text-indigo-600 flex-shrink-0">7.</span>
+                            <span>
+                                <strong>Массовые действия</strong> — освоить продвинутый инструмент 
+                                с выезжающей панелью для работы с большими объёмами.
+                            </span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                            <span className="font-bold text-indigo-600 flex-shrink-0">8.</span>
+                            <span>
+                                <strong>Создание заметки</strong> — узнать альтернативный способ 
+                                создания заметок через кнопку с иконкой карандаша.
+                            </span>
+                        </li>
+                    </ol>
+                </div>
+            </div>
+
+            <hr className="!my-10" />
+
+            {/* Совет эксперта */}
+            <div className="not-prose bg-gradient-to-r from-indigo-50 to-purple-50 border-l-4 border-indigo-600 rounded-lg p-6 my-8">
+                <div className="flex items-start gap-4">
+                    <div className="flex-shrink-0">
+                        <div className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center">
+                            <span className="text-white text-xl">💡</span>
+                        </div>
+                    </div>
+                    <div>
+                        <h3 className="text-lg font-bold text-gray-800 mb-2">Совет эксперта</h3>
+                        <p className="text-sm text-gray-700 leading-relaxed">
+                            <strong>Не пытайся запомнить все инструменты сразу.</strong> Начни с базовой навигации 
+                            (кнопки "Назад"/"Вперёд"/"Сегодня") и режима "Неделя". Это 90% твоей работы. 
+                            Остальные инструменты осваивай по мере необходимости.
+                        </p>
+                        <p className="text-sm text-gray-700 leading-relaxed mt-3">
+                            <strong>Создай себе привычку:</strong> каждое утро открывай приложение, нажимай 
+                            "Сегодня" (чтобы быть на текущей неделе), переключись в режим "Сегодня" 
+                            (если планируешь ближайшие 7 дней) и обнови отложенные посты, чтобы видеть 
+                            актуальную картину дня.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <hr className="!my-10" />
+
+            {/* Заключение */}
+            <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">Итоги</h2>
+
+            <p className="!text-base !leading-relaxed !text-gray-700">
+                <strong>Шапка календаря</strong> — это твой главный "пульт управления" для работы с контентом 
+                во времени. Она содержит:
+            </p>
+
+            <ul className="!text-base !leading-relaxed !text-gray-700 space-y-2">
+                <li>
+                    <strong>7 ключевых инструментов</strong> для навигации, поиска, просмотра и управления контентом
+                </li>
+                <li>
+                    <strong>Логичное разделение</strong> на левую часть (навигация, режимы, поиск) и правую часть (действия, видимость, обновление)
+                </li>
+                <li>
+                    <strong>Умная анимация</strong> — выезжающие панели для обновления и массовых действий экономят место
+                </li>
+                <li>
+                    <strong>Покрытие всех сценариев</strong> — от простого перемещения до сложных массовых операций
+                </li>
+                <li>
+                    <strong>Интуитивное расположение</strong> — самое используемое слева, редкое справа
+                </li>
+            </ul>
+
+            <p className="!text-base !leading-relaxed !text-gray-700">
+                Изучи каждый инструмент отдельно в подразделах, чтобы стать мастером календарного планирования! 
+                📅✨
+            </p>
+        </article>
+    );
+};

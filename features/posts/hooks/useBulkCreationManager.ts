@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { ScheduledPost } from '../../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -46,6 +46,20 @@ export const useBulkCreationManager = (
     const [isMultiProjectMode, setIsMultiProjectMode] = useState(false);
     const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set([projectId]));
 
+    // Состояния для сдвига времени при мультипроектной публикации
+    const [timeShiftEnabled, setTimeShiftEnabled] = useState(false);
+    const [timeShiftDays, setTimeShiftDays] = useState(0);
+    const [timeShiftHours, setTimeShiftHours] = useState(0);
+    const [timeShiftMinutes, setTimeShiftMinutes] = useState(10);
+    const [orderedProjectIds, setOrderedProjectIds] = useState<string[]>([projectId]);
+
+    // Индивидуальные даты/время для каждого проекта в мультипроектном режиме
+    const [projectDateTimes, setProjectDateTimesRaw] = useState<Record<string, { date: string; time: string }>>({
+        [projectId]: { date: initialDate, time: initialTime }
+    });
+    // Набор проектов с ручной настройкой даты/времени (не пересчитываются автоматически)
+    const [customOverrideIds, setCustomOverrideIds] = useState<Set<string>>(new Set());
+
     const isFutureDate = useMemo(() => {
         if (!dateSlots[0]?.date) return false;
         const postDate = new Date(dateSlots[0].date);
@@ -60,6 +74,92 @@ export const useBulkCreationManager = (
             setSelectedProjectIds(new Set([projectId]));
         }
     }, [isMultiProjectMode, projectId]);
+
+    // Синхронизация orderedProjectIds с selectedProjectIds
+    useEffect(() => {
+        setOrderedProjectIds(prev => {
+            // Убираем проекты, которые больше не выбраны
+            const filtered = prev.filter(id => selectedProjectIds.has(id));
+            // Добавляем новые проекты в конец
+            const newIds = Array.from(selectedProjectIds).filter(id => !prev.includes(id));
+            return [...filtered, ...newIds];
+        });
+    }, [selectedProjectIds]);
+
+    // При выключении мультипроектного режима — сбрасываем сдвиг и ручные настройки
+    useEffect(() => {
+        if (!isMultiProjectMode) {
+            setTimeShiftEnabled(false);
+            setOrderedProjectIds([projectId]);
+            setCustomOverrideIds(new Set());
+        }
+    }, [isMultiProjectMode, projectId]);
+
+    // Синхронизация индивидуальных дат/времени проектов с базовыми параметрами
+    const baseDateValue = dateSlots[0]?.date;
+    const baseTimeValue = dateSlots[0]?.time;
+
+    useEffect(() => {
+        if (!isMultiProjectMode) return;
+        if (!baseDateValue || !baseTimeValue) return;
+
+        const orderedSelected = orderedProjectIds.filter(id => selectedProjectIds.has(id));
+
+        setProjectDateTimesRaw(prev => {
+            const next: Record<string, { date: string; time: string }> = {};
+
+            orderedSelected.forEach((id, index) => {
+                if (customOverrideIds.has(id) && prev[id]) {
+                    // Сохраняем ручную настройку
+                    next[id] = prev[id];
+                } else {
+                    // Рассчитываем автоматически (с учётом сдвига)
+                    const base = new Date(`${baseDateValue}T${baseTimeValue}:00`);
+                    if (timeShiftEnabled && index > 0) {
+                        const shiftMs = (
+                            timeShiftDays * 24 * 60 * 60 * 1000 +
+                            timeShiftHours * 60 * 60 * 1000 +
+                            timeShiftMinutes * 60 * 1000
+                        ) * index;
+                        base.setTime(base.getTime() + shiftMs);
+                    }
+                    const { dateString, timeString } = getLocalDateParts(base);
+                    next[id] = { date: dateString, time: timeString };
+                }
+            });
+
+            return next;
+        });
+    }, [isMultiProjectMode, selectedProjectIds, orderedProjectIds, baseDateValue, baseTimeValue, timeShiftEnabled, timeShiftDays, timeShiftHours, timeShiftMinutes, customOverrideIds]);
+
+    // Установить дату/время для конкретного проекта (ручная настройка)
+    const setProjectDateTime = useCallback((projId: string, field: 'date' | 'time', value: string) => {
+        setProjectDateTimesRaw(prev => ({
+            ...prev,
+            [projId]: {
+                ...(prev[projId] || { date: baseDateValue || initialDate, time: baseTimeValue || initialTime }),
+                [field]: value,
+            }
+        }));
+        setCustomOverrideIds(prev => new Set(prev).add(projId));
+    }, [baseDateValue, baseTimeValue, initialDate, initialTime]);
+
+    // Сбросить ручную настройку для проекта (вернуть к авторасчету)
+    const resetProjectDateTime = useCallback((projId: string) => {
+        setCustomOverrideIds(prev => {
+            const next = new Set(prev);
+            next.delete(projId);
+            return next;
+        });
+    }, []);
+
+    // Обёртка для включения/выключения сдвига времени (сбрасывает все ручные настройки)
+    const handleToggleTimeShift = useCallback((enabled: boolean) => {
+        setTimeShiftEnabled(enabled);
+        if (enabled) {
+            setCustomOverrideIds(new Set());
+        }
+    }, []);
 
     const handleAddDateSlot = () => {
         setDateSlots(prev => {
@@ -80,12 +180,31 @@ export const useBulkCreationManager = (
         setDateSlots(prev => prev.map(slot => slot.id === id ? { ...slot, [field]: value } : slot));
     };
 
+    // Функция для изменения порядка проектов (drag-n-drop)
+    const reorderProjects = (fromIndex: number, toIndex: number) => {
+        setOrderedProjectIds(prev => {
+            const result = [...prev];
+            const [removed] = result.splice(fromIndex, 1);
+            result.splice(toIndex, 0, removed);
+            return result;
+        });
+    };
+
     return {
         bulkState: {
             dateSlots,
             isBulkMode,
             isMultiProjectMode,
             selectedProjectIds,
+            // Сдвиг времени
+            timeShiftEnabled,
+            timeShiftDays,
+            timeShiftHours,
+            timeShiftMinutes,
+            orderedProjectIds,
+            // Индивидуальные даты проектов
+            projectDateTimes,
+            customOverrideIds,
         },
         bulkActions: {
             setIsBulkMode,
@@ -94,6 +213,15 @@ export const useBulkCreationManager = (
             handleAddDateSlot,
             handleRemoveDateSlot,
             handleDateSlotChange,
+            // Сдвиг времени
+            handleToggleTimeShift,
+            setTimeShiftDays,
+            setTimeShiftHours,
+            setTimeShiftMinutes,
+            reorderProjects,
+            // Индивидуальные даты проектов
+            setProjectDateTime,
+            resetProjectDateTime,
         },
         isFutureDate,
     };

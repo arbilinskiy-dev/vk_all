@@ -2,15 +2,33 @@
 import React from 'react';
 import { ContestSettings } from '../../types';
 import { CustomDatePicker } from '../../../../../shared/components/pickers/CustomDatePicker';
+import { Project } from '../../../../../shared/types';
 
 interface MainSettingsProps {
     settings: ContestSettings;
     onChange: (field: keyof ContestSettings, value: any) => void;
+    project: Project; // Добавляем project для проверки токена сообщества
 }
 
-export const MainSettings: React.FC<MainSettingsProps> = ({ settings, onChange }) => {
+export const MainSettings: React.FC<MainSettingsProps> = ({ settings, onChange, project }) => {
     const inputClass = "w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-shadow";
     const labelClass = "block text-sm font-semibold text-gray-700 mb-2";
+    
+    // Проверка наличия токена сообщества
+    const hasCommunityToken = Boolean(project?.communityToken);
+    
+    // Обработчик переключения активности с проверкой токена
+    const handleToggleActive = () => {
+        // Если пытаются активировать конкурс без токена сообщества
+        if (!settings.isActive && !hasCommunityToken) {
+            window.showAppToast?.(
+                "Для активации конкурса необходим токен сообщества. Добавьте его в настройках проекта (раздел 'Интеграции').",
+                'error'
+            );
+            return;
+        }
+        onChange('isActive', !settings.isActive);
+    };
 
     return (
         <div className="space-y-6 opacity-0 animate-fade-in-up">
@@ -21,15 +39,20 @@ export const MainSettings: React.FC<MainSettingsProps> = ({ settings, onChange }
                     <div>
                         <label className="block text-sm font-medium text-gray-800">Активность механики</label>
                         <p className="text-xs text-gray-500 mt-1">Включите, чтобы запустить автоматический сбор и обработку постов.</p>
+                        {!hasCommunityToken && (
+                            <p className="text-xs text-amber-600 mt-1 font-medium">
+                                ⚠️ Требуется токен сообщества в настройках проекта
+                            </p>
+                        )}
                     </div>
                     <button
-                        onClick={() => onChange('isActive', !settings.isActive)}
-                        className={`relative inline-flex items-center h-6 w-11 rounded-full transition-colors focus:outline-none ${
+                        onClick={handleToggleActive}
+                        className={`relative inline-flex items-center h-6 w-11 shrink-0 p-0 border-0 rounded-full transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-indigo-100 ${
                             settings.isActive ? 'bg-indigo-600' : 'bg-gray-300'
                         }`}
                     >
                         <span
-                            className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${
+                            className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform shadow-sm ${
                                 settings.isActive ? 'translate-x-6' : 'translate-x-1'
                             }`}
                         />
@@ -69,12 +92,12 @@ export const MainSettings: React.FC<MainSettingsProps> = ({ settings, onChange }
                     </div>
                      <button
                         onClick={() => onChange('autoBlacklist', !settings.autoBlacklist)}
-                        className={`relative inline-flex items-center h-6 w-11 rounded-full transition-colors focus:outline-none ${
+                        className={`relative inline-flex items-center h-6 w-11 shrink-0 p-0 border-0 rounded-full transition-colors cursor-pointer focus:outline-none focus:ring-4 focus:ring-indigo-100 ${
                             settings.autoBlacklist ? 'bg-indigo-600' : 'bg-gray-300'
                         }`}
                     >
                         <span
-                            className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${
+                            className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform shadow-sm ${
                                 settings.autoBlacklist ? 'translate-x-6' : 'translate-x-1'
                             }`}
                         />

@@ -1,20 +1,40 @@
 # VK Callback Event System
 
-Модульная система для обработки событий от VK Callback API.
+> ⚠️ **Этот файл устарел.** Полная документация доступна в папке:  
+> **[docs/backend/vk_callback/](vk_callback/)** — 6 файлов с детальной документацией.
+>
+> Краткие ссылки:
+> - [Ссылки на документацию VK API](vk_callback/01_VK_DOCUMENTATION_LINKS.md)
+> - [Архитектура системы](vk_callback/02_ARCHITECTURE.md)
+> - [Справочник типов событий](vk_callback/03_EVENT_TYPES.md)
+> - [Как добавить хендлер](vk_callback/04_HANDLER_GUIDE.md)
+> - [Конфигурация](vk_callback/05_CONFIGURATION.md)
+> - [Запуск и деплой](vk_callback/06_DEPLOYMENT.md)
+
+---
+
+Модульная система обработки событий от VK Callback API  
+с Redis-очередью, middleware-пайплайном и авторегистрацией хендлеров (v2).
 
 ## Архитектура
 
 ```
 services/vk_callback/
-├── __init__.py          # Экспорт публичного API
-├── dispatcher.py        # Главный диспетчер событий
-├── models.py            # Типы данных и Pydantic модели
-├── debounce.py          # Защита от дублирования действий
-└── handlers/            # Обработчики событий
-    ├── __init__.py      # Регистрация всех handlers
-    ├── base.py          # Базовый класс обработчика
-    ├── confirmation.py  # Обработчик подтверждения сервера
-    └── wall.py          # Обработчики событий стены
+├── __init__.py              # Публичный API + ASCII-схема
+├── config.py                # CallbackConfig (все параметры)
+├── models.py                # EventType (40+ типов), CallbackEvent, HandlerResult
+├── event_bus.py             # Redis-очередь (LPUSH/BRPOP, FIFO)
+├── registry.py              # HandlerRegistry — авторегистрация
+├── dispatcher.py            # confirmation синхронно, остальное → Redis
+├── debounce.py              # Redis-based debounce / cooldown / dedup
+├── worker.py                # Потребитель + embedded mode для продакшена
+├── middleware/               # Pipeline: dedup → rate limit → secret
+│   ├── base.py, deduplicator.py, rate_limiter.py, secret_validator.py
+└── handlers/                # Обработчики по категориям (14 папок)
+    ├── confirmation/, wall/ (4), wall_comments/, messages/,
+    │   photos/, videos/, audio/, likes/, market/, board/,
+    │   members/, group_management/, polls/, donut/
+    └── base.py              # BaseEventHandler
 ```
 
 ## Поддерживаемые события

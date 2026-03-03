@@ -60,11 +60,22 @@ export const PostDateTimePicker: React.FC<PostDateTimePickerProps> = ({
 
     if ((mode === 'edit' && publicationMethod !== 'now') || mode === 'view') {
         const isDisabled = isPublished && !isNewOrCopy;
+
+        /** Устанавливает текущую дату и время + 2 минуты */
+        const handleSetNow = () => {
+            const now = new Date();
+            now.setMinutes(now.getMinutes() + 2);
+            const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+            const timeStr = now.toTimeString().slice(0, 5);  // HH:MM
+            onDateSlotChange(dateSlots[0].id, 'date', dateStr);
+            onDateSlotChange(dateSlots[0].id, 'time', timeStr);
+        };
+
         return (
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Дата и время</label>
                 {mode === 'edit' ? (
-                    <div className="flex gap-2" title={isDisabled ? "Дату и время опубликованного поста изменять нельзя" : ""}>
+                    <div className="flex gap-2 items-center" title={isDisabled ? "Дату и время опубликованного поста изменять нельзя" : ""}>
                         <CustomDatePicker 
                             value={dateSlots[0].date}
                             onChange={(val) => onDateSlotChange(dateSlots[0].id, 'date', val)}
@@ -77,6 +88,18 @@ export const PostDateTimePicker: React.FC<PostDateTimePickerProps> = ({
                             disabled={isDisabled}
                             className="w-32"
                         />
+                        {!isDisabled && (
+                            <button
+                                type="button"
+                                onClick={handleSetNow}
+                                title="Установить текущую дату и время (+2 мин)"
+                                className="flex-shrink-0 p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <p className="text-sm text-gray-800 bg-gray-50 p-2 rounded-md border border-gray-200">{new Date(originalPostDate).toLocaleString('ru-RU', { dateStyle: 'long', timeStyle: 'short' })}</p>

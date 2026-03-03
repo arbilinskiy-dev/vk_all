@@ -25,6 +25,10 @@ class ReviewContestSettings(BaseModel):
     winnerPostImages: List[PhotoAttachment] = []
     templateDm: str
     templateErrorComment: str
+    
+    # Генерация изображения-доказательства розыгрыша
+    useProofImage: Optional[bool] = True
+    attachAdditionalMedia: Optional[bool] = False  # Прикреплять дополнительные медиа
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -47,6 +51,7 @@ class ContestEntryResponse(BaseModel):
     user_vk_id: int
     post_link: Optional[str]
     post_text: Optional[str]
+    post_date: Optional[datetime] = None  # Реальная дата поста в VK
     status: str
     entry_number: Optional[int]
     created_at: datetime

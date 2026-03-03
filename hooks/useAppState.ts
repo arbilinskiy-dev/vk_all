@@ -16,7 +16,7 @@ export const useAppState = () => {
         setActiveModule(module);
         setActiveViewParams({}); // Сбрасываем параметры при смене модуля
         // Если мы уходим из модулей с проектами, сбрасываем активный проект
-        if (module !== 'km' && module !== 'lists') {
+        if (module !== 'km' && module !== 'lists' && module !== 'am') {
             setActiveProjectId(null);
         } else {
             // Логика установки вида по умолчанию при переключении модулей
@@ -27,6 +27,11 @@ export const useAppState = () => {
             } else if (module === 'lists') {
                  setActiveView('lists-system');
                  setActiveListGroup('subscribers');
+            } else if (module === 'am') {
+                // Модуль сообщений: по умолчанию показываем VK
+                if (activeView !== 'messages-vk' && activeView !== 'messages-tg' && activeView !== 'messages-stats') {
+                    setActiveView('messages-vk');
+                }
             }
         }
     };
@@ -56,6 +61,13 @@ export const useAppState = () => {
         }
     };
 
+    /** Переключение вида внутри модуля «Сообщения» (am) */
+    const handleSelectMessagesView = (view: AppView) => {
+        setActiveView(view);
+        setActiveModule('am');
+        setActiveViewParams({});
+    };
+
     return {
         activeModule,
         activeProjectId,
@@ -70,6 +82,7 @@ export const useAppState = () => {
         handleSelectModule,
         handleSelectGlobalView,
         handleSelectKmView,
-        handleSelectListsView
+        handleSelectListsView,
+        handleSelectMessagesView
     };
 };

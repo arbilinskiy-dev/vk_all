@@ -1,0 +1,108 @@
+# ═══════════════════════════════════════════════════════
+#  .copilotignore — исключаем мусор из контекста Copilot
+# ═══════════════════════════════════════════════════════
+# Работает как .gitignore, но для AI.
+# Файлы из этого списка НЕ попадут в контекст Copilot,
+# что экономит токены и убирает шум.
+
+# ─── Python-кэш и байткод ───
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# ─── Виртуальные окружения ───
+.venv/
+venv/
+env/
+
+# ─── Базы данных и бэкапы ───
+*.db
+*.db-journal
+*.db.backup_*
+backend_python/vk_planner.db*
+
+# ─── Логи ───
+*.log
+npm-debug.log*
+logs_sync.json
+logs_sync.txt
+
+# ─── Node modules и билды ───
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# ─── Системные и редакторные файлы ───
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.idea/
+driver.cab
+
+# ─── Временные тест-скрипты (артефакты отладки) ───
+backend_python/_check_alena*.py
+backend_python/_diag*.py
+backend_python/_test_fix.py
+backend_python/test_decrypt*.py
+backend_python/test_pilmoji.py
+backend_python/test_proxy.py
+backend_python/test_schema.py
+backend_python/test_teams.py
+backend_python/test_verify_old_key.py
+backend_python/check_subs*.py
+backend_python/debug_tokens.py
+backend_python/verify_sync.py
+backend_python/migrate_from_csv.py
+backend_python/migrate_keys.py
+
+# ─── Файлы-артефакты (некорректные имена) ───
+backend_python/ColumnElement[Any]
+backend_python/See
+backend_python/uvicorn
+backend_python/[21
+backend_python/26.0
+
+# ─── Батники деплоя (не нужны AI) ───
+*.bat
+
+# ─── Бинарные и медиа-файлы ───
+*.cab
+*.exe
+*.dll
+*.zip
+*.tar.gz
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.svg
+*.woff
+*.woff2
+*.ttf
+*.eot
+
+# ─── Docker-файлы (не нужны в контексте при обычной разработке) ───
+backend_python/Dockerfile
+backend_python/Dockerfile.txt
+
+# ─── Папки с экспериментами ───
+vk_friends_analysis/
+vk-review-automation-concept/
+trainingnew/
+тест интерфейс/
+сделать инструкции/
+Select/
+Revisions/
+localhost/
+callback api vk/
+
+# ─── Метаданные и конфиги токенов (чувствительные данные) ───
+communities_tokens.json
+vk_api_methods_tokens.json
+metadata.json

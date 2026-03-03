@@ -1,0 +1,62 @@
+# Исключаем ненужные папки при сборке Docker образа
+szworker/
+prezent/
+
+# Стандартные исключения для Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+venv*/
+.venv/
+ENV/
+
+# IDE и редакторы
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Тесты и документация (опционально)
+tests/
+*.md
+!README.md
+
+# Временные файлы
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# SQLite база данных (не нужна в Docker — используется PostgreSQL)
+*.db
+*.db.*
+vk_planner.db
+vk_planner.db.*
+sql_app.db
+
+# Бэкапы
+*.backup*
+*.bak
+
+# Pytest
+.pytest_cache/
+
+# Env файлы
+.env
+.env.*
+!.env.example
+
+# Docker файлы (не нужны внутри образа)
+Dockerfile
+Dockerfile.txt
+docker-compose*.yml
+.dockerignore
+.dockerignore.txt

@@ -11,6 +11,7 @@ export interface ChatTurn {
     aiResponse: string | null;
     isLoading: boolean;
     replyToId?: string;
+    modelUsed?: string;
     contextSnapshot?: {
         items: { type: 'product' | 'company', name: string, details: string, photo?: string }[];
     };
@@ -29,11 +30,12 @@ export type ContextField = 'title' | 'description' | 'price' | 'old_price' | str
 interface UseAIGeneratorProps {
     projectId: string;
     onTextGenerated: (text: string) => void;
+    onReplacePostText?: (text: string) => void;
     refreshKey: number;
     postText: string;
 }
 
-export const useAIGenerator = ({ projectId, onTextGenerated, refreshKey, postText }: UseAIGeneratorProps) => {
+export const useAIGenerator = ({ projectId, onTextGenerated, onReplacePostText, refreshKey, postText }: UseAIGeneratorProps) => {
     // UI State
     const [height, setHeight] = useState(800); 
     const [isResizing, setIsResizing] = useState(false);
@@ -249,9 +251,9 @@ export const useAIGenerator = ({ projectId, onTextGenerated, refreshKey, postTex
         setIsGenerating(true);
 
         try {
-            const text = await api.generatePostText(finalPrompt, currentSystemPrompt);
+            const result = await api.generatePostText(finalPrompt, currentSystemPrompt);
             setChatHistory(prev => prev.map(turn => 
-                turn.id === newTurn.id ? { ...turn, aiResponse: text, isLoading: false } : turn
+                turn.id === newTurn.id ? { ...turn, aiResponse: result.generatedText, modelUsed: result.modelUsed, isLoading: false } : turn
             ));
         } catch (error) {
             console.error("Generation failed", error);
@@ -262,6 +264,16 @@ export const useAIGenerator = ({ projectId, onTextGenerated, refreshKey, postTex
             setIsGenerating(false);
         }
     }, [userPrompt, useCustomSystemPrompt, customSystemPrompt, defaultSystemPrompt, replyToTurn, selectedProduct, productFields, companyFields, companyContextData]);
+
+    // Маппинг быстрых действий на описания ролей (дублирует бэкенд-промпты для отображения пользователю)
+    const quickActionRoles: Record<string, string> = {
+        rewrite: 'Рерайт — опытный SMM-копирайтер. Переписывает текст, сохраняя смысл, ключевые сущности, эмодзи, ссылки и хештеги. Разбивает на абзацы.',
+        fix_errors: 'Исправление ошибок — корректор. Исправляет орфографию, пунктуацию и грамматику. Разбивает сплошной текст на абзацы. Не меняет смысл.',
+        shorten: 'Сокращение — оптимизатор текста. Сокращает объём на 15-25%, сохраняя все смыслы и структуру.',
+        expand: 'Расширение — оптимизатор текста. Расширяет объём на 15-25%, добавляя уточняющие детали и эпитеты без «воды».',
+        add_emoji: 'Добавление эмодзи — добавляет 20-30% уместных эмодзи, не изменяя текст.',
+        remove_emoji: 'Удаление эмодзи — убирает 20-50% неуместных или избыточных эмодзи, не изменяя текст.',
+    };
 
     const handleQuickAction = async (action: 'rewrite' | 'fix_errors' | 'shorten' | 'expand' | 'add_emoji' | 'remove_emoji') => {
         let textToProcess = postText;
@@ -276,8 +288,8 @@ export const useAIGenerator = ({ projectId, onTextGenerated, refreshKey, postTex
 
         const newTurn: ChatTurn = {
             id: uuidv4(),
-            systemPrompt: `Quick Action: ${action}`,
-            userPrompt: `${contextPrefix}${textToProcess.substring(0, 100)}${textToProcess.length > 100 ? '...' : ''}`,
+            systemPrompt: quickActionRoles[action] || `Quick Action: ${action}`,
+            userPrompt: `${contextPrefix}${textToProcess}`,
             aiResponse: null,
             isLoading: true
         };
@@ -289,7 +301,7 @@ export const useAIGenerator = ({ projectId, onTextGenerated, refreshKey, postTex
         try {
             const result = await api.processPostTextWithAI(textToProcess, action, projectId);
             setChatHistory(prev => prev.map(turn => 
-                turn.id === newTurn.id ? { ...turn, aiResponse: result, isLoading: false } : turn
+                turn.id === newTurn.id ? { ...turn, aiResponse: result.generatedText, modelUsed: result.modelUsed, isLoading: false } : turn
             ));
         } catch (error) {
             setChatHistory(prev => prev.map(turn => 
@@ -368,6 +380,13 @@ export const useAIGenerator = ({ projectId, onTextGenerated, refreshKey, postTex
     
     const handleAddToPost = (text: string) => {
         onTextGenerated(text);
+    };
+
+    // Заменить текст поста целиком (вместо дописывания)
+    const handleReplacePostText = (text: string) => {
+        if (onReplacePostText) {
+            onReplacePostText(text);
+        }
     };
 
     const handleMouseDown = (e: MouseEvent) => {
@@ -579,6 +598,7 @@ export const useAIGenerator = ({ projectId, onTextGenerated, refreshKey, postTex
             setNewPresetName,
             handleClearHistory,
             handleAddToPost,
+            handleReplacePostText,
             handleResizeStart: handleMouseDown,
             handleJumpToTurn,
             getRepliedTurnText,

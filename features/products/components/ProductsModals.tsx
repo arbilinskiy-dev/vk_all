@@ -234,6 +234,10 @@ export const ProductsModals: React.FC<ProductsModalsProps> = ({
                     loadCategories={loadCategories}
                     projectId={projectId}
                     initialRows={multipleCreateInitialRows}
+                    onAlbumsCreated={(newAlbums) => {
+                        // Обновляем список подборок после автосоздания при импорте из буфера
+                        actions.setAlbums((prev: any) => [...prev, ...newAlbums]);
+                    }}
                 />
             )}
         </>

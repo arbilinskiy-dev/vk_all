@@ -24,11 +24,16 @@ interface IProjectsContext {
     reviewsContestStatuses: Record<string, ContestStatus>;
     setReviewsContestStatuses: React.Dispatch<React.SetStateAction<Record<string, ContestStatus>>>;
     
+    // Статусы автоматизации историй {projectId: is_active}
+    storiesAutomationStatuses: Record<string, boolean>;
+    setStoriesAutomationStatuses: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+    
     projectPermissionErrors: Record<string, string | null>;
     setProjectPermissionErrors: React.Dispatch<React.SetStateAction<Record<string, string | null>>>;
     projectEmptyScheduleNotices: Record<string, string | null>;
     projectEmptySuggestedNotices: Record<string, string | null>;
     isInitialLoading: boolean;
+    isBackgroundLoading: boolean; // Флаг фоновой загрузки контента
     isCheckingForUpdates: string | null;
     setIsCheckingForUpdates: React.Dispatch<React.SetStateAction<string | null>>;
     updatedProjectIds: Set<string>;
@@ -59,8 +64,8 @@ export const useProjects = (): IProjectsContext => {
 };
 
 export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    // 1. Хук для первоначальной загрузки данных
-    const { isInitialLoading, initialData } = useDataInitialization();
+    // 1. Хук для первоначальной загрузки данных (гибридная загрузка)
+    const { isInitialLoading, isBackgroundLoading, initialData } = useDataInitialization();
 
     // 2. Инициализация состояний на основе данных из хука
     const [projects, setProjects] = useState<Project[]>(initialData.projects);
@@ -75,6 +80,7 @@ export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const [scheduledPostCounts, setScheduledPostCounts] = useState<Record<string, number>>(initialData.scheduledPostCounts);
     const [suggestedPostCounts, setSuggestedPostCounts] = useState<Record<string, number>>(initialData.suggestedPostCounts);
     const [reviewsContestStatuses, setReviewsContestStatuses] = useState<Record<string, ContestStatus>>(initialData.reviewsContestStatuses);
+    const [storiesAutomationStatuses, setStoriesAutomationStatuses] = useState<Record<string, boolean>>(initialData.storiesAutomationStatuses || {});
 
     useEffect(() => {
         setProjects(initialData.projects);
@@ -89,10 +95,17 @@ export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setScheduledPostCounts(initialData.scheduledPostCounts);
         setSuggestedPostCounts(initialData.suggestedPostCounts);
         setReviewsContestStatuses(initialData.reviewsContestStatuses);
+        setStoriesAutomationStatuses(initialData.storiesAutomationStatuses || {});
     }, [initialData]);
 
     // 3. Хук для фонового опроса
-    const { updatedProjectIds, setUpdatedProjectIds, addRecentRefresh } = useUpdatePolling();
+    const { updatedProjectIds, setUpdatedProjectIds, addRecentRefresh, setBackgroundLoading } = useUpdatePolling();
+    
+    // Синхронизируем флаг фоновой загрузки с polling'ом,
+    // чтобы polling не спамил getUpdates пока идёт Фаза 2
+    useEffect(() => {
+        setBackgroundLoading(isBackgroundLoading);
+    }, [isBackgroundLoading, setBackgroundLoading]);
     
     // 4. Хук для всех функций обновления (передаем ему состояния и сеттеры)
     const {
@@ -122,8 +135,11 @@ export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         ...refreshers,
         reviewsContestStatuses,
         setReviewsContestStatuses,
+        storiesAutomationStatuses,
+        setStoriesAutomationStatuses,
         allStories,
         isInitialLoading,
+        isBackgroundLoading, // Флаг фоновой загрузки для UI индикаторов
         // FIX: Provide `setAllSuggestedPosts` in the context value.
         setAllSuggestedPosts,
     };

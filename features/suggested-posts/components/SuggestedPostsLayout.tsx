@@ -2,6 +2,7 @@ import React from 'react';
 import { SuggestedPost, Project } from '../../../shared/types';
 import { SuggestedPostCard } from './SuggestedPostCard';
 import { AiEditor } from './AiEditor';
+import { BulkResults } from '../hooks/useSuggestedPostsManager';
 
 interface SuggestedPostsLayoutProps {
     project: Project;
@@ -11,6 +12,10 @@ interface SuggestedPostsLayoutProps {
     isCorrecting: boolean;
     onSelectPost: (post: SuggestedPost) => void;
     onCopyToClipboard: (text: string) => void;
+    // Массовая коррекция
+    bulkResults: BulkResults;
+    isBulkCorrecting: boolean;
+    onUpdateBulkText: (postId: string, newText: string) => void;
 }
 
 export const SuggestedPostsLayout: React.FC<SuggestedPostsLayoutProps> = ({
@@ -21,15 +26,55 @@ export const SuggestedPostsLayout: React.FC<SuggestedPostsLayoutProps> = ({
     isCorrecting,
     onSelectPost,
     onCopyToClipboard,
+    bulkResults,
+    isBulkCorrecting,
+    onUpdateBulkText,
 }) => {
     const hasResult = !!correctedText;
+    const hasBulkResults = Object.keys(bulkResults).length > 0;
+    // Режим массовой коррекции: идёт процесс ИЛИ есть результаты
+    const isBulkMode = isBulkCorrecting || hasBulkResults;
 
     return (
         <>
             {posts.map((post, index) => {
                 const isSelected = post.id === selectedPostId;
                 const animationDelay = `${index * 50}ms`;
+                const bulkText = bulkResults[post.id];
+                const hasBulkText = bulkText !== undefined;
 
+                // Режим массовой коррекции: каждый пост показывается в split view
+                if (isBulkMode) {
+                    return (
+                        <div
+                            key={post.id}
+                            className="flex gap-4 items-stretch opacity-0 animate-fade-in-up"
+                            style={{ animationDelay }}
+                        >
+                            <div className="w-1/2">
+                                <SuggestedPostCard
+                                    post={post}
+                                    projectName={project.name}
+                                    isSelected={hasBulkText}
+                                    isCorrecting={isBulkCorrecting}
+                                    onSelectForEditing={onSelectPost}
+                                    stretchHeight={true}
+                                    hasResult={hasBulkText}
+                                />
+                            </div>
+                            <div className="w-1/2">
+                                <AiEditor
+                                    correctedText={bulkText || ''}
+                                    isCorrecting={isBulkCorrecting && !hasBulkText}
+                                    onCopyToClipboard={onCopyToClipboard}
+                                    onTextChange={(newText) => onUpdateBulkText(post.id, newText)}
+                                />
+                            </div>
+                        </div>
+                    );
+                }
+
+                // Обычный режим: одиночная коррекция
                 if (isSelected) {
                     return (
                         <div

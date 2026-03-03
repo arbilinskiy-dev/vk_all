@@ -7,17 +7,10 @@ from pydantic import BaseModel
 import schemas
 import services.system_accounts.account_service as account_service
 import services.token_log_service as log_service
-from database import SessionLocal
+from database import get_db
 from config import settings
 
 router = APIRouter(prefix="/system-accounts", tags=["System Accounts"])
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 class AccountIdPayload(BaseModel):
     accountId: str
@@ -102,3 +95,9 @@ def get_account_chart_data(payload: schemas.AccountChartPayload, db: Session = D
         payload.metric
     )
     return {"data": data}
+
+@router.post("/stats/compare", response_model=schemas.CompareStatsResponse)
+def get_compare_stats(payload: schemas.CompareStatsPayload, db: Session = Depends(get_db)):
+    """Получает сравнительную статистику использования методов по нескольким аккаунтам."""
+    return log_service.get_compare_stats(db, payload.accountIds)
+

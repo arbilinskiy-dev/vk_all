@@ -94,9 +94,12 @@ export const useProjectSettingsManager = ({
 
 
     useEffect(() => {
+        // Флаг отмены — предотвращает дублирование запросов при StrictMode и race condition
+        let cancelled = false;
+
         setFormData({...project, disabled: project.disabled || false});
         
-        // Load Variables
+        // Загрузка переменных (синхронная часть)
         const existingVars = parseVariablesString(project.variables || '');
         const existingVarNames = new Set(existingVars.map(v => v.name.toLowerCase().trim()));
         
@@ -107,49 +110,59 @@ export const useProjectSettingsManager = ({
         
         setProjectVariables([...existingVars, ...newTemplateVars]);
 
-        // Load Tags
-        const loadTags = async () => {
+        // Параллельная загрузка тегов, AI-шаблонов и глобальных переменных
+        const loadAllData = async () => {
             try {
-                const fetchedTags = await api.getTags(project.id);
-                setInitialTags(fetchedTags);
-                setProjectTags(fetchedTags);
-                setDeletedTagIds(new Set());
+                const [fetchedTags, fetchedPresets, globalVarsResult] = await Promise.all([
+                    api.getTags(project.id).catch(err => {
+                        console.error("Failed to fetch tags for project settings", err);
+                        window.showAppToast?.("Не удалось загрузить теги для настроек проекта.", 'error');
+                        return null;
+                    }),
+                    api.getAiPresets(project.id).catch(err => {
+                        console.error("Failed to fetch AI presets for project settings", err);
+                        window.showAppToast?.("Не удалось загрузить шаблоны AI-инструкций.", 'error');
+                        return null;
+                    }),
+                    api.getGlobalVariablesForProject(project.id).catch(err => {
+                        console.error("Failed to fetch global variables for project settings", err);
+                        return null;
+                    }),
+                ]);
+
+                // Если эффект был отменён (StrictMode / смена project.id) — не обновляем стейт
+                if (cancelled) return;
+
+                if (fetchedTags) {
+                    setInitialTags(fetchedTags);
+                    setProjectTags(fetchedTags);
+                    setDeletedTagIds(new Set());
+                }
+
+                if (fetchedPresets) {
+                    setInitialAiPresets(fetchedPresets);
+                    setProjectAiPresets(fetchedPresets);
+                    setDeletedAiPresetIds(new Set());
+                }
+
+                if (globalVarsResult) {
+                    setInitialGlobalVarDefs(globalVarsResult.definitions);
+                    setProjectGlobalVarDefs(globalVarsResult.definitions);
+                    setDeletedGlobalVarDefIds(new Set());
+                    setInitialGlobalVarValues(globalVarsResult.values);
+                    setProjectGlobalVarValues(globalVarsResult.values);
+                }
             } catch (error) {
-                console.error("Failed to fetch tags for project settings", error);
-                window.showAppToast?.("Не удалось загрузить теги для настроек проекта.", 'error');
+                if (!cancelled) {
+                    console.error("Failed to load project settings data", error);
+                }
             }
         };
-        loadTags();
 
-        const loadAiPresets = async () => {
-            try {
-                const fetchedPresets = await api.getAiPresets(project.id);
-                setInitialAiPresets(fetchedPresets);
-                setProjectAiPresets(fetchedPresets);
-                setDeletedAiPresetIds(new Set());
-            } catch (error) {
-                console.error("Failed to fetch AI presets for project settings", error);
-                window.showAppToast?.("Не удалось загрузить шаблоны AI-инструкций.", 'error');
-            }
-        };
-        loadAiPresets();
+        loadAllData();
 
-        // Load Global Variables
-        const loadGlobalVars = async () => {
-            try {
-                const { definitions, values } = await api.getGlobalVariablesForProject(project.id);
-                setInitialGlobalVarDefs(definitions);
-                setProjectGlobalVarDefs(definitions);
-                setDeletedGlobalVarDefIds(new Set());
-                setInitialGlobalVarValues(values);
-                setProjectGlobalVarValues(values);
-            } catch (error) {
-                console.error("Failed to fetch global variables for project settings", error);
-            }
-        };
-        loadGlobalVars();
-
-    }, [project]);
+        return () => { cancelled = true; };
+    }, [project.id]); // Используем project.id вместо project для предотвращения бесконечного цикла
 
     const handleRefresh = async () => {
         setIsRefreshing(true);
@@ -193,9 +206,16 @@ export const useProjectSettingsManager = ({
 
         setIsSaving(true);
         try {
+            // ======== Шаг 1: Сначала сохраняем определения глобальных переменных ========
+            // Это нужно делать первым, чтобы получить маппинг временных ID → реальных UUID
+            const finalDefs = projectGlobalVarDefs.filter(def => !deletedGlobalVarDefIds.has(def.id));
+            const defsResult = await api.updateAllGlobalVariableDefinitions(finalDefs);
+            const idMapping: Record<string, string> = defsResult.idMapping || {};
+
+            // ======== Шаг 2: Параллельно сохраняем всё остальное ========
             const allSavePromises: Promise<any>[] = [];
 
-            // 1. Tags
+            // 2a. Tags
             deletedTagIds.forEach(id => {
                 allSavePromises.push(api.deleteTag(id));
             });
@@ -213,7 +233,7 @@ export const useProjectSettingsManager = ({
                 }
             });
 
-            // 2. AI Presets
+            // 2b. AI Presets
             deletedAiPresetIds.forEach(id => {
                 allSavePromises.push(api.deleteAiPreset(id));
             });
@@ -231,22 +251,22 @@ export const useProjectSettingsManager = ({
                 }
             });
 
-            // 3. Global Variable Definitions and Values
-            const finalDefs = projectGlobalVarDefs.filter(def => !deletedGlobalVarDefIds.has(def.id));
-            allSavePromises.push(api.updateAllGlobalVariableDefinitions(finalDefs));
-
-            const globalVarsToUpdate = projectGlobalVarValues
-                .filter(val => {
-                    const initialVal = initialGlobalVarValues.find(v => v.definition_id === val.definition_id)?.value || '';
-                    return initialVal !== val.value;
+            // 2c. Global Variable Values — отправляем ВСЕ значения (не только изменённые),
+            // т.к. бэкенд удаляет все значения проекта и записывает присланные заново.
+            // Также подменяем временные definition_id на реальные UUID из маппинга.
+            const allValuesToSave = projectGlobalVarValues
+                .filter(val => !deletedGlobalVarDefIds.has(val.definition_id)) // Не отправляем значения удалённых определений
+                .map(val => {
+                    const mappedDefId = idMapping[val.definition_id] || val.definition_id;
+                    return { definition_id: mappedDefId, value: val.value };
                 })
-                .map(val => ({ definition_id: val.definition_id, value: val.value }));
+                .filter(val => val.value && val.value.trim() !== ''); // Пустые значения не сохраняем
 
-            if (globalVarsToUpdate.length > 0) {
-                allSavePromises.push(api.updateGlobalVariablesForProject(project.id, globalVarsToUpdate));
+            if (allValuesToSave.length > 0) {
+                allSavePromises.push(api.updateGlobalVariablesForProject(project.id, allValuesToSave));
             }
 
-            // 4. Project data
+            // 2d. Project data
             const serializedVars = serializeVariablesArray(projectVariables);
             allSavePromises.push(onSave({ ...formData, variables: serializedVars }));
 
@@ -270,7 +290,11 @@ export const useProjectSettingsManager = ({
     const handleSaveNewTeam = () => {
         const trimmedName = newTeamName.trim();
         if (trimmedName && !uniqueTeams.includes(trimmedName)) {
-            setFormData(prev => ({...prev, team: trimmedName}));
+            // Добавляем новую команду в массив текущих команд
+            const currentTeams = formData.teams && formData.teams.length > 0 
+                ? formData.teams 
+                : (formData.team ? [formData.team] : []);
+            setFormData(prev => ({...prev, teams: [...currentTeams, trimmedName]}));
         }
         setIsCreatingTeam(false);
         setNewTeamName('');

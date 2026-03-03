@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 import crud
 import models
+from models_library.vk_profiles import VkProfile
+from models_library.dialogs_authors import ProjectDialog
 from services import task_monitor
 from services.vk_api.api_client import call_vk_api as raw_vk_call
 from database import SessionLocal
@@ -105,14 +107,18 @@ def _save_batch_results(db: Session, project_id: str, results: List[Dict]):
             })
     
     if updates:
-        # 1. Маппинг VK ID -> PK ID
+        # 1. Маппинг VK ID → vk_profiles.id → project_dialogs через JOIN
         vk_ids_in_batch = [u['vk_user_id'] for u in updates]
-        records = db.query(models.SystemListMailing.id, models.SystemListMailing.vk_user_id).filter(
-            models.SystemListMailing.project_id == project_id,
-            models.SystemListMailing.vk_user_id.in_(vk_ids_in_batch)
+        
+        # Получаем vk_user_id → project_dialogs.id маппинг
+        records = db.query(ProjectDialog.id, VkProfile.vk_user_id).join(
+            VkProfile, ProjectDialog.vk_profile_id == VkProfile.id
+        ).filter(
+            ProjectDialog.project_id == project_id,
+            VkProfile.vk_user_id.in_(vk_ids_in_batch)
         ).all()
         
-        vk_to_pk = {r.vk_user_id: r.id for r in records}
+        vk_to_pk = {r[1]: r[0] for r in records}
         
         final_db_updates = []
         for u in updates:
@@ -125,7 +131,7 @@ def _save_batch_results(db: Session, project_id: str, results: List[Dict]):
                 })
         
         if final_db_updates:
-            db.bulk_update_mappings(models.SystemListMailing, final_db_updates)
+            db.bulk_update_mappings(ProjectDialog, final_db_updates)
             db.commit()
             return len(final_db_updates)
     return 0
@@ -164,11 +170,13 @@ def refresh_mailing_analysis_task(task_id: str, project_id: str, mode: str = 'mi
         
         unique_tokens = list(set(project_tokens))
         
-        # Получаем список ID
-        query = db.query(models.SystemListMailing.vk_user_id).filter(models.SystemListMailing.project_id == project_id)
+        # Получаем список ID через нормализованный JOIN
+        query = db.query(VkProfile.vk_user_id).join(
+            ProjectDialog, ProjectDialog.vk_profile_id == VkProfile.id
+        ).filter(ProjectDialog.project_id == project_id)
         
         if mode == 'missing':
-             query = query.filter(models.SystemListMailing.first_message_date.is_(None))
+             query = query.filter(ProjectDialog.first_message_date.is_(None))
              
         results = query.all()
         vk_ids_to_process = [r[0] for r in results]
@@ -278,6 +286,16 @@ def refresh_mailing_analysis_task(task_id: str, project_id: str, mode: str = 'mi
                     db_chunk.close()
             else:
                 print(f"[ANALYSIS_DEBUG] Retry FAILED again for batch {i+1}.")
+
+    # Обновляем мету — дату последнего обновления рассылки
+    db_meta = SessionLocal()
+    try:
+        from services.lists.list_sync_utils import get_rounded_timestamp
+        crud.update_list_meta(db_meta, project_id, {
+            "mailing_last_updated": get_rounded_timestamp(),
+        })
+    finally:
+        db_meta.close()
 
     print(f"[ANALYSIS_DEBUG] TASK COMPLETED. Processed {processed_count}/{total_count}")
     task_monitor.update_task(task_id, "done", message=f"Анализ завершен. Обработано: {processed_count}")

@@ -16,7 +16,7 @@ def calculate_next_run(day_of_week: int, time_str: str) -> str:
     time_str: "HH:MM"
     """
     # 1. Получаем текущее время в UTC и переводим в МСК для расчетов
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
     now_msk = now_utc + timedelta(hours=3)
     
     try:
@@ -86,8 +86,8 @@ def sync_contest_post(db: Session, settings: schemas.automations.ReviewContestSe
         existing_post.recurrence_interval = 1 
         existing_post.recurrence_type = 'weeks'
         
-        # Сбрасываем статус, если он был error/done, чтобы он снова стал актуальным
-        if existing_post.status != 'publishing':
+        # Сбрасываем статус, если он был error, чтобы он снова стал актуальным
+        if existing_post.status == 'error':
             existing_post.status = 'pending_publication'
             
         print(f"CONTEST_SCHEDULER: Updated system post {existing_post.id} for project {settings.projectId}")

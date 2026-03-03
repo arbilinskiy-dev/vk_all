@@ -3,7 +3,7 @@
 # из пакета `gemini_api`. Это обеспечивает обратную совместимость.
 
 from .gemini_api.client import generate_text, AVAILABLE_MODELS
-from .gemini_api.correction import get_corrected_text
+from .gemini_api.correction import get_corrected_text, get_bulk_corrected_texts
 from .gemini_api.analysis import get_ai_variables, get_project_context_ai_fill
 from .gemini_api.marketing import (
     generate_company_description,
@@ -14,6 +14,7 @@ from .gemini_api.marketing import (
 __all__ = [
     'generate_text',
     'get_corrected_text',
+    'get_bulk_corrected_texts',
     'get_ai_variables',
     'get_project_context_ai_fill',
     'generate_company_description',

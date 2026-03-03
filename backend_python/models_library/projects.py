@@ -16,7 +16,8 @@ class Project(Base):
     avatar_url = Column(String, nullable=True)
     
     name = Column(String)
-    team = Column(String, nullable=True)
+    team = Column(String, nullable=True)  # Устаревшее поле, сохранено для обратной совместимости
+    teams = Column(Text, nullable=True)   # JSON-массив команд, например: ["Команда А", "Сеть Н"]
     disabled = Column(Boolean, default=False)
     archived = Column(Boolean, default=False, nullable=False)
     notes = Column(Text, nullable=True)
@@ -34,6 +35,7 @@ class Project(Base):
     last_published_update = Column(String, nullable=True)
     last_scheduled_update = Column(String, nullable=True)
     last_market_update = Column(String, nullable=True)
+    last_stories_update = Column(String, nullable=True)  # Время последнего обновления историй
 
 class User(Base):
     __tablename__ = "users"

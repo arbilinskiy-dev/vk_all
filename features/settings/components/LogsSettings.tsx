@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { CallbackApiSettings } from './CallbackApiSettings';
 import { TokenLogsDashboard } from '../../users/components/TokenLogsDashboard';
+import { TokenLogsAnalytics } from '../../users/components/TokenLogsAnalytics';
 
 export const LogsSettings: React.FC = () => {
-    const [activeSubTab, setActiveSubTab] = useState<'callback' | 'vk' | 'ai'>('callback');
+    const [activeSubTab, setActiveSubTab] = useState<'callback' | 'vk' | 'vk-analytics' | 'ai'>('callback');
     
     // Унифицированный стиль вкладок (border-b-2 underline)
     const subTabClass = (tabName: string) => `py-2 px-2 text-sm font-medium border-b-2 transition-colors ${
@@ -23,6 +24,9 @@ export const LogsSettings: React.FC = () => {
                     <button onClick={() => setActiveSubTab('vk')} className={subTabClass('vk')}>
                         VK Логи
                     </button>
+                    <button onClick={() => setActiveSubTab('vk-analytics')} className={subTabClass('vk-analytics')}>
+                        VK Аналитика
+                    </button>
                     <button onClick={() => setActiveSubTab('ai')} className={subTabClass('ai')}>
                         AI Логи
                     </button>
@@ -33,6 +37,7 @@ export const LogsSettings: React.FC = () => {
             <div className="flex-1 overflow-hidden">
                 {activeSubTab === 'callback' && <CallbackApiSettings />}
                 {activeSubTab === 'vk' && <TokenLogsDashboard mode="vk" />}
+                {activeSubTab === 'vk-analytics' && <TokenLogsAnalytics />}
                 {activeSubTab === 'ai' && <TokenLogsDashboard mode="ai" />}
             </div>
         </div>

@@ -106,7 +106,7 @@
     4.  Возвращает единый объект с `formState` и `formActions` для компонента.
 
 -   **Дочерние хуки `usePostForm`**:
-    -   **`useBulkCreationManager`**: Управляет **только** состоянием `isBulkMode`, `isMultiProjectMode`, `dateSlots` и `selectedProjectIds`, а также функциями для их изменения.
+    -   **`useBulkCreationManager`**: Управляет состоянием `isBulkMode`, `isMultiProjectMode`, `dateSlots`, `selectedProjectIds`, `projectDateTimes` (индивидуальные даты/время проектов), `customOverrideIds` (набор проектов с ручной настройкой), `timeShift*` (сдвиг времени) и `orderedProjectIds` (порядок для DnD), а также функции для их изменения (`setProjectDateTime`, `resetProjectDateTime`, `handleToggleTimeShift`).
     -   **`useDirtyCheck`**: Содержит **только** сложную логику сравнения текущего состояния формы с оригинальным постом. Принимает все части состояния и возвращает один булев флаг `isDirty`.
 </details>
 

@@ -113,6 +113,11 @@ def refresh_all_schedule_data(db: Session, project_id: str, user_token: str) -> 
         print(f"SERVICE: [4/7] Saving published posts to DB...")
         crud.replace_published_posts(db, project_id, pub_posts_vk, timestamp)
         
+        # 3.1 Пометка постов, связанных с Конкурс 2.0
+        print(f"SERVICE: [4.1/7] Marking Contest 2.0 posts...")
+        from services import contest_v2_service
+        contest_v2_service.mark_published_contest_posts(db, project_id)
+        
         # 4. Save Scheduled
         print(f"SERVICE: [5/7] Saving scheduled posts to DB...")
         crud.replace_scheduled_posts(db, project_id, sch_posts_vk, timestamp)

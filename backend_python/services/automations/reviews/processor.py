@@ -24,7 +24,7 @@ def process_new_participants(db: Session, project_id: str) -> dict:
 
     # Статусы, которые считаются "Активными" в текущем розыгрыше.
     # Исключаем 'winner' и 'used', так как это архивные статусы прошлых раундов.
-    active_statuses = ['commented', 'processing']
+    active_statuses = ['commented']
 
     # 1. Получаем текущее количество УЖЕ обработанных участников в ТЕКУЩЕМ раунде
     current_processed_count = db.query(models.ReviewContestEntry).filter(
@@ -39,14 +39,17 @@ def process_new_participants(db: Session, project_id: str) -> dict:
         models.ReviewContestEntry.status.in_(active_statuses)
     ).scalar() or 0
 
-    # 3. Получаем список новых кандидатов, отсортированных по дате (старые первыми)
+    # 3. Получаем список новых кандидатов, отсортированных по реальной дате поста VK (старые первыми)
+    # Фоллбэк на created_at для записей без post_date (старые данные)
     new_entries = db.query(models.ReviewContestEntry).filter(
         models.ReviewContestEntry.contest_id == contest.id,
         models.ReviewContestEntry.status == 'new'
-    ).order_by(models.ReviewContestEntry.created_at.asc()).all()
+    ).order_by(
+        func.coalesce(models.ReviewContestEntry.post_date, models.ReviewContestEntry.created_at).asc()
+    ).all()
 
     if not new_entries:
-        return {"processed": 0, "message": "Нет новых участников для обработки"}
+        return {"processed": 0, "message": "Нет новых постов для обработки"}
 
     processed_now = 0
     errors_now = 0
@@ -65,8 +68,9 @@ def process_new_participants(db: Session, project_id: str) -> dict:
         current_number = max_number + 1
         
         try:
-            # Формируем текст комментария
-            comment_text = contest.template_comment.replace('{number}', str(current_number))
+            # Формируем текст комментария (защита от None)
+            template = contest.template_comment or '#{number}'
+            comment_text = template.replace('{number}', str(current_number))
             
             # Подстановка глобальных переменных
             comment_text = global_variable_service.substitute_global_variables(db, comment_text, project_id)

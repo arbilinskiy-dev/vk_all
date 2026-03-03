@@ -39,6 +39,10 @@ def create_or_update_system_post(db: Session, project_id: str, post_data: System
         db_post.recurrence_is_last_day = post_data.recurrence_is_last_day
         # Обновление параметров AI
         db_post.ai_generation_params = post_data.ai_generation_params
+        # Обновление флага закрепления
+        db_post.is_pinned = getattr(post_data, 'is_pinned', False)
+        # Обновление текста первого комментария
+        db_post.first_comment_text = getattr(post_data, 'first_comment_text', None)
     else:
         # Создание
         db_post = models.SystemPost(
@@ -61,7 +65,11 @@ def create_or_update_system_post(db: Session, project_id: str, post_data: System
             recurrence_fixed_day=post_data.recurrence_fixed_day,
             recurrence_is_last_day=post_data.recurrence_is_last_day,
             # Сохранение параметров AI
-            ai_generation_params=post_data.ai_generation_params
+            ai_generation_params=post_data.ai_generation_params,
+            # Сохранение флага закрепления
+            is_pinned=getattr(post_data, 'is_pinned', False),
+            # Сохранение текста первого комментария
+            first_comment_text=getattr(post_data, 'first_comment_text', None)
         )
         db.add(db_post)
     

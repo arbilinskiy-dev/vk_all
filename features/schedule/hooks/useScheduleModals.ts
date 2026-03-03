@@ -22,6 +22,7 @@ export const useScheduleModals = ({ projectId }: { projectId: string }) => {
     const [viewingContestPost, setViewingContestPost] = useState<SystemPost | null>(null);
     const [viewingAiFeedPost, setViewingAiFeedPost] = useState<SystemPost | null>(null); // NEW
     const [viewingGeneralContestPost, setViewingGeneralContestPost] = useState<SystemPost | null>(null); // FOR GENERAL CONTEST
+    const [viewingContestV2PublishedPost, setViewingContestV2PublishedPost] = useState<ScheduledPost | null>(null); // Конкурс 2.0 - опубликованный пост
 
     const [isActionRunning, setIsActionRunning] = useState(false);
     
@@ -141,6 +142,7 @@ export const useScheduleModals = ({ projectId }: { projectId: string }) => {
         setViewingContestPost, 
         setViewingAiFeedPost, // NEW
         setViewingGeneralContestPost, // FOR GENERAL CONTEST
+        setViewingContestV2PublishedPost, // Конкурс 2.0 - опубликованный пост
         setIsActionRunning,
         handleOpenCreateModal,
         handleOpenCreateNoteModal,
@@ -169,6 +171,7 @@ export const useScheduleModals = ({ projectId }: { projectId: string }) => {
             viewingContestPost,
             viewingAiFeedPost, // NEW
             viewingGeneralContestPost, // FOR GENERAL CONTEST
+            viewingContestV2PublishedPost, // Конкурс 2.0 - опубликованный пост
             isActionRunning,
         },
         modalActions,

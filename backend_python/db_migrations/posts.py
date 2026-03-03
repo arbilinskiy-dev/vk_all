@@ -57,3 +57,26 @@ def migrate(engine: Engine):
 
     # Миграция 49: Добавить поле related_id для связи с другими сущностями (например, конкурсами)
     check_and_add_column(engine, 'system_posts', 'related_id', 'VARCHAR')
+
+    # Миграция 50: Добавить поля post_type и related_id в таблицу posts для связи опубликованных постов с автоматизациями
+    check_and_add_column(engine, 'posts', 'post_type', 'VARCHAR')
+    check_and_add_column(engine, 'posts', 'related_id', 'VARCHAR')
+
+    # Миграция 51: Добавить поле is_pinned для закрепления поста на стене при публикации
+    check_and_add_column(
+        engine,
+        'system_posts',
+        'is_pinned',
+        'BOOLEAN DEFAULT FALSE NOT NULL' if 'sqlite' in engine.url.drivername else 'BOOLEAN DEFAULT FALSE'
+    )
+
+    # Миграция 52: Добавить поле is_pinned в таблицу posts (опубликованные) для отображения закреплённого поста
+    check_and_add_column(
+        engine,
+        'posts',
+        'is_pinned',
+        'BOOLEAN DEFAULT FALSE NOT NULL' if 'sqlite' in engine.url.drivername else 'BOOLEAN DEFAULT FALSE'
+    )
+
+    # Миграция 53: Добавить поле first_comment_text в system_posts для текста первого комментария
+    check_and_add_column(engine, 'system_posts', 'first_comment_text', 'TEXT')

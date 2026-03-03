@@ -24,7 +24,9 @@ interface ScheduleGridProps {
     modalActions: any;
     globalVarDefs: GlobalVariableDefinition[];
     projectGlobalVarValues: ProjectGlobalVariableValue[];
-    onNavigateToContest?: () => void; 
+    onNavigateToContest?: () => void;
+    onPinPost?: (postId: string) => void;
+    onUnpinPost?: (postId: string) => void;
 }
 
 // Вспомогательная функция для получения последнего дня месяца
@@ -88,6 +90,8 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = React.memo(({
     globalVarDefs,
     projectGlobalVarValues,
     onNavigateToContest,
+    onPinPost,
+    onUnpinPost,
 }) => {
     const now = new Date();
 
@@ -111,7 +115,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = React.memo(({
         const cyclicPosts = activeBasePosts.filter(p => 
             p.postType === 'system' && 
             'is_cyclic' in p && p.is_cyclic && 
-            p.status !== 'error' && p.status !== 'possible_error' && // Исключаем ошибочные, чтобы не спамить
+            p.status !== 'error' && // Исключаем ошибочные, чтобы не спамить
             p.recurrence_interval && p.recurrence_interval > 0
         ) as SystemPost[];
 
@@ -253,6 +257,9 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = React.memo(({
                                 const isContestWinner = isSystem && ('post_type' in post && post.post_type === 'contest_winner');
                                 const isAiFeed = isSystem && ('post_type' in post && post.post_type === 'ai_feed');
                                 const isGeneralContest = isSystem && ('post_type' in post && (post.post_type === 'GENERAL_CONTEST_START' || post.post_type === 'GENERAL_CONTEST_END' || post.post_type === 'general_contest_start' || post.post_type === 'general_contest_result'));
+                                
+                                // Проверка опубликованных постов Конкурс 2.0
+                                const isPublishedContestV2 = !isSystem && ('post_type' in post && post.post_type === 'contest_v2_start');
 
                                 // Обработчики кликов
                                 const handleClick = () => {
@@ -275,6 +282,7 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = React.memo(({
                                         if (isContestWinner) modalActions.setViewingContestPost(post);
                                         else if (isAiFeed) modalActions.setViewingAiFeedPost(post);
                                         else if (isGeneralContest) modalActions.setViewingGeneralContestPost(post);
+                                        else if (isPublishedContestV2) modalActions.setViewingContestV2PublishedPost(post as any); // Опубликованный пост Конкурс 2.0
                                         else modalActions.setViewingPost(post); // Просмотр (а не редактирование) по умолчанию для обычного клика
                                     }
                                 };
@@ -304,8 +312,8 @@ const ScheduleGrid: React.FC<ScheduleGridProps> = React.memo(({
                                         onDelete={modalActions.setDeletingPost}
                                         onPublishNow={modalActions.setPublishingPost}
                                         onMoveToScheduled={modalActions.setMovingToScheduledPost}
-                                        onConfirmPublication={modalActions.setConfirmingPublicationPost}
-                                        onCancelPublicationCheck={modalActions.setCancellingPublicationPost}
+                                        onPinPost={onPinPost}
+                                        onUnpinPost={onUnpinPost}
                                         onDragStart={(e, p) => dragActions.handlePostDragStart(e, p)}
                                         onDragEnd={dragActions.handleDragEnd}
                                         onToggleSelect={interactionActions.handleTogglePostSelection}

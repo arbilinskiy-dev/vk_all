@@ -4,12 +4,13 @@ import { useToast } from '../../../../../shared/components/ToastProvider';
 import { CustomDatePicker } from '../../../../../shared/components/pickers/CustomDatePicker';
 
 interface AddBlacklistModalProps {
-    contestId: string;
+    projectId: string;  // Изменено: бэкенд ожидает project_id
+    contestId?: string; // Оставлен для обратной совместимости (опционально)
     onClose: () => void;
     onSuccess: () => void;
 }
 
-export const AddBlacklistModal: React.FC<AddBlacklistModalProps> = ({ contestId, onClose, onSuccess }) => {
+export const AddBlacklistModal: React.FC<AddBlacklistModalProps> = ({ projectId, onClose, onSuccess }) => {
     const toast = useToast();
     const [urls, setUrls] = useState('');
     const [isForever, setIsForever] = useState(true);
@@ -30,10 +31,10 @@ export const AddBlacklistModal: React.FC<AddBlacklistModalProps> = ({ contestId,
                 const m = line.match(/id(\d+)/);
                 const user_vk_id = m ? Number(m[1]) : undefined;
                 if (user_vk_id) {
-                    await api.addGeneralContestToBlacklist(contestId, { user_vk_id });
+                    await api.addGeneralContestToBlacklist(projectId, { user_vk_id });
                 } else {
                     // If not an id, try to call backend with payload that may accept url; pass 0 as fallback
-                    await api.addGeneralContestToBlacklist(contestId, { user_vk_id: 0 });
+                    await api.addGeneralContestToBlacklist(projectId, { user_vk_id: 0 });
                 }
             }
             toast.success('Пользователи добавлены в черный список.');
@@ -56,7 +57,7 @@ export const AddBlacklistModal: React.FC<AddBlacklistModalProps> = ({ contestId,
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Ссылки / ID (по одной в строке)</label>
                         <textarea value={urls} onChange={e => setUrls(e.target.value)} rows={5}
-                            className="w-full border rounded-md p-2 text-sm border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" placeholder="https://vk.com/id12345\nhttps://vk.com/durov" disabled={isSaving} />
+                            className="w-full border rounded-md p-2 text-sm border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" placeholder="https://vk.com/id12345\nhttps://vk.ru/durov" disabled={isSaving} />
                     </div>
 
                     <div>

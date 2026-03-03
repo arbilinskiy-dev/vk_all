@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useCallbackApiLogs } from '../hooks/useCallbackApiLogs';
 import { ConfirmationModal } from '../../../shared/components/modals/ConfirmationModal';
 
-// Вспомогательный компонент для мультиселекта
+// Вспомогательный компонент для мультиселекта с поиском и анимацией
 const MultiSelectDropdown: React.FC<{
     options: { id: string | number; label: string }[];
     selectedIds: Set<string | number>;
@@ -10,7 +10,9 @@ const MultiSelectDropdown: React.FC<{
     label: string;
 }> = ({ options, selectedIds, onToggle, label }) => {
     const [isOpen, setIsOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
     const wrapperRef = useRef<HTMLDivElement>(null);
+    const searchRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -21,9 +23,26 @@ const MultiSelectDropdown: React.FC<{
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Сброс поиска и автофокус при открытии
+    useEffect(() => {
+        if (isOpen) {
+            setSearchQuery('');
+            // Автофокус на поле поиска
+            setTimeout(() => searchRef.current?.focus(), 50);
+        }
+    }, [isOpen]);
     
     const selectedCount = selectedIds.size;
     const displayLabel = selectedCount === 0 ? 'Все' : `Выбрано: ${selectedCount}`;
+
+    // Показывать поиск если > 7 элементов
+    const showSearch = options.length > 7;
+
+    // Фильтрация опций по поисковому запросу
+    const filteredOptions = searchQuery
+        ? options.filter(opt => opt.label.toLowerCase().includes(searchQuery.toLowerCase()))
+        : options;
 
     return (
         <div className="relative" ref={wrapperRef}>
@@ -34,21 +53,48 @@ const MultiSelectDropdown: React.FC<{
                 }`}
             >
                 <span className="truncate mr-2">{label}: {displayLabel}</span>
-                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                {/* Стрелка с поворотом при открытии */}
+                <svg 
+                    className={`w-4 h-4 flex-shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
             </button>
             {isOpen && (
-                <div className="absolute z-20 w-48 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-y-auto custom-scrollbar">
-                    {options.map(opt => (
-                        <label key={String(opt.id)} className="flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer">
+                <div className="absolute z-[100] w-56 mt-1 bg-white border border-gray-200 rounded-md shadow-lg animate-fade-in-up">
+                    {/* Поиск внутри dropdown (если > 7 элементов) */}
+                    {showSearch && (
+                        <div className="p-2 border-b border-gray-100">
                             <input
-                                type="checkbox"
-                                checked={selectedIds.has(opt.id)}
-                                onChange={() => onToggle(opt.id)}
-                                className="w-4 h-4 flex-shrink-0 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-2"
+                                ref={searchRef}
+                                type="text"
+                                placeholder="Поиск..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                             />
-                            <span className="truncate" title={opt.label}>{opt.label}</span>
-                        </label>
-                    ))}
+                        </div>
+                    )}
+                    <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                        {filteredOptions.length === 0 ? (
+                            <div className="text-xs text-gray-400 text-center py-4">Ничего не найдено</div>
+                        ) : (
+                            filteredOptions.map(opt => (
+                                <label key={String(opt.id)} className="flex items-center px-3 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-900 cursor-pointer transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedIds.has(opt.id)}
+                                        onChange={() => onToggle(opt.id)}
+                                        className="w-4 h-4 flex-shrink-0 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-2"
+                                    />
+                                    <span className="truncate" title={opt.label}>{opt.label}</span>
+                                </label>
+                            ))
+                        )}
+                    </div>
                 </div>
             )}
         </div>
@@ -60,10 +106,13 @@ const MultiSelectDropdown: React.FC<{
  * Отображает таблицу логов с возможностью выбора, копирования, удаления и фильтрации.
  */
 export const CallbackApiSettings: React.FC = () => {
-    const { state, actions, helpers } = useCallbackApiLogs();
+    const { state, actions, helpers, scrollContainerRef } = useCallbackApiLogs();
     const { 
         filteredLogs, 
+        totalCount,
         isLoading, 
+        isLoadingMore,
+        hasMore,
         isDeleting, 
         error, 
         selectedIds, 
@@ -79,6 +128,21 @@ export const CallbackApiSettings: React.FC = () => {
         allFilteredSelected,
     } = helpers;
 
+    // Состояние для раскрытых payload-панелей (анимированное раскрытие)
+    const [expandedPayloads, setExpandedPayloads] = useState<Set<number>>(new Set());
+
+    const togglePayload = (id: number) => {
+        setExpandedPayloads(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
+            return next;
+        });
+    };
+
     // Подсчет активных фильтров
     const activeFiltersCount = (searchQuery ? 1 : 0) + 
         (selectedEventTypes.size > 0 ? 1 : 0) + 
@@ -91,7 +155,7 @@ export const CallbackApiSettings: React.FC = () => {
                 <div className="flex items-center gap-2">
                     <h2 className="text-lg font-semibold text-gray-800">Логи Callback API</h2>
                     <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
-                        {filteredLogs.length} записей
+                        Загружено: {filteredLogs.length} из {totalCount}
                     </span>
                 </div>
                 <div className="flex gap-2">
@@ -143,8 +207,9 @@ export const CallbackApiSettings: React.FC = () => {
                         placeholder="Поиск..."
                         value={searchQuery}
                         onChange={(e) => actions.setSearchQuery(e.target.value)}
-                        className="pl-8 pr-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-48"
+                        className="pl-8 pr-8 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 w-48"
                     />
+                    {/* Иконка лупы */}
                     <svg 
                         className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" 
                         xmlns="http://www.w3.org/2000/svg" 
@@ -154,6 +219,18 @@ export const CallbackApiSettings: React.FC = () => {
                     >
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
+                    {/* Крестик сброса (виден только при наличии текста) */}
+                    {searchQuery && (
+                        <button
+                            onClick={() => actions.setSearchQuery('')}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                            title="Очистить поиск"
+                        >
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    )}
                 </div>
 
                 {/* Фильтр по типу события */}
@@ -181,26 +258,56 @@ export const CallbackApiSettings: React.FC = () => {
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
-                        Сбросить ({activeFiltersCount})
+                        Сбросить - {activeFiltersCount}
                     </button>
                 )}
             </div>
 
             {error && (
-                <div className="bg-red-50 border-l-4 border-red-400 p-4 mx-4 mt-4">
+                <div className="bg-red-50 border-l-4 border-red-400 p-4 mx-4 mt-4 animate-fade-in-up">
                     <p className="text-sm text-red-700">{error}</p>
                 </div>
             )}
 
             {/* Таблица логов */}
-            <div className="flex-grow overflow-auto custom-scrollbar bg-white p-4">
+            <div ref={scrollContainerRef} className="flex-grow overflow-auto custom-scrollbar bg-white p-4">
 
             {isLoading && filteredLogs.length === 0 ? (
-                <div className="flex justify-center items-center h-40">
-                    <div className="loader border-t-indigo-500 w-8 h-8"></div>
+                /* Скелетон таблицы при загрузке — pixel-perfect с реальными строками */
+                <div className="overflow-x-auto custom-scrollbar border border-gray-200 rounded-lg">
+                    <table className="min-w-[1200px] w-full table-fixed divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="w-12 px-4 py-3"><div className="h-4 w-4 bg-gray-200 rounded animate-pulse" /></th>
+                                <th className="w-36 px-6 py-3"><div className="h-3 w-20 bg-gray-200 rounded animate-pulse" /></th>
+                                <th className="w-80 px-6 py-3"><div className="h-3 w-16 bg-gray-200 rounded animate-pulse" /></th>
+                                <th className="w-56 px-6 py-3"><div className="h-3 w-24 bg-gray-200 rounded animate-pulse" /></th>
+                                <th className="w-56 px-6 py-3"><div className="h-3 w-16 bg-gray-200 rounded animate-pulse" /></th>
+                                <th className="w-12 px-4 py-3" />
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {Array.from({ length: 8 }).map((_, i) => (
+                                <tr key={i} className="opacity-0 animate-fade-in-up" style={{ animationDelay: `${i * 40}ms` }}>
+                                    <td className="w-12 px-4 py-4"><div className="h-4 w-4 bg-gray-200 rounded animate-pulse" /></td>
+                                    <td className="w-36 px-6 py-4">
+                                        <div className="h-4 w-10 bg-gray-200 rounded animate-pulse mb-1" />
+                                        <div className="h-3 w-24 bg-gray-100 rounded animate-pulse" />
+                                    </td>
+                                    <td className="w-80 px-6 py-4">
+                                        <div className="h-4 w-40 bg-gray-200 rounded animate-pulse mb-1" />
+                                        <div className="h-3 w-20 bg-gray-100 rounded animate-pulse" />
+                                    </td>
+                                    <td className="w-56 px-6 py-4"><div className="h-4 w-28 bg-gray-200 rounded animate-pulse" /></td>
+                                    <td className="w-56 px-6 py-4"><div className="h-4 w-32 bg-gray-200 rounded animate-pulse" /></td>
+                                    <td className="w-12 px-4 py-4"><div className="h-5 w-5 bg-gray-200 rounded animate-pulse" /></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
             ) : filteredLogs.length === 0 ? (
-                <div className="text-center text-gray-500 py-10 border border-dashed border-gray-300 rounded-lg">
+                <div className="text-center text-gray-500 py-10 border border-dashed border-gray-300 rounded-lg animate-fade-in-up">
                     {activeFiltersCount > 0 ? 'Нет логов, соответствующих фильтрам.' : 'Нет логов Callback API.'}
                 </div>
             ) : (
@@ -259,8 +366,12 @@ export const CallbackApiSettings: React.FC = () => {
                                 </td>
                             </tr>
                         ) : (
-                            filteredLogs.map((log) => (
-                                <tr key={log.id} className={`hover:bg-gray-50 ${selectedIds.has(log.id) ? 'bg-indigo-50' : ''}`}>
+                            filteredLogs.map((log, index) => (
+                                <tr 
+                                    key={log.id} 
+                                    className={`hover:bg-gray-50 opacity-0 animate-fade-in-up ${selectedIds.has(log.id) ? 'bg-indigo-50' : ''}`}
+                                    style={{ animationDelay: `${index * 20}ms` }}
+                                >
                                     <td className="w-12 px-4 py-4 whitespace-nowrap align-top">
                                         <input
                                             type="checkbox"
@@ -303,10 +414,10 @@ export const CallbackApiSettings: React.FC = () => {
                                         </div>
                                     </td>
                                     <td className="w-56 px-6 py-4 text-sm text-gray-500 font-mono text-xs align-top">
-                                        <details className="min-w-0">
-                                            <summary className="cursor-pointer select-none flex items-center gap-2 whitespace-nowrap">
+                                        <div className="min-w-0">
+                                            <div className="flex items-center gap-2 whitespace-nowrap">
                                                 <button
-                                                    onClick={(e) => { e.preventDefault(); helpers.copyToClipboard(helpers.formatPayload(log.payload)); }}
+                                                    onClick={() => helpers.copyToClipboard(helpers.formatPayload(log.payload))}
                                                     className="text-gray-400 hover:text-indigo-600 flex-shrink-0"
                                                     title="Копировать JSON"
                                                     aria-label="Копировать JSON"
@@ -315,12 +426,19 @@ export const CallbackApiSettings: React.FC = () => {
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                                     </svg>
                                                 </button>
-                                                <span className="text-indigo-500 hover:text-indigo-700">Показать содержимое</span>
-                                            </summary>
-                                            <div className="mt-2 bg-gray-50 p-2 rounded border border-gray-200 whitespace-pre-wrap max-h-60 overflow-y-auto custom-scrollbar break-all">
-                                                {helpers.formatPayload(log.payload)}
+                                                <button
+                                                    onClick={() => togglePayload(log.id)}
+                                                    className="text-indigo-500 hover:text-indigo-700 select-none text-sm"
+                                                >
+                                                    {expandedPayloads.has(log.id) ? 'Скрыть содержимое' : 'Показать содержимое'}
+                                                </button>
                                             </div>
-                                        </details>
+                                            {expandedPayloads.has(log.id) && (
+                                                <div className="mt-2 bg-gray-50 p-2 rounded-md border border-gray-200 whitespace-pre-wrap max-h-60 overflow-y-auto custom-scrollbar break-all animate-expand-down">
+                                                    {helpers.formatPayload(log.payload)}
+                                                </div>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="w-12 px-4 py-4 whitespace-nowrap text-right text-sm align-top">
                                         <button
@@ -340,6 +458,24 @@ export const CallbackApiSettings: React.FC = () => {
                     </tbody>
                 </table>
             </div>
+            )}
+
+            {/* Индикатор подгрузки (infinite scroll) */}
+            {isLoadingMore && (
+                <div className="flex items-center justify-center py-4 gap-2 animate-fade-in-up">
+                    <svg className="animate-spin h-5 w-5 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    <span className="text-sm text-gray-500">Загрузка...</span>
+                </div>
+            )}
+
+            {/* Уведомление, что все данные загружены */}
+            {!hasMore && filteredLogs.length > 0 && !isLoading && (
+                <div className="text-center text-xs text-gray-400 py-3">
+                    Все записи загружены — {filteredLogs.length} из {totalCount}
+                </div>
             )}
             </div>
 

@@ -12,6 +12,63 @@ const AttachmentIcon: React.FC<{ type: Attachment['type'] }> = ({ type }) => {
     return icons[type] || null;
 };
 
+// Компонент для отображения видео с миниатюрой
+const VideoAttachmentCard: React.FC<{
+    att: Attachment;
+    isEditable: boolean;
+    onRemove: () => void;
+}> = ({ att, isEditable, onRemove }) => {
+    return (
+        <div className="relative group rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
+            <div className="flex items-center gap-3 p-2">
+                {/* Миниатюра видео */}
+                {att.thumbnail_url ? (
+                    <div className="relative flex-shrink-0 w-20 h-14 rounded overflow-hidden bg-black">
+                        <img 
+                            src={att.thumbnail_url} 
+                            alt={att.description || 'Видео'} 
+                            className="w-full h-full object-cover"
+                        />
+                        {/* Иконка play поверх превью */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="bg-black/50 rounded-full p-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex-shrink-0 w-20 h-14 rounded bg-gray-300 flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                )}
+                
+                {/* Описание видео */}
+                <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-700 truncate" title={att.description}>
+                        {att.description || 'Видео'}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">Видео</p>
+                </div>
+            </div>
+            
+            {/* Кнопка удаления */}
+            {isEditable && (
+                <button 
+                    onClick={onRemove}
+                    className="absolute top-1 right-1 bg-red-100 text-red-500 rounded-full h-5 w-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 hover:bg-red-200 hover:text-red-700 transition-all"
+                    aria-label="Удалить вложение"
+                >
+                    &times;
+                </button>
+            )}
+        </div>
+    );
+};
+
 interface AttachmentsDisplayProps {
     // FIX: Widened the type for `mode` to include 'copy' to resolve the type error.
     mode: 'view' | 'edit' | 'copy';
@@ -22,28 +79,89 @@ interface AttachmentsDisplayProps {
 export const AttachmentsDisplay: React.FC<AttachmentsDisplayProps> = ({ mode, attachments, onRemoveAttachment }) => {
     if (attachments.length === 0) return null;
 
+    const isEditable = mode === 'edit' || mode === 'copy';
+
+    // Разделяем вложения: видео отдельно (с превью), опросы — стилизованные, остальные — текстовый список
+    const videoAttachments = attachments.filter(att => att.type === 'video');
+    const pollAttachments = attachments.filter(att => att.type === 'poll');
+    const otherAttachments = attachments.filter(att => att.type !== 'video' && att.type !== 'poll');
+
     return (
         <div>
-             <label className="block text-sm font-medium text-gray-700 mb-1">Вложения</label>
-             <div className="space-y-2 bg-gray-50 p-3 rounded-md">
-                {attachments.map((att) => (
-                    <div key={att.id} className="flex items-center justify-between text-gray-600 group">
-                         <div className="flex items-center overflow-hidden mr-2">
-                            <div className="flex-shrink-0 w-5"><AttachmentIcon type={att.type} /></div>
-                            <p className="ml-3 text-sm truncate" title={att.description}>{att.description}</p>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Вложения</label>
+            
+            {/* Видео-вложения с миниатюрами */}
+            {videoAttachments.length > 0 && (
+                <div className="space-y-2 mb-2">
+                    {videoAttachments.map((att) => (
+                        <VideoAttachmentCard 
+                            key={att.id} 
+                            att={att} 
+                            isEditable={isEditable}
+                            onRemove={() => onRemoveAttachment(att.id)} 
+                        />
+                    ))}
+                </div>
+            )}
+            
+            {/* Опрос — компактная карточка с фиолетовым акцентом */}
+            {pollAttachments.length > 0 && (
+                <div className="space-y-2 mb-2">
+                    {pollAttachments.map((att) => (
+                        <div key={att.id} className="relative group border border-purple-200 bg-purple-50/50 rounded-lg p-3">
+                            <div className="flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-purple-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-medium text-purple-700 truncate">
+                                        {att.poll_data?.question || att.description || 'Опрос'}
+                                    </p>
+                                    {att.poll_data && (
+                                        <p className="text-xs text-purple-400 mt-0.5">
+                                            {att.poll_data.answers.filter(a => a.trim()).length} вариантов ответа
+                                            {att.poll_data.is_anonymous ? ' · Анонимный' : ''}
+                                            {att.poll_data.is_multiple ? ' · Мультивыбор' : ''}
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                            {isEditable && (
+                                <button 
+                                    onClick={() => onRemoveAttachment(att.id)}
+                                    className="absolute top-1 right-1 bg-red-100 text-red-500 rounded-full h-5 w-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 hover:bg-red-200 hover:text-red-700 transition-all"
+                                    aria-label="Удалить опрос"
+                                >
+                                    &times;
+                                </button>
+                            )}
                         </div>
-                         {(mode === 'edit' || mode === 'copy') && (
-                            <button 
-                                onClick={() => onRemoveAttachment(att.id)}
-                                className="flex-shrink-0 bg-red-100 text-red-500 rounded-full h-5 w-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 hover:bg-red-200 hover:text-red-700 transition-all"
-                                aria-label="Remove attachment"
-                            >
-                                &times;
-                            </button>
-                        )}
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            )}
+            
+            {/* Остальные вложения (опросы, документы и т.д.) — текстовый список */}
+            {otherAttachments.length > 0 && (
+                <div className="space-y-2 bg-gray-50 p-3 rounded-md">
+                    {otherAttachments.map((att) => (
+                        <div key={att.id} className="flex items-center justify-between text-gray-600 group">
+                            <div className="flex items-center overflow-hidden mr-2">
+                                <div className="flex-shrink-0 w-5"><AttachmentIcon type={att.type} /></div>
+                                <p className="ml-3 text-sm truncate" title={att.description}>{att.description}</p>
+                            </div>
+                            {isEditable && (
+                                <button 
+                                    onClick={() => onRemoveAttachment(att.id)}
+                                    className="flex-shrink-0 bg-red-100 text-red-500 rounded-full h-5 w-5 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 hover:bg-red-200 hover:text-red-700 transition-all"
+                                    aria-label="Remove attachment"
+                                >
+                                    &times;
+                                </button>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };

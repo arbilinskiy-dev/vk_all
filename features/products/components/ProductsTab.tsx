@@ -53,6 +53,7 @@ export const ProductsTab: React.FC<{
     const [uploadOptions, setUploadOptions] = useState<{ isOpen: boolean; file: File | null }>({ isOpen: false, file: null });
     const [updateFromFileState, setUpdateFromFileState] = useState<{ isOpen: boolean; fileRows: NewProductRow[] | null; fileName: string }>({ isOpen: false, fileRows: null, fileName: '' });
     const [mappingMode, setMappingMode] = useState<'create' | 'update' | null>(null);
+    const [addNewPrefix, setAddNewPrefix] = useState(false);
 
     const bulkEditButtonRef = useRef<HTMLButtonElement>(null);
     
@@ -87,7 +88,12 @@ export const ProductsTab: React.FC<{
         setMappingMode(null);
 
         if (mode === 'create') {
-            actions.openCreateMultipleModal(rows);
+            // Добавляем префикс "NEW" к названиям, если пользователь включил эту опцию
+            const processedRows = addNewPrefix
+                ? rows.map(row => ({ ...row, title: row.title ? `NEW ${row.title}` : row.title }))
+                : rows;
+            setAddNewPrefix(false);
+            actions.openCreateMultipleModal(processedRows);
         } else if (mode === 'update') {
             setUpdateFromFileState({ 
                 isOpen: true, 
@@ -200,6 +206,14 @@ export const ProductsTab: React.FC<{
                     newAlbumTitle={newAlbumTitle}
                     setNewAlbumTitle={actions.setNewAlbumTitle}
                     handleCreateAlbum={actions.handleCreateAlbum}
+                    editingAlbumId={state.editingAlbumId}
+                    editingAlbumTitle={state.editingAlbumTitle}
+                    isSavingAlbum={state.isSavingAlbum}
+                    handleStartEditAlbum={actions.handleStartEditAlbum}
+                    handleSaveEditAlbum={actions.handleSaveEditAlbum}
+                    handleCancelEditAlbum={actions.handleCancelEditAlbum}
+                    setEditingAlbumTitle={actions.setEditingAlbumTitle}
+                    handleDeleteAlbum={actions.handleDeleteAlbum}
                 />
             )}
 
@@ -223,7 +237,10 @@ export const ProductsTab: React.FC<{
                     isOpen={true} 
                     onClose={() => setUploadOptions({ isOpen: false, file: null })} 
                     fileName={uploadOptions.file.name}
-                    onCreate={() => handleInitiateMapping('create')} 
+                    onCreate={(addPrefix) => {
+                        setAddNewPrefix(addPrefix);
+                        handleInitiateMapping('create');
+                    }} 
                     onUpdate={() => handleInitiateMapping('update')}
                 />
             )}
@@ -233,8 +250,14 @@ export const ProductsTab: React.FC<{
                     gridData={fileGrid}
                     onClose={() => { actions.setIsFileMappingModalOpen(false); actions.setFileGrid(null); setMappingMode(null); }}
                     onImport={handleImportMappedRows}
+                    mode={mappingMode || 'create'}
                     allAlbums={albums}
                     allCategories={allCategories}
+                    projectId={project.id}
+                    onAlbumsCreated={(newAlbums) => {
+                        // Обновляем список подборок после автосоздания при импорте из файла
+                        actions.setAlbums((prev: any) => [...prev, ...newAlbums]);
+                    }}
                 />
             )}
 

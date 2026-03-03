@@ -20,15 +20,7 @@ from models_library.settings import AiPromptPreset, GlobalVariableDefinition, Pr
 from models_library.market import MarketCategory, MarketAlbum, MarketItem
 from models_library.lists import (
     ProjectListMeta,
-    SystemListSubscriber,
-    SystemListHistoryJoin,
-    SystemListHistoryLeave,
     SystemListPost,
-    SystemListLikes,
-    SystemListComments,
-    SystemListReposts,
-    SystemListMailing,
-    SystemListAuthor
 )
 # Обновленный импорт: SystemAccount и TokenLog теперь тоже живут в system.py вместе с SystemTask
 from models_library.system import SystemAccount, TokenLog, SystemTask
@@ -49,3 +41,25 @@ from models_library.automations import (
 from models_library.admin_tools import AdministeredGroup
 # NEW: VK Пользователи (авторизованные через OAuth)
 from models_library.vk_users import VkUser
+# NEW: Глобальные профили VK-пользователей (Фаза 1 рефакторинга БД)
+from models_library.vk_profiles import VkProfile
+# NEW: Нормализованные участники проектов (Фаза 2 рефакторинга БД)
+from models_library.members import ProjectMember, MemberEvent
+# NEW: Нормализованные взаимодействия с постами (Фаза 3 рефакторинга БД)
+from models_library.interactions import PostInteraction
+# NEW: Нормализованные диалоги и авторы (Фаза 4 рефакторинга БД)
+from models_library.dialogs_authors import ProjectDialog, ProjectAuthor
+# NEW: Конкурс 2.0
+from models_library.contest_v2 import ContestV2
+# NEW: Кэш сообщений
+from models_library.messages import CachedMessage, MessageCacheMeta
+# NEW: Статусы прочтения диалогов
+from models_library.message_read_status import MessageReadStatus
+# NEW: Статистика нагрузки сообщений
+from models_library.message_stats import MessageStatsHourly, MessageStatsUser
+# NEW: Авторизация — сессии и логи
+from models_library.auth import AuthSession, AuthLog
+# NEW: Шаблоны ответов для сообщений
+from models_library.message_templates import MessageTemplate
+# NEW: Списки промокодов для шаблонов сообщений
+from models_library.promo_lists import PromoList, PromoListCode

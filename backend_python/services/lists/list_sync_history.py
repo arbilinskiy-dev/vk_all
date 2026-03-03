@@ -4,6 +4,7 @@ import time
 
 import crud
 import models
+from models_library.members import MemberEvent
 from services import vk_service, task_monitor
 from services.post_helpers import get_rounded_timestamp
 from database import SessionLocal
@@ -13,6 +14,7 @@ from crud.lists.utils import deduplicate_users
 def refresh_history_details_task(task_id: str, project_id: str, list_type: str, user_token: str):
     """
     Фоновая задача для обновления деталей истории (Split Session).
+    Использует MemberEvent + VkProfile (нормализованная архитектура).
     """
     # --- Phase 1: Read ---
     all_vk_ids = []
@@ -20,18 +22,11 @@ def refresh_history_details_task(task_id: str, project_id: str, list_type: str, 
     
     db = SessionLocal()
     try:
-        model = None
-        if list_type == 'history_join': 
-            model = models.SystemListHistoryJoin
-        elif list_type == 'history_leave': 
-            model = models.SystemListHistoryLeave
-        
-        if not model:
-            task_monitor.update_task(task_id, "error", error="Invalid list type")
-            return
+        # Определяем тип события
+        event_type = 'join' if list_type == 'history_join' else 'leave'
 
         # 1. Удаляем дубликаты перед получением списка ID
-        deduplicate_users(db, model, project_id)
+        deduplicate_users(db, MemberEvent, project_id, event_type=event_type)
 
         all_vk_ids = crud.get_all_history_vk_ids(db, project_id, list_type)
         unique_tokens = get_all_project_tokens(db, user_token)
@@ -83,9 +78,12 @@ def refresh_history_details_task(task_id: str, project_id: str, list_type: str, 
         if updates:
             crud.bulk_update_history_details(db, project_id, list_type, updates)
 
-        # Пересчитываем реальное количество записей
-        model = models.SystemListHistoryJoin if list_type == 'history_join' else models.SystemListHistoryLeave
-        real_count = db.query(model).filter(model.project_id == project_id).count()
+        # Пересчитываем реальное количество записей (используем MemberEvent)
+        event_type = 'join' if list_type == 'history_join' else 'leave'
+        real_count = db.query(MemberEvent).filter(
+            MemberEvent.project_id == project_id,
+            MemberEvent.event_type == event_type
+        ).count()
 
         timestamp = get_rounded_timestamp()
         

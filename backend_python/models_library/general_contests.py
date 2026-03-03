@@ -38,6 +38,7 @@ class GeneralContest(Base):
     # 7. Цикличность и Перезапуск
     is_cyclic = Column(Boolean, default=False)
     restart_type = Column(String, default='manual') # 'manual', 'interval', 'daily', 'weekly'
+    restart_delay_hours = Column(Integer, nullable=True) # Задержка перезапуска в часах
     restart_settings = Column(Text, nullable=True) # JSON: { cron_days: [], interval_hours: 24, time: "18:00" }
     
     # 8. Шаблоны сообщений (Итоги)

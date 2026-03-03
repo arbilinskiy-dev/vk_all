@@ -9,13 +9,23 @@ from . import vk_service
 from . import update_tracker
 from config import settings
 
+# Типы постов, которые нельзя удалять напрямую (связаны с автоматизациями)
+PROTECTED_POST_TYPES = ['contest_v2_start']
+
 def delete_system_post(db: Session, post_id: str):
     """Удаляет системный пост, если он находится в разрешенном статусе."""
     post = crud.get_system_post_by_id(db, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="System post not found.")
     
-    if post.status not in ['pending_publication', 'error', 'possible_error', 'publishing', 'paused']:
+    # Защита: посты автоматизаций нельзя удалять напрямую
+    if post.post_type in PROTECTED_POST_TYPES:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Этот пост связан с автоматизацией и не может быть удален напрямую. Удалите его через настройки механики."
+        )
+    
+    if post.status not in ['pending_publication', 'error', 'paused']:
         raise HTTPException(status_code=400, detail=f"Cannot delete post with status '{post.status}'.")
 
     crud.delete_system_post(db, post_id)
@@ -64,25 +74,25 @@ def move_to_scheduled(db: Session, post_id: str):
         raise e
 
 def confirm_publication(db: Session, post_id: str):
-    """Подтверждает публикацию поста со статусом 'possible_error'."""
+    """Устаревшая функция. Оставлена для обратной совместимости API."""
     post = crud.get_system_post_by_id(db, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="System post not found.")
-    if post.status != 'possible_error':
-        raise HTTPException(status_code=400, detail="This action is only for posts with 'possible_error' status.")
-    
+    # Просто удаляем пост — верификация больше не нужна
     crud.delete_system_post(db, post_id)
 
 def publish_system_post_now(db: Session, post_id: str):
-    """Публикует системный пост немедленно, обновляя его статус для верификации."""
+    """Публикует системный пост немедленно и удаляет его из расписания."""
     post = crud.get_system_post_by_id(db, post_id)
     if not post:
         raise HTTPException(status_code=404, detail="System post not found.")
 
-    if post.status not in ['pending_publication', 'error', 'possible_error']:
+    # Если пост уже удалён трекером — не дублируем, просто возвращаем успех
+    if post.status not in ['pending_publication', 'error']:
         raise HTTPException(status_code=400, detail=f"Post with status '{post.status}' cannot be published now.")
 
     from . import post_service
+    from . import post_tracker_service
 
     try:
         # Собираем payload для существующей функции publish_now
@@ -91,7 +101,9 @@ def publish_system_post_now(db: Session, post_id: str):
             date=post.publication_date,
             text=post.text,
             images=json.loads(post.images) if post.images else [],
-            attachments=json.loads(post.attachments) if post.attachments else []
+            attachments=json.loads(post.attachments) if post.attachments else [],
+            is_pinned=getattr(post, 'is_pinned', False),
+            first_comment_text=getattr(post, 'first_comment_text', None)
         )
         payload = schemas.PublishPostPayload(post=post_schema, projectId=post.project_id)
         
@@ -99,14 +111,15 @@ def publish_system_post_now(db: Session, post_id: str):
         # delete_original=False, т.к. мы удаляем системный пост, а не отложенный
         vk_post_id = post_service.publish_now(db, payload, settings.vk_user_token, delete_original=False)
         
-        # Обновляем пост: меняем статус и сохраняем ID из VK
-        post.status = 'publishing'
-        post.vk_post_id = vk_post_id
-        db.commit()
+        print(f"  -> Successfully sent system post {post.id} to VK API for immediate publication. Received VK ID: {vk_post_id}.")
+
+        # VK подтвердил публикацию (вернул vk_post_id) — 
+        # создаём следующий циклический пост (если нужно) и удаляем текущий
+        post_tracker_service._create_next_cyclic_post(db, post)
+        crud.delete_system_post(db, post.id)
 
         # Помечаем проект как обновленный
         update_tracker.add_updated_project(post.project_id)
-        print(f"  -> Successfully sent system post {post.id} to VK API for immediate publication. Received VK ID: {vk_post_id}.")
 
     except Exception as e:
         print(f"  -> ERROR publishing system post {post.id} now: {e}")

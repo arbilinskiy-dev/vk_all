@@ -1,5 +1,4 @@
 
-import uuid
 import time
 import concurrent.futures
 from datetime import datetime, timezone
@@ -211,12 +210,10 @@ def refresh_subscribers_task(task_id: str, project_id: str, user_token: str):
                     }
 
                     subscriber_entry = base_data.copy()
-                    subscriber_entry["id"] = f"{project_id}_{vk_id}"
                     subscriber_entry["added_at"] = datetime.now(timezone.utc)
                     new_subscribers_data.append(subscriber_entry)
                     
                     history_join_entry = base_data.copy()
-                    history_join_entry["id"] = str(uuid.uuid4())
                     history_join_entry["event_date"] = datetime.now(timezone.utc)
                     new_history_join_data.append(history_join_entry)
                 
@@ -242,7 +239,6 @@ def refresh_subscribers_task(task_id: str, project_id: str, user_token: str):
                     new_history_leave_data = []
                     for leaver in leavers_data:
                          new_history_leave_data.append({
-                            "id": str(uuid.uuid4()),
                             "project_id": project_id,
                             "vk_user_id": leaver.vk_user_id,
                             "first_name": leaver.first_name,

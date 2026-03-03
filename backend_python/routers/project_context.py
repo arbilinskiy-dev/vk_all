@@ -5,16 +5,9 @@ from typing import List
 
 import schemas
 import services.project_context_service as context_service
-from database import SessionLocal
+from database import get_db
 
 router = APIRouter(prefix="/project-context", tags=["Project Context"])
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.get("/structure", response_model=List[schemas.ProjectContextField])
 def get_structure(db: Session = Depends(get_db)):

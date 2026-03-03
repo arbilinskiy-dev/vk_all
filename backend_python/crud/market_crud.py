@@ -101,6 +101,21 @@ def create_market_album(db: Session, album: models.MarketAlbum) -> models.Market
     db.refresh(album)
     return album
 
+def update_market_album_title(db: Session, album_pk: str, new_title: str) -> models.MarketAlbum:
+    """Обновляет название подборки товаров в БД."""
+    album = db.query(models.MarketAlbum).filter(models.MarketAlbum.id == album_pk).first()
+    if not album:
+        return None
+    album.title = new_title
+    db.commit()
+    db.refresh(album)
+    return album
+
+def delete_market_album(db: Session, album_pk: str):
+    """Удаляет подборку товаров из БД."""
+    db.query(models.MarketAlbum).filter(models.MarketAlbum.id == album_pk).delete()
+    db.commit()
+
 def decrement_market_album_count(db: Session, album_pk: str):
     """Уменьшает счетчик товаров в подборке на 1."""
     album = db.query(models.MarketAlbum).filter(models.MarketAlbum.id == album_pk).first()
@@ -149,6 +164,26 @@ def replace_market_items_for_project(db: Session, project_id: str, items_data: l
     for item in items_data:
         pk = f"-{abs(item['owner_id'])}_{item['id']}"
         
+        # Извлекаем лучший URL фото из photos[].sizes[] (оригинал),
+        # а не из thumb_photo (маленькое превью с crop)
+        best_photo_url = item.get('thumb_photo', '')
+        photos = item.get('photos')
+        if photos and len(photos) > 0:
+            sizes = photos[0].get('sizes', [])
+            if sizes:
+                # Приоритет типов размеров VK: w(макс) > z > y > x > r > q > p > o
+                size_priority = ['w', 'z', 'y', 'x', 'r', 'q', 'p', 'o']
+                for size_type in size_priority:
+                    best = next((s for s in sizes if s.get('type') == size_type), None)
+                    if best and best.get('url'):
+                        best_photo_url = best['url']
+                        break
+                else:
+                    # Фолбэк: берём самый большой по ширине
+                    sorted_sizes = sorted(sizes, key=lambda s: s.get('width', 0), reverse=True)
+                    if sorted_sizes and sorted_sizes[0].get('url'):
+                        best_photo_url = sorted_sizes[0]['url']
+        
         db_item = models.MarketItem(
             id=pk,
             project_id=project_id,
@@ -156,7 +191,7 @@ def replace_market_items_for_project(db: Session, project_id: str, items_data: l
             description=item['description'],
             price=json.dumps(item['price']),
             category=json.dumps(item['category']),
-            thumb_photo=item.get('thumb_photo', ''), # Безопасное получение
+            thumb_photo=best_photo_url,
             availability=item['availability'],
             date=item.get('date', 0), # Безопасное получение даты
             album_ids=json.dumps(item.get('album_ids', [])),

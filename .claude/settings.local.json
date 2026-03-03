@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(PYTHONIOENCODING=utf-8 \"c:/Users/nikita79882/Desktop/vk planer code/12.02.2026/backend_python/venv/Scripts/python.exe\" -m uvicorn main:app --reload --port 8000 --host 0.0.0.0)"
+    ]
+  }
+}

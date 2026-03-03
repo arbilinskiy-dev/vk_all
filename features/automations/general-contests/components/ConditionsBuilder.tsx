@@ -24,8 +24,8 @@ const extractGroupIdFromUrl = (input: string): string => {
     
     // Если это полный URL или короткая ссылка
     try {
-        // Убираем протокол и домен
-        let clean = input.replace(/^(?:https?:\/\/)?(?:www\.)?(?:m\.)?vk\.com\//, '');
+        // Убираем протокол и домен (поддерживаем vk.com и vk.ru)
+        let clean = input.replace(/^(?:https?:\/\/)?(?:www\.)?(?:m\.)?vk\.(?:com|ru)\//, '');
         // Убираем query параметры
         clean = clean.split('?')[0];
         // Убираем слэши
@@ -197,8 +197,8 @@ export const ConditionsBuilder: React.FC<ConditionsBuilderProps> = ({ groups, on
                                                     // Пытаемся извлечь ID на лету, если пользователь вставил ссылку
                                                     // Но сохраняем возможность редактирования, поэтому если это похоже на ввод руками, не меняем резко
                                                     // Лучше всего обрабатывать при вставке или потере фокуса, но для реактивности сделаем простую очистку
-                                                    // Если вставили полную ссылку - сразу парсим
-                                                    if (val.includes('vk.com/')) {
+                                                    // Если вставили полную ссылку - сразу парсим (поддерживаем vk.com и vk.ru)
+                                                    if (val.includes('vk.com/') || val.includes('vk.ru/')) {
                                                         updateConditionParam(group.id, condition.id, 'group_id', extractGroupIdFromUrl(val));
                                                     } else {
                                                         updateConditionParam(group.id, condition.id, 'group_id', val);

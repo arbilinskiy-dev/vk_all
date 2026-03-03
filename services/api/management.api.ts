@@ -100,3 +100,67 @@ export const syncGroupAdmins = async (groupId: number): Promise<AdministeredGrou
 export const syncAllGroupAdmins = async (): Promise<{ taskId: string }> => {
     return callApi<{ taskId: string }>('management/administered-groups/sync-admins-bulk');
 };
+
+// --- PROMOTE TO ADMINS API ---
+
+/** Результат назначения одного пользователя в одной группе */
+export interface PromoteUserResult {
+    group_id: number;
+    group_name: string;
+    user_id: number;
+    user_name: string;
+    was_member: boolean;
+    joined: boolean;
+    promoted: boolean;
+    already_admin: boolean;
+    error: string | null;
+    recommendation: string | null;
+}
+
+/** Ответ массового назначения админов */
+export interface PromoteToAdminsResponse {
+    success: boolean;
+    total_pairs: number;
+    promoted_count: number;
+    already_admin_count: number;
+    joined_count: number;
+    error_count: number;
+    results: PromoteUserResult[];
+}
+
+/**
+ * Массовое назначение системных страниц администраторами в группах VK.
+ * Автоматически вступает в группу, если пользователь не является участником.
+ */
+export const promoteToAdmins = async (
+    groupIds: number[],
+    userIds: number[],
+    role: string = 'administrator'
+): Promise<PromoteToAdminsResponse> => {
+    return callApi<PromoteToAdminsResponse>('management/administered-groups/promote-to-admins', {
+        group_ids: groupIds,
+        user_ids: userIds,
+        role
+    });
+};
+
+// --- ADMIN BULK OPERATIONS API ---
+
+/**
+ * Запускает фоновую задачу для последовательного обновления подписчиков ВСЕХ активных проектов.
+ */
+export const refreshAllSubscribers = async (): Promise<{ taskId: string }> => {
+    return callApi<{ taskId: string }>('management/refresh-all-subscribers');
+};
+
+/**
+ * Запускает фоновую задачу для параллельного сбора постов ВСЕХ активных проектов.
+ * @param limit - '100', '1000' или 'all'
+ * @param mode - 'limit' (скачать limit постов) или 'actual' (только недостающие)
+ */
+export const refreshAllPosts = async (
+    limit: '100' | '1000' | 'all' = '1000',
+    mode: 'limit' | 'actual' = 'limit'
+): Promise<{ taskId: string }> => {
+    return callApi<{ taskId: string }>('management/refresh-all-posts', { limit, mode });
+};

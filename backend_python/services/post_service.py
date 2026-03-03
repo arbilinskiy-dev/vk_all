@@ -7,4 +7,4 @@
 
 from .post_retrieval_service import *
 from .post_actions_service import *
-from .vk_callback_service import *
+# vk_callback_service удалён — вся логика перенесена в services.vk_callback (модульная архитектура v2)

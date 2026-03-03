@@ -30,7 +30,14 @@ def _fetch_vk_posts(db: Session, project_id: str, user_token: str, filter_type: 
     """
     Internal helper to fetch and deduplicate posts from VK.
     Returns (deduplicated_items, vk_response).
+    
+    Приоритет токенов:
+    1. Токен сообщества (communityToken + additional_community_tokens) — если есть
+    2. Токены админов группы (call_vk_api_for_group)
+    3. Остальные системные токены (fallback внутри call_vk_api_for_group)
     """
+    import json as _json
+    
     project = crud.get_project_by_id(db, project_id)
     if not project:
         raise HTTPException(404, f"Project with id {project_id} not found.")
@@ -38,16 +45,34 @@ def _fetch_vk_posts(db: Session, project_id: str, user_token: str, filter_type: 
     numeric_id = vk_service.resolve_vk_group_id(project.vkProjectId, user_token)
     owner_id = vk_service.vk_owner_id_string(numeric_id)
     
+    # Собираем токены сообщества (если есть)
+    community_tokens = []
+    if project.communityToken:
+        community_tokens.append(project.communityToken)
+    if project.additional_community_tokens:
+        try:
+            extras = _json.loads(project.additional_community_tokens)
+            if isinstance(extras, list):
+                community_tokens.extend([t for t in extras if t])
+        except Exception:
+            pass
+    
     params = {
         'owner_id': owner_id, 
-        'count': '100', 
+        'count': '50', 
         'access_token': user_token
     }
     if filter_type:
         params['filter'] = filter_type
 
     print(f"SERVICE: Calling VK API wall.get for project {project_id} (filter={filter_type})...")
-    vk_response = vk_service.call_vk_api('wall.get', params, project_id=project_id)
+    
+    # wall.get НЕ работает с community tokens (Error 27: method is unavailable with group auth)
+    # Поэтому community_tokens НЕ передаём — используем стандартную ротацию admin tokens
+    vk_response = vk_service.call_vk_api_for_group(
+        'wall.get', params, group_id=numeric_id, project_id=project_id,
+        community_tokens=None
+    )
     
     raw_items = vk_response.get('items', [])
     unique_items_map = {}
@@ -59,4 +84,5 @@ def _fetch_vk_posts(db: Session, project_id: str, user_token: str, filter_type: 
             
     deduplicated_items = list(unique_items_map.values())
     print(f"SERVICE: VK API returned {len(raw_items)} items. After deduplication: {len(deduplicated_items)}.")
+    
     return deduplicated_items, vk_response

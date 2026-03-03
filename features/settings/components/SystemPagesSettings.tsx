@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { AddSystemAccountsModal } from '../../users/components/modals/AddSystemAccountsModal';
 import { AuthorizeAccountModal } from '../../users/components/modals/AuthorizeAccountModal';
 import { ConfirmationModal } from '../../../shared/components/modals/ConfirmationModal';
@@ -43,6 +43,15 @@ export const SystemPagesSettings: React.FC = () => {
 
     const hasChanges = Object.keys(editedAccounts).length > 0;
 
+    // Стейт для skeleton + fade-in аватаров
+    const [loadedAvatars, setLoadedAvatars] = useState<Set<string>>(new Set());
+    // Стейт для lightbox аватара
+    const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+    const handleAvatarLoad = useCallback((url: string) => {
+        setLoadedAvatars(prev => new Set(prev).add(url));
+    }, []);
+
     // Подсчёт активных аккаунтов
     const activeCount = accounts.filter(a => a.status === 'active').length;
     const totalCount = accounts.length;
@@ -62,12 +71,12 @@ export const SystemPagesSettings: React.FC = () => {
                     <button
                         onClick={() => actions.handleCheckTokens(false, false)}
                         disabled={isCheckingTokens || isLoading || accounts.length === 0}
-                        className="inline-flex items-center px-4 py-2 border border-blue-600 text-sm font-medium rounded-md text-blue-600 bg-white hover:bg-blue-50 disabled:opacity-50"
+                        className="inline-flex items-center px-4 py-2 border border-indigo-600 text-sm font-medium rounded-md text-indigo-600 bg-white hover:bg-indigo-50 disabled:opacity-50"
                         title="Проверить валидность всех токенов"
                     >
                         {isCheckingTokens ? (
                             <>
-                                <div className="loader w-4 h-4 border-2 border-blue-600 border-t-transparent mr-2"></div>
+                                <div className="loader w-4 h-4 border-2 border-indigo-600 border-t-transparent mr-2"></div>
                                 Проверка...
                             </>
                         ) : (
@@ -102,8 +111,39 @@ export const SystemPagesSettings: React.FC = () => {
             {/* Контент */}
             <div className="flex-grow overflow-auto custom-scrollbar p-4">
                 {isLoading ? (
-                    <div className="flex justify-center items-center h-40">
-                        <div className="loader border-t-indigo-500 w-8 h-8"></div>
+                    <div className="overflow-x-auto custom-scrollbar bg-white rounded-lg shadow border border-gray-200">
+                        <table className="w-full min-w-[1000px]">
+                            <thead className="bg-gray-50 border-b-2 border-gray-200">
+                                <tr>
+                                    <th className="w-8 px-2"></th>
+                                    <th className="px-4 py-3 w-16"></th>
+                                    <th className="px-4 py-3 w-1/5"></th>
+                                    <th className="px-4 py-3 w-24"></th>
+                                    <th className="px-4 py-3 w-1/6"></th>
+                                    <th className="px-4 py-3 w-24"></th>
+                                    <th className="px-4 py-3 w-20"></th>
+                                    <th className="px-4 py-3 w-20"></th>
+                                    <th className="px-4 py-3 w-1/4"></th>
+                                    <th className="px-4 py-3 w-20"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {Array.from({ length: 8 }).map((_, i) => (
+                                    <tr key={i} className="border-b border-gray-50 opacity-0 animate-fade-in-up" style={{ animationDelay: `${i * 40}ms` }}>
+                                        <td className="px-2 py-2"><div className="w-4 h-4 bg-gray-200 rounded animate-pulse" /></td>
+                                        <td className="px-4 py-2"><div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse mx-auto" /></td>
+                                        <td className="px-4 py-2"><div className="w-32 h-4 bg-gray-200 rounded animate-pulse" /></td>
+                                        <td className="px-4 py-2"><div className="w-20 h-4 bg-gray-200 rounded animate-pulse" /></td>
+                                        <td className="px-4 py-2"><div className="w-36 h-4 bg-gray-200 rounded animate-pulse" /></td>
+                                        <td className="px-4 py-2"><div className="w-16 h-5 bg-gray-200 rounded animate-pulse" /></td>
+                                        <td className="px-4 py-2"><div className="w-10 h-4 bg-gray-200 rounded animate-pulse mx-auto" /></td>
+                                        <td className="px-4 py-2"><div className="w-10 h-4 bg-gray-200 rounded animate-pulse mx-auto" /></td>
+                                        <td className="px-4 py-2"><div className="w-40 h-5 bg-gray-200 rounded animate-pulse" /></td>
+                                        <td className="px-4 py-2"><div className="w-12 h-5 bg-gray-200 rounded animate-pulse ml-auto" /></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 ) : accounts.length === 0 ? (
                     <div className="text-center text-gray-500 mt-10">
@@ -127,7 +167,7 @@ export const SystemPagesSettings: React.FC = () => {
                                 </tr>
                             </thead>
                             <tbody className="bg-white">
-                                {accounts.map((acc) => {
+                                {accounts.map((acc, index) => {
                                     const currentData = editedAccounts[acc.id] || acc;
                                     const isEditing = editingTokenId === acc.id;
                                     const isExpanded = expandedAccountId === acc.id;
@@ -138,7 +178,8 @@ export const SystemPagesSettings: React.FC = () => {
                                     <React.Fragment key={acc.id}>
                                         <tr 
                                             onClick={() => actions.toggleRowExpand(acc.id)}
-                                            className={`border-b border-gray-50 last:border-b-0 cursor-pointer hover:bg-gray-50 transition-colors ${isExpanded ? 'bg-indigo-50/30' : ''} ${isEnv ? 'bg-slate-50' : ''}`}
+                                            className={`border-b border-gray-50 last:border-b-0 cursor-pointer hover:bg-gray-50 transition-colors opacity-0 animate-fade-in-up ${isExpanded ? 'bg-indigo-50/30' : ''} ${isEnv ? 'bg-slate-50' : ''}`}
+                                            style={{ animationDelay: `${index * 20}ms` }}
                                         >
                                             <td className="px-2 text-center text-gray-400">
                                                 <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-90 text-indigo-600' : ''}`} viewBox="0 0 20 20" fill="currentColor">
@@ -148,7 +189,21 @@ export const SystemPagesSettings: React.FC = () => {
                                             <td className="px-4 py-2 align-middle">
                                                 <div className="flex justify-center">
                                                     {acc.avatar_url ? (
-                                                        <img src={acc.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover border border-gray-200" />
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); setLightboxUrl(acc.avatar_url!); }}
+                                                            className="relative w-8 h-8 rounded-full overflow-hidden cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                                                            title="Открыть фото"
+                                                        >
+                                                            {!loadedAvatars.has(acc.avatar_url!) && (
+                                                                <div className="absolute inset-0 bg-gray-200 rounded-full animate-pulse" />
+                                                            )}
+                                                            <img
+                                                                src={acc.avatar_url}
+                                                                alt=""
+                                                                className={`w-8 h-8 rounded-full object-cover border border-gray-200 transition-opacity duration-300 ${loadedAvatars.has(acc.avatar_url!) ? 'opacity-100' : 'opacity-0'}`}
+                                                                onLoad={() => handleAvatarLoad(acc.avatar_url!)}
+                                                            />
+                                                        </button>
                                                     ) : isEnv ? (
                                                          <div className="w-8 h-8 rounded-full bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-500">
                                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
@@ -243,7 +298,9 @@ export const SystemPagesSettings: React.FC = () => {
                                         {isExpanded && (
                                             <tr className="bg-gray-50/30">
                                                 <td colSpan={10} className="p-0">
-                                                    <AccountStatsPanel accountId={acc.id} />
+                                                    <div className="animate-expand-down">
+                                                        <AccountStatsPanel accountId={acc.id} />
+                                                    </div>
                                                 </td>
                                             </tr>
                                         )}
@@ -282,6 +339,33 @@ export const SystemPagesSettings: React.FC = () => {
                     confirmButtonVariant="danger"
                     isConfirming={isSaving}
                 />
+            )}
+
+            {/* Lightbox для аватара */}
+            {lightboxUrl && (
+                <div
+                    className="fixed inset-0 bg-black/80 z-[9999] flex items-center justify-center cursor-zoom-out animate-fade-in-up"
+                    onClick={() => setLightboxUrl(null)}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setLightboxUrl(null); }}
+                    role="dialog"
+                    tabIndex={0}
+                >
+                    <img
+                        src={lightboxUrl}
+                        alt="Аватар"
+                        className="object-contain max-w-[90vw] max-h-[90vh] rounded-lg"
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                    <button
+                        className="absolute top-4 right-4 text-white hover:text-gray-300 transition-colors"
+                        onClick={() => setLightboxUrl(null)}
+                        title="Закрыть"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
             )}
         </div>
     );

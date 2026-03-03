@@ -15,6 +15,11 @@ class Post(Base):
     attachments = Column(Text, nullable=True)
     vkPostUrl = Column(String, nullable=True)
     _lastUpdated = Column(String)
+    is_pinned = Column(Boolean, default=False, nullable=False, server_default="0")
+    
+    # Поля для связи с автоматизациями (например, Конкурс 2.0)
+    post_type = Column(String, nullable=True)  # 'contest_v2_start', etc.
+    related_id = Column(String, nullable=True, index=True)  # ID связанной сущности (конкурса)
 
     tags = relationship("Tag", secondary=published_post_tags_association, back_populates="published_posts")
 
@@ -61,6 +66,12 @@ class SystemPost(Base):
     
     # Поле для хранения параметров AI генерации
     ai_generation_params = Column(Text, nullable=True) # JSON
+
+    # Флаг закрепления: при публикации пост будет закреплён на стене
+    is_pinned = Column(Boolean, default=False, nullable=False)
+
+    # Текст первого комментария (публикуется от имени сообщества после wall.post)
+    first_comment_text = Column(Text, nullable=True)
 
     # Новые поля для управления автоматизацией (Title, Description, Active)
     title = Column(String, nullable=True) # Название механики (например "Меню на завтра")

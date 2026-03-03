@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Sidebar } from './features/projects/components/Sidebar';
 import { ProjectSettingsModal } from './features/projects/components/modals/ProjectSettingsModal';
 import { useProjects } from './contexts/ProjectsContext';
@@ -8,13 +8,22 @@ import { LoginPage } from './features/auth/components/LoginPage';
 import { PrimarySidebar } from './features/navigation/components/PrimarySidebar';
 import { GlobalAiErrorModal } from './shared/components/modals/GlobalAiErrorModal';
 import { ConfirmationModal } from './shared/components/modals/ConfirmationModal';
+import { ConversationsSidebar } from './features/messages/components/conversations/ConversationsSidebar';
+import { useConversations } from './features/messages/hooks/chat/useConversations';
+import { useTypingState } from './features/messages/hooks/chat/useTypingState';
+import { useUnreadDialogCounts } from './features/messages/hooks/useUnreadDialogCounts';
+import { useGlobalUnreadSSE } from './features/messages/hooks/useGlobalUnreadSSE';
+import { MessagesChannel } from './features/messages/types';
+import { markAllDialogsAsRead } from './services/api/messages.api';
+import { msgLog, msgWarn, fmtProject } from './features/messages/utils/messagesLogger';
 
 // Импорт новых хуков и компонентов
 import { useAppState } from './hooks/useAppState';
 import { useSmartRefresh } from './hooks/useSmartRefresh';
+import { AccordionSectionKey } from './features/projects/components/modals/ProjectSettingsModal';
 import { AppContent } from './features/navigation/components/AppContent';
 
-export type AppView = 'schedule' | 'suggested' | 'products' | 'automations' | 'db-management' | 'user-management' | 'settings' | 'training' | 'automations-stories' | 'automations-reviews-contest' | 'automations-promo-drop' | 'automations-contests' | 'automations-ai-posts' | 'automations-birthday' | 'automations-activity-contest' | 'lists-system' | 'lists-user' | 'lists-automations' | 'vk-auth-test';
+export type AppView = 'schedule' | 'suggested' | 'products' | 'automations' | 'db-management' | 'user-management' | 'settings' | 'training' | 'updates' | 'automations-stories' | 'automations-reviews-contest' | 'automations-promo-drop' | 'automations-contests' | 'automations-ai-posts' | 'automations-birthday' | 'automations-activity-contest' | 'automations-contest-v2' | 'lists-system' | 'lists-user' | 'lists-automations' | 'vk-auth-test' | 'sandbox' | 'messages-vk' | 'messages-tg' | 'messages-stats';
 export type AppModule = 'km' | 'am' | 'stats' | 'lists';
 
 const App: React.FC = () => {
@@ -35,7 +44,8 @@ const App: React.FC = () => {
         handleSelectModule,
         handleSelectGlobalView,
         handleSelectKmView,
-        handleSelectListsView
+        handleSelectListsView,
+        handleSelectMessagesView
     } = useAppState();
 
     // Данные из контекста
@@ -55,10 +65,74 @@ const App: React.FC = () => {
     // Логика "умного обновления" (Smart Refresh) вынесена в отдельный хук
     useSmartRefresh(activeProjectId, activeView, activeModule);
 
+    // --- Состояние модуля сообщений ---
+    const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+    /** Фильтр непрочитанных диалогов: 'all' — все, 'unread' — только с непрочитанными, 'important' — важные */
+    const [conversationFilterUnread, setConversationFilterUnread] = useState<'all' | 'unread' | 'important'>('all');
+
+    // Загрузка диалогов из списка рассылки
+    const messagesChannel: MessagesChannel = activeView === 'messages-tg' ? 'tg' : 'vk';
+    const {
+        conversations,
+        isLoading: isConversationsLoading,
+        error: conversationsError,
+        totalCount: conversationsTotalCount,
+        hasMore: conversationsHasMore,
+        loadMore: loadMoreConversations,
+        refresh: refreshConversations,
+        updateUnreadCount,
+        updateLastMessage,
+        addNewConversationFromSSE,
+        resetAllUnreadCounts,
+        requestResort,
+        toggleImportant,
+    } = useConversations({
+        projectId: activeModule === 'am' ? activeProjectId : null,
+        channel: messagesChannel,
+        filterUnread: conversationFilterUnread,
+    });
+
+    // Typing + Dialog Focus: состояние печати пользователей и фокуса менеджеров
+    const {
+        typingUsers,
+        dialogFocuses,
+        handleUserTyping,
+        handleDialogFocus: handleDialogFocusUpdate,
+    } = useTypingState(activeModule === 'am' ? activeProjectId : null);
+
+    // Количество диалогов с непрочитанными для каждого проекта (бейдж в сайдбаре)
+    const {
+        unreadDialogCounts,
+        updateProjectCount: updateUnreadDialogCount,
+        refresh: refreshUnreadDialogCounts,
+        isLoading: isRefreshingUnreadDialogCounts,
+    } = useUnreadDialogCounts({
+        projects,
+        // Счётчики непрочитанных загружаются ВСЕГДА — чтобы бейджи в сайдбаре
+        // отражали реальное кол-во диалогов с непрочитанными вне зависимости от модуля
+        enabled: true,
+    });
+
+    // Глобальный SSE-стрим: обновляет счётчики непрочитанных по ВСЕМ проектам в реальном времени
+    // Работает ВСЕГДА — не зависит от активного модуля
+    useGlobalUnreadSSE({
+        enabled: true,
+        onUnreadCountChanged: updateUnreadDialogCount,
+    });
+
+    // ВАЖНО: sync-эффект из conversations УБРАН — он создавал гонку состояний.
+    // conversations проходит через промежуточные состояния (stale-данные от предыдущего
+    // проекта → пустой массив → новые данные), и sync перезаписывал правильные
+    // счётчики из useUnreadDialogCounts неверными промежуточными значениями.
+    // Единственный авторитетный источник: useUnreadDialogCounts (начальная загрузка
+    // через API /unread-counts) + useGlobalUnreadSSE (push-обновление в реальном времени).
+
     // --- Логика защиты от потери данных при переключении проекта ---
     const [navigationBlocker, setNavigationBlocker] = useState<(() => boolean) | null>(null);
     const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
     const [showNavConfirm, setShowNavConfirm] = useState(false);
+    // Секция, которую нужно открыть при открытии модалки настроек проекта
+    const [settingsInitialSection, setSettingsInitialSection] = useState<AccordionSectionKey | null>(null);
 
     const handleProjectSwitch = (projectId: string | null) => {
         // Если проект тот же самый, ничего не делаем
@@ -71,6 +145,8 @@ const App: React.FC = () => {
         } else {
             setActiveProjectId(projectId);
             setActiveViewParams({}); // Сбрасываем параметры при смене проекта
+            setActiveConversationId(null); // Сбрасываем активный диалог при смене проекта
+            setConversationFilterUnread('all'); // Сброс фильтра непрочитанных при смене проекта
         }
     };
 
@@ -79,6 +155,7 @@ const App: React.FC = () => {
         setNavigationBlocker(null); 
         setActiveProjectId(pendingProjectId);
         setActiveViewParams({}); // Сбрасываем параметры
+        setConversationFilterUnread('all'); // Сброс фильтра непрочитанных при смене проекта
         setShowNavConfirm(false);
         setPendingProjectId(null);
     };
@@ -131,6 +208,25 @@ const App: React.FC = () => {
         }
         handleSelectKmView('automations-ai-posts');
     };
+    
+    // Функция навигации к Конкурс 2.0
+    const handleNavigateToContestV2 = (contestId: string, projectId: string) => {
+        // Сначала переключаемся на нужный проект если необходимо
+        if (activeProjectId !== projectId) {
+            setActiveProjectId(projectId);
+        }
+        // Устанавливаем параметры и переходим во вью
+        setActiveViewParams({ contestId });
+        handleSelectKmView('automations-contest-v2');
+    };
+
+    /** Открыть настройки активного проекта на секции «Интеграции» */
+    const handleOpenIntegrations = useCallback(() => {
+        if (activeProject) {
+            setSettingsInitialSection('integrations');
+            setEditingProject(activeProject);
+        }
+    }, [activeProject, setEditingProject]);
 
     if (isAuthLoading) {
          return (
@@ -156,25 +252,65 @@ const App: React.FC = () => {
                 onSelectModule={handleSelectModule}
                 onSelectView={handleSelectKmView}
                 onSelectListsView={handleSelectListsView}
+                onSelectMessagesView={handleSelectMessagesView}
                 onSelectGlobalView={handleSelectGlobalView}
             />
             
-            {/* Сайдбар проектов отображается в модулях контент-менеджмента и списков */}
-            {(activeModule === 'km' || activeModule === 'lists') && (
+            {/* Сайдбар проектов отображается в модулях контент-менеджмента, списков и сообщений (скрывается в мониторинге) */}
+            {(activeModule === 'km' || activeModule === 'lists' || activeModule === 'am') && activeView !== 'messages-stats' && (
                  <Sidebar
                     projects={projects}
                     activeProjectId={activeProjectId}
                     activeView={activeView}
                     scheduledPostCounts={scheduledPostCounts}
                     suggestedPostCounts={suggestedPostCounts}
+                    unreadDialogCounts={unreadDialogCounts}
+                    onRefreshUnreadDialogCounts={refreshUnreadDialogCounts}
+                    isRefreshingUnreadDialogCounts={isRefreshingUnreadDialogCounts}
                     isLoadingCounts={isInitialLoading}
                     isCheckingForUpdatesProjectId={isCheckingForUpdates}
                     projectPermissionErrors={projectPermissionErrors}
                     updatedProjectIds={updatedProjectIds}
-                    onSelectProject={handleProjectSwitch} // Используем обертку с защитой
+                    onSelectProject={handleProjectSwitch}
                     onOpenSettings={setEditingProject}
                     onRefreshProject={handleRefreshForSidebar}
                     onForceRefresh={handleForceRefreshProjects}
+                />
+            )}
+
+            {/* Сайдбар диалогов отображается в модуле сообщений при выбранном проекте (скрывается в мониторинге) */}
+            {activeModule === 'am' && activeProject && activeView !== 'messages-stats' && (
+                <ConversationsSidebar
+                    conversations={conversations}
+                    activeConversationId={activeConversationId}
+                    onSelectConversation={setActiveConversationId}
+                    projectName={activeProject.name}
+                    isLoading={isConversationsLoading}
+                    error={conversationsError}
+                    totalCount={conversationsTotalCount}
+                    hasMore={conversationsHasMore}
+                    onLoadMore={loadMoreConversations}
+                    onRefresh={refreshConversations}
+                    typingUsers={typingUsers}
+                    dialogFocuses={dialogFocuses}
+                    activeProject={activeProject}
+                    onOpenIntegrations={handleOpenIntegrations}
+                    filterUnread={conversationFilterUnread}
+                    onFilterUnreadChange={setConversationFilterUnread}
+                    onMarkAllRead={async () => {
+                        if (!activeProjectId) return;
+                        try {
+                            msgLog('MARK_READ', `🧹 mark-all-read: начало для ${fmtProject(activeProjectId)}`);
+                            await markAllDialogsAsRead(activeProjectId);
+                            // Сбрасываем локальные unread счётчики в списке диалогов
+                            resetAllUnreadCounts();
+                            // Немедленно обновляем бейдж в сайдбаре (не ждём SSE)
+                            updateUnreadDialogCount(activeProjectId, 0);
+                            msgLog('MARK_READ', `✅ mark-all-read: завершено для ${fmtProject(activeProjectId)}`);
+                        } catch (err) {
+                            msgWarn('MARK_READ', `Ошибка mark-all-read ${fmtProject(activeProjectId)}`, err);
+                        }
+                    }}
                 />
             )}
 
@@ -193,8 +329,32 @@ const App: React.FC = () => {
                     onNavigateToContest={handleNavigateToContest}
                     onNavigateToGeneralContest={handleNavigateToGeneralContest}
                     onNavigateToAiPosts={handleNavigateToAiPosts}
+                    onNavigateToContestV2={handleNavigateToContestV2}
                     setNavigationBlocker={setNavigationBlocker} // Передаем сеттер блокировщика
                     onGoToTraining={() => handleSelectGlobalView('training')} // Переход в центр обучения
+                    onNavigateToMessages={(projectId, vkUserId) => {
+                        // 1) Переключаем проект
+                        setActiveProjectId(projectId);
+                        // 2) Переключаем view на messages-vk
+                        handleSelectMessagesView('messages-vk');
+                        // 3) Открываем диалог с этим пользователем
+                        // ID формат в useConversations: "conv-{vk_user_id}"
+                        setActiveConversationId(`conv-${vkUserId}`);
+                    }}
+                    activeConversationId={activeConversationId}
+                    onSelectConversation={setActiveConversationId}
+                    conversations={conversations}
+                    updateUnreadCount={updateUnreadCount}
+                    updateLastMessage={updateLastMessage}
+                    addNewConversationFromSSE={addNewConversationFromSSE}
+                    onUserTyping={handleUserTyping}
+                    onDialogFocusUpdate={handleDialogFocusUpdate}
+                    onAllRead={resetAllUnreadCounts}
+                    typingUsers={typingUsers}
+                    dialogFocuses={dialogFocuses}
+                    onProjectUnreadUpdate={updateUnreadDialogCount}
+                    requestResort={requestResort}
+                    toggleImportant={toggleImportant}
                 />
             </main>
             
@@ -202,8 +362,9 @@ const App: React.FC = () => {
                 <ProjectSettingsModal
                     project={editingProject}
                     uniqueTeams={uniqueTeams}
-                    onClose={() => setEditingProject(null)}
+                    onClose={() => { setEditingProject(null); setSettingsInitialSection(null); }}
                     onSave={handleUpdateProjectSettings}
+                    initialOpenSection={settingsInitialSection}
                 />
             )}
 

@@ -36,7 +36,13 @@ export const useCreateSingleProduct = ({ onClose, onSave, projectId, initialData
     const currentProject = useMemo(() => projects.find(p => p.id === projectId) || null, [projects, projectId]);
     const uniqueTeams = useMemo(() => {
         const teams = new Set<string>();
-        projects.forEach(p => { if (p.team) teams.add(p.team); });
+        projects.forEach(p => {
+            if (p.teams && p.teams.length > 0) {
+                p.teams.forEach(t => teams.add(t));
+            } else if (p.team) {
+                teams.add(p.team);
+            }
+        });
         return Array.from(teams).sort();
     }, [projects]);
 

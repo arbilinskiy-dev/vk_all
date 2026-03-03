@@ -140,7 +140,7 @@ export const MassAiAutofillModal: React.FC<MassAiAutofillModalProps> = ({
                     ) : (
                         <>
                             <div className="px-4 py-2 bg-gray-100 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                Проекты ({selectedIds.size})
+                                Проекты - {selectedIds.size}
                             </div>
                             <table className="w-full text-sm text-left">
                                 <thead className="text-xs text-gray-500 uppercase bg-gray-100 border-b sticky top-0">

@@ -203,21 +203,44 @@ def refresh_interactions_task(task_id: str, project_id: str, date_from_iso: str,
     try:
         task_monitor.update_task(task_id, "processing", message="Сохранение в БД...")
         
-        def prepare_for_db(data_map, project_id):
+        def prepare_for_db(data_map, project_id, type_name):
+            """
+            Конвертирует аккумулятор → список индивидуальных PostInteraction записей.
+            Каждое взаимодействие (пользователь + пост) = отдельная запись.
+            """
             result = []
             for uid, data in data_map.items():
-                data['id'] = f"{project_id}_{uid}"
-                data['project_id'] = project_id
-                data['post_ids'] = json.dumps(list(data['post_ids']))
-                result.append(data)
+                for vk_post_id in data['post_ids']:
+                    result.append({
+                        'project_id': project_id,
+                        'vk_user_id': uid,
+                        'vk_post_id': vk_post_id,
+                        'type': type_name,
+                        'created_at': data.get('last_interaction_date'),
+                        # Поля профиля для _ensure_vk_profiles
+                        'first_name': data.get('first_name'),
+                        'last_name': data.get('last_name'),
+                        'photo_url': data.get('photo_url'),
+                        'sex': data.get('sex'),
+                        'domain': data.get('domain'),
+                        'bdate': data.get('bdate'),
+                        'city': data.get('city'),
+                        'country': data.get('country'),
+                        'has_mobile': data.get('has_mobile'),
+                        'last_seen': data.get('last_seen'),
+                        'platform': data.get('platform'),
+                        'deactivated': data.get('deactivated'),
+                        'is_closed': data.get('is_closed'),
+                        'can_access_closed': data.get('can_access_closed'),
+                    })
             return result
 
         if likes_acc:
-            crud.bulk_upsert_interactions(db, project_id, 'likes', prepare_for_db(likes_acc, project_id))
+            crud.bulk_upsert_interactions(db, project_id, 'likes', prepare_for_db(likes_acc, project_id, 'likes'))
         if comments_acc:
-            crud.bulk_upsert_interactions(db, project_id, 'comments', prepare_for_db(comments_acc, project_id))
+            crud.bulk_upsert_interactions(db, project_id, 'comments', prepare_for_db(comments_acc, project_id, 'comments'))
         if reposts_acc:
-            crud.bulk_upsert_interactions(db, project_id, 'reposts', prepare_for_db(reposts_acc, project_id))
+            crud.bulk_upsert_interactions(db, project_id, 'reposts', prepare_for_db(reposts_acc, project_id, 'reposts'))
             
     except Exception as e:
         print(f"Error saving basic interaction data: {e}")
@@ -264,13 +287,12 @@ def refresh_interactions_task(task_id: str, project_id: str, date_from_iso: str,
                     'can_access_closed': u.get('can_access_closed')
                 })
             
-            # Применяем обновления ко всем таблицам, где есть эти пользователи
+            # Применяем обновления к VkProfile (нормализованная архитектура — один update для всех типов)
             if updates:
                 db_enrich = SessionLocal()
                 try:
-                    if likes_acc: crud.bulk_update_interaction_users(db_enrich, project_id, 'likes', updates)
-                    if comments_acc: crud.bulk_update_interaction_users(db_enrich, project_id, 'comments', updates)
-                    if reposts_acc: crud.bulk_update_interaction_users(db_enrich, project_id, 'reposts', updates)
+                    # Обновляем VkProfile напрямую — все типы взаимодействий ссылаются на те же профили
+                    crud.bulk_update_interaction_users(db_enrich, project_id, 'likes', updates)
                     db_enrich.commit()
                 finally:
                     db_enrich.close()
@@ -282,9 +304,11 @@ def refresh_interactions_task(task_id: str, project_id: str, date_from_iso: str,
     # --- PHASE 5: META UPDATE ---
     db = SessionLocal()
     try:
-        count_likes = db.query(models.SystemListLikes).filter(models.SystemListLikes.project_id == project_id).count()
-        count_comments = db.query(models.SystemListComments).filter(models.SystemListComments.project_id == project_id).count()
-        count_reposts = db.query(models.SystemListReposts).filter(models.SystemListReposts.project_id == project_id).count()
+        from crud.lists.interactions import get_interaction_user_count
+        
+        count_likes = get_interaction_user_count(db, project_id, 'likes')
+        count_comments = get_interaction_user_count(db, project_id, 'comments')
+        count_reposts = get_interaction_user_count(db, project_id, 'reposts')
         
         timestamp = get_rounded_timestamp()
         

@@ -262,11 +262,10 @@ def refresh_posts_task(task_id: str, project_id: str, user_token: str, limit: st
                     project_id
                 )
                 
-                # Подготавливаем данные для БД
+                # Подготавливаем данные для БД (нормализованный формат — профиль идёт в vk_profiles)
                 authors_to_save = []
                 for profile in authors_profiles:
                     authors_to_save.append({
-                        "id": f"{project_id}_{profile['id']}",
                         "project_id": project_id,
                         "vk_user_id": profile['id'],
                         "first_name": profile.get('first_name'),
@@ -287,12 +286,13 @@ def refresh_posts_task(task_id: str, project_id: str, user_token: str, limit: st
                         "source": "posts_sync"
                     })
                 
-                # Сохраняем
+                # Сохраняем через нормализованный CRUD
+                from models_library.dialogs_authors import ProjectAuthor
                 db_authors = SessionLocal()
                 try:
                     crud.bulk_upsert_authors(db_authors, authors_to_save)
-                    # Обновляем счетчик
-                    auth_count = db_authors.query(models.SystemListAuthor).filter(models.SystemListAuthor.project_id == project_id).count()
+                    # Обновляем счетчик через ProjectAuthor
+                    auth_count = db_authors.query(ProjectAuthor).filter(ProjectAuthor.project_id == project_id).count()
                     crud.update_list_meta(db_authors, project_id, {
                         "authors_count": auth_count,
                         "authors_last_updated": get_rounded_timestamp()

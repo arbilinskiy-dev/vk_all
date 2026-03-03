@@ -1,0 +1,169 @@
+import React, { useState } from 'react';
+import { MockSidebarList, InteractiveSidebarHeader, InteractiveFilterPanel } from './SidebarMocks';
+import { NavigationButtons } from './shared';
+
+export const Sandbox: React.FC<{ title: string; description: string; children: React.ReactNode; }> = ({ title, description, children }) => (
+    <div className="relative not-prose p-6 border-2 border-dashed border-indigo-300 rounded-xl bg-indigo-50/50 mt-12">
+        <h4 className="text-xl font-bold text-indigo-800 mb-2">{title}</h4>
+        <p className="text-sm text-indigo-700 mb-6">{description}</p>
+        {children}
+    </div>
+);
+
+// Вспомогательный компонент для демонстрации счетчиков
+const CounterExample: React.FC<{ count: number; colorClasses: string; title: string; description: string }> = ({ count, colorClasses, title, description }) => (
+    <div className="flex items-center gap-4 p-3 bg-white border rounded-lg">
+        <span className={`text-xs px-2 py-0.5 rounded-full ${colorClasses}`}>{count}</span>
+        <div>
+            <p className="font-semibold text-gray-800">{title}</p>
+            <p className="text-sm text-gray-600">{description}</p>
+        </div>
+    </div>
+);
+
+
+export const SidebarNavDeepDive: React.FC<{ title: string }> = ({ title }) => {
+    return (
+        <article className="prose prose-indigo max-w-none">
+            <h1 className="!text-3xl !font-bold !tracking-tight !text-gray-900 !border-b !pb-4 !mb-6">{title}</h1>
+
+            <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">Что это такое?</h3>
+            <p className="!text-base !leading-relaxed !text-gray-700">
+                <strong>Сайдбар</strong> — это ваша панель управления, расположенная в левой части экрана. Он служит для навигации между вашими проектами (сообществами VK) и для быстрой фильтрации контента.
+            </p>
+
+            <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">Из чего он состоит?</h3>
+            <p className="!text-base !leading-relaxed !text-gray-700">Сайдбар можно разделить на четыре основные зоны, каждую из которых мы разберем подробно:</p>
+            <ol className="!text-base !leading-relaxed !text-gray-700">
+                <li><strong>Шапка:</strong> Глобальные действия и управление приложением.</li>
+                <li><strong>Панель фильтров:</strong> Инструменты для поиска и отбора проектов.</li>
+                <li><strong>Счетчик проектов:</strong> Быстрый индикатор количества контента.</li>
+                <li><strong>Список проектов:</strong> Основная навигационная область.</li>
+            </ol>
+            
+            <hr className="!my-10" />
+
+            <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">1. Шапка: Глобальные действия</h2>
+            <p className="!text-base !leading-relaxed !text-gray-700">
+                Верхняя часть сайдбара содержит набор иконок для выполнения действий, затрагивающих все приложение.
+            </p>
+            
+            <Sandbox title="Попробуйте сами: Шапка сайдбара" description="Наведите на иконки, чтобы увидеть подсказки. Нажмите на кнопку обновления списка проектов (вторая слева), чтобы увидеть индикатор загрузки.">
+                <InteractiveSidebarHeader />
+            </Sandbox>
+
+            <hr className="!my-10" />
+
+            <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">2. Панель фильтров: Ваш инструмент для поиска</h2>
+            <p className="!text-base !leading-relaxed !text-gray-700">
+                Эта секция позволяет быстро находить нужные проекты, даже если их очень много.
+            </p>
+
+            <Sandbox title="Попробуйте сами: Панель фильтров" description="Переключайте режимы, вводите текст в поиск и выбирайте разные фильтры, чтобы увидеть, как они работают.">
+                <InteractiveFilterPanel />
+            </Sandbox>
+
+            <hr className="!my-10" />
+
+            {/* ОБНОВЛЕННЫЙ РАЗДЕЛ */}
+            <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">3. Счетчик проектов: Ваш индикатор контента</h2>
+            <p className="!text-base !leading-relaxed !text-gray-700">
+                Цифра справа от названия каждого проекта — это не просто число, а важный индикатор, который показывает, сколько контента находится в работе. Его значение меняется в зависимости от выбранной вкладки:
+            </p>
+            <ul className="!text-base !leading-relaxed !text-gray-700 !mt-4 !space-y-2">
+                <li>
+                    На вкладке <strong>"Отложенные"</strong> счетчик показывает <strong>сумму</strong> ваших "Системных постов" (с пунктирной рамкой) и постов в стандартной отложке VK (со сплошной рамкой). Это общее число всех запланированных публикаций.
+                </li>
+                <li>
+                    На вкладке <strong>"Предложенные"</strong> он показывает общее количество постов от пользователей, которые ожидают вашей модерации.
+                </li>
+            </ul>
+
+            <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">Что означают цвета?</h3>
+            <p className="!text-base !leading-relaxed !text-gray-700">Цвет счетчика помогает быстро оценить ситуацию в проекте, не заходя в него:</p>
+            
+            <div className="not-prose my-6 space-y-4">
+                <CounterExample 
+                    count={0} 
+                    colorClasses="bg-gradient-to-t from-gray-300 to-red-200 text-red-900 font-medium" 
+                    title="Красный: Нет постов" 
+                    description="В этом проекте нет контента для выбранной вкладки. Пора за работу!" 
+                />
+                <CounterExample 
+                    count={3} 
+                    colorClasses="bg-gradient-to-t from-gray-300 to-orange-200 text-orange-900 font-medium" 
+                    title="Оранжевый: Мало постов (1-4)" 
+                    description="Контент есть, но его немного. Возможно, стоит запланировать еще." 
+                />
+                 <CounterExample 
+                    count={7} 
+                    colorClasses="bg-gray-300 text-gray-700" 
+                    title="Серый: Достаточно постов (5-10)" 
+                    description="Хороший запас контента на ближайшее время." 
+                />
+                <CounterExample 
+                    count={15} 
+                    colorClasses="bg-gradient-to-t from-gray-300 to-green-200 text-green-900 font-medium" 
+                    title="Зеленый: Много постов (11+)" 
+                    description="Отличная работа! Контент-план заполнен надолго вперед." 
+                />
+            </div>
+            
+            <hr className="!my-10" />
+
+            {/* ОБНОВЛЕННЫЙ НОМЕР РАЗДЕЛА */}
+            <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">4. Список проектов: Детальный разбор</h2>
+            <p className="!text-base !leading-relaxed !text-gray-700">Каждый элемент в списке — это не просто ссылка, а интерактивный компонент с множеством состояний, которые информируют вас о его статусе.</p>
+            
+            <div className="flex flex-col md:flex-row gap-8 mt-8 not-prose">
+                <div className="w-full md:w-72 flex-shrink-0">
+                    <MockSidebarList />
+                </div>
+                
+                <div className="flex-1">
+                    <dl className="space-y-4">
+                        <div>
+                            <dt className="font-bold text-gray-800">Обычный проект</dt>
+                            <dd className="text-sm text-gray-600 mt-1">Стандартное состояние проекта в списке. Справа — счетчик постов, цвет которого зависит от их количества.</dd>
+                        </div>
+                        <div>
+                            <dt className="font-bold text-gray-800">Активный проект</dt>
+                            <dd className="text-sm text-gray-600 mt-1">Проект, который вы выбрали в данный момент. Он подсвечивается синим фоном для выделения.</dd>
+                        </div>
+                        <div>
+                            <dt className="font-bold text-gray-800">Проект при наведении</dt>
+                            <dd className="text-sm text-gray-600 mt-1">
+                                Когда вы наводите курсор, слева плавно появляется панель с двумя кнопками для быстрых действий:
+                                <ul className="list-disc list-inside mt-2 space-y-1">
+                                    <li>
+                                        <strong className="font-semibold">Обновить (иконка 🔄):</strong> Эта кнопка принудительно запрашивает самые свежие данные из ВКонтакте для этого конкретного проекта. Она обновляет список ваших публикаций (отложенных, опубликованных или предложенных, в зависимости от активной вкладки) и внутренние настройки проекта.
+                                        <p className="mt-2 text-xs"><strong>Используйте эту кнопку</strong>, если вы внесли изменения напрямую в интерфейсе VK (например, создали новый пост или отредактировали старый) и хотите немедленно увидеть эти изменения в планировщике.</p>
+                                    </li>
+                                    <li><strong className="font-semibold">Настройки (иконка ⚙️):</strong> Открывает модальное окно настроек именно для этого проекта. Это быстрый доступ к редактированию его названия, команды, переменных и других параметров.</li>
+                                </ul>
+                            </dd>
+                        </div>
+                         <div>
+                            <dt className="font-bold text-gray-800">Проблема с доступом ⚠️</dt>
+                            <dd className="text-sm text-gray-600 mt-1">Желтый треугольник сигнализирует об ошибке. Чаще всего это означает, что у сервисного токена нет прав администратора в этом сообществе VK.</dd>
+                        </div>
+                        <div>
+                            <dt className="font-bold text-gray-800">Доступно обновление 🔵</dt>
+                            <dd className="text-sm text-gray-600 mt-1">Синяя точка означает, что на сервере есть свежие данные для этого проекта. При его выборе данные обновятся автоматически.</dd>
+                        </div>
+                         <div>
+                            <dt className="font-bold text-gray-800">Идет обновление...</dt>
+                            <dd className="text-sm text-gray-600 mt-1">Анимированный спиннер появляется вместо счетчика, когда вы вручную обновляете проект.</dd>
+                        </div>
+                        <div>
+                            <dt className="font-bold text-gray-800">Отключенный проект</dt>
+                            <dd className="text-sm text-gray-600 mt-1">Проекты с этим статусом отображаются в конце списка и имеют приглушенный стиль, чтобы не мешать работе с активными.</dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
+
+            <NavigationButtons currentPath="2-1-1-sidebar-nav" />
+        </article>
+    );
+};

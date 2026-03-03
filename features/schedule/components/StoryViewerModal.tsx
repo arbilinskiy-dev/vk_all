@@ -98,18 +98,86 @@ export const StoryViewerModal: React.FC<StoryViewerModalProps> = ({ initialStory
 
                 {/* Main Media */}
                 <div className="relative w-full h-[80vh] bg-black rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10 flex items-center justify-center">
-                    {currentStory.preview ? (
-                         <img 
+                    {/* Видео-история — всегда показываем превью + оверлей (VK не отдаёт стабильные mp4 URL для историй) */}
+                    {currentStory.type === 'video' && currentStory.preview ? (
+                        <div className="relative w-full h-full">
+                            <img 
+                                src={currentStory.preview} 
+                                alt="Story Video Preview" 
+                                className="w-full h-full object-contain"
+                            />
+                            {/* Затемнение + информация о видео */}
+                            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-black/50 via-black/30 to-black/50">
+                                {/* Бейдж "Видеоистория" сверху */}
+                                <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/60 backdrop-blur-md px-4 py-2 rounded-full">
+                                    <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                    </svg>
+                                    <span className="text-white text-xs font-semibold tracking-wide uppercase">Видеоистория</span>
+                                </div>
+
+                                {/* Центральная кнопка Play */}
+                                {currentStory.link ? (
+                                    <a
+                                        href={currentStory.link}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex flex-col items-center gap-4 group"
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
+                                        <div className="w-24 h-24 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center group-hover:bg-white/35 group-hover:scale-105 transition-all duration-200 shadow-2xl ring-2 ring-white/40">
+                                            <svg className="w-12 h-12 text-white ml-1.5" fill="currentColor" viewBox="0 0 24 24">
+                                                <path d="M8 5v14l11-7z" />
+                                            </svg>
+                                        </div>
+                                        <div className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 transition-colors px-6 py-2.5 rounded-full shadow-xl">
+                                            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+                                                <path d="M8 5v14l11-7z" />
+                                            </svg>
+                                            <span className="text-white text-sm font-semibold">Смотреть в VK</span>
+                                        </div>
+                                    </a>
+                                ) : (
+                                    <div className="w-24 h-24 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center shadow-2xl ring-2 ring-white/40">
+                                        <svg className="w-12 h-12 text-white ml-1.5" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M8 5v14l11-7z" />
+                                        </svg>
+                                    </div>
+                                )}
+
+                                {/* Пояснение внизу */}
+                                <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-center">
+                                    <p className="text-white/60 text-xs leading-relaxed">
+                                        Воспроизведение видеоисторий доступно<br/>только внутри VK
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    ) : /* Фото-история */
+                    currentStory.preview ? (
+                        <img 
                             src={currentStory.preview} 
                             alt="Story" 
                             className="w-full h-full object-contain"
                         />
                     ) : (
+                        /* Нет медиа — показываем плейсхолдер с иконкой типа */
                         <div className="text-white text-opacity-50 flex flex-col items-center">
-                             <svg className="w-16 h-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <span>Нет изображения</span>
+                            {currentStory.type === 'video' ? (
+                                <svg className="w-16 h-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                            ) : (
+                                <svg className="w-16 h-16 mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                            )}
+                            <span>{currentStory.type === 'video' ? 'Видео недоступно' : 'Нет изображения'}</span>
+                            {currentStory.link && (
+                                <a href={currentStory.link} target="_blank" rel="noopener noreferrer" className="text-xs mt-2 text-indigo-400 hover:text-indigo-300 underline">
+                                    Открыть в VK
+                                </a>
+                            )}
                         </div>
                     )}
                 </div>

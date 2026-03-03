@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from models_library.automations import StoriesAutomationLog
 from models_library.projects import Project
 from services import vk_service
@@ -7,13 +8,15 @@ import requests
 import uuid
 import json
 
-def process_single_story_for_post(db: Session, project_id: str, post: dict, group_id: int | None, user_token: str, force: bool = False):
+def process_single_story_for_post(db: Session, project_id: str, post: dict, group_id: int | None, user_token: str, force: bool = False, community_tokens: list = None):
     """
     Processes a single post: generates an image, adds a link, and publishes as a story.
     Does NOT check keywords or age if force=True.
     Does NOT check existing logs if force=True.
     
     If group_id is None, it will be resolved from project_id.
+    community_tokens используются для groups.getById (получение информации о сообществе).
+    Если community_tokens есть — берём первый токен, иначе user_token.
     """
     post_id = post.get('id')
     text = post.get('text', '')
@@ -79,15 +82,30 @@ def process_single_story_for_post(db: Session, project_id: str, post: dict, grou
         # Fetch Group Info for "Repost Card" style
         group_name = None
         group_photo_bytes = None
+        
+        # Получаем community_tokens из проекта если не переданы
+        if not community_tokens:
+            project = db.query(Project).filter(Project.id == project_id).first()
+            if project:
+                community_tokens = []
+                if project.communityToken:
+                    community_tokens.append(project.communityToken)
+                if project.additional_community_tokens:
+                    try:
+                        import json as json_lib
+                        extras = json_lib.loads(project.additional_community_tokens)
+                        if isinstance(extras, list):
+                            community_tokens.extend([t for t in extras if t])
+                    except:
+                        pass
+        
+        # Используем первый токен сообщества если доступен, иначе user_token
+        groups_token = community_tokens[0] if community_tokens else user_token
+        
         try:
-            # Need to fetch group info. Since we don't have a direct method readily available in context,
-            # we'll use a raw call or helper if exists.
-            # Actually, resolve_vk_group_id returns ID. We need 'groups.getById'
-            # Let's do a raw request via vk_service internal logic if possible, or just requests.
-            # Simplest is just requests to VK API since we have the token
             g_info = requests.post("https://api.vk.com/method/groups.getById", data={
                 "group_id": group_id,
-                "access_token": user_token,
+                "access_token": groups_token,
                 "v": "5.131"
             }).json()
             
@@ -170,13 +188,16 @@ def process_single_story_for_post(db: Session, project_id: str, post: dict, grou
                     best_size = next((s for s in sizes if s.get('type') == 'w'), sizes[-1])
                     story_preview = best_size.get('url')
         
-        # Log
+        # Лог: сохраняем ссылку, превью и тип истории
         log_data = {}
         if story_link:
                 log_data['story_link'] = story_link
         
         if story_preview:
                 log_data['image_url'] = story_preview
+        
+        # Определяем тип истории из VK-ответа (по умолчанию 'photo' для автопубликации)
+        log_data['story_type'] = uploaded_story.get('type', 'photo') if uploaded_story else 'photo'
 
         log_entry = StoriesAutomationLog(
             id=str(uuid.uuid4()),
@@ -189,7 +210,13 @@ def process_single_story_for_post(db: Session, project_id: str, post: dict, grou
             post_link=post_link
         )
         db.add(log_entry)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # Другой воркер уже опубликовал историю для этого поста — откатываем без ошибки
+            db.rollback()
+            print(f"STORIES_AUTO: Post {post_id} already processed by another worker (IntegrityError). Skipping.")
+            return {"status": "skipped", "message": "Already processed by another worker"}
         print(f"STORIES_AUTO: Successfully posted story for {post_id}. Link: {story_link}")
         return {"status": "success", "story_link": story_link}
 

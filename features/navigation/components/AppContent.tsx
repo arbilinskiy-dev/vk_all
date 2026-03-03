@@ -22,6 +22,14 @@ import { GeneralContestsPage } from '../../automations/general-contests/GeneralC
 import { StoriesAutomationPage } from '../../automations/stories-automation/StoriesAutomationPage';
 import { VkTestPage } from '../../test-auth/VkTestPage';
 import { SettingsPage } from '../../settings/components/SettingsPage';
+import { ContestV2Page } from '../../automations/contest-v2/ContestV2Page';
+import { UpdatesPage } from '../../updates/components/UpdatesPage';
+import { SandboxPage } from '../../sandbox/components/SandboxPage';
+import { MessagesPage } from '../../messages/components/MessagesPage';
+import { MessageStatsPage } from '../../messages/components/stats/MessageStatsPage';
+import { Conversation } from '../../messages/types';
+import { ManagerFocusInfo } from '../../messages/hooks/chat/useTypingState';
+import { SSEUserTypingData, SSEDialogFocusData } from '../../messages/types';
 
 interface AppContentProps {
     activeModule: AppModule | null;
@@ -37,9 +45,40 @@ interface AppContentProps {
     onNavigateToContest?: () => void;
     onNavigateToGeneralContest?: (contestId?: string) => void;
     onNavigateToAiPosts?: (postId?: string) => void;
+    onNavigateToContestV2?: (contestId: string, projectId: string) => void; // Для Конкурс 2.0
     setNavigationBlocker?: React.Dispatch<React.SetStateAction<(() => boolean) | null>>;
     /** Колбэк для перехода в центр обучения */
     onGoToTraining?: () => void;
+    /** Колбэк перехода в диалог: переключает проект + view + диалог */
+    onNavigateToMessages?: (projectId: string, vkUserId: number) => void;
+    /** ID активного диалога (модуль сообщений) */
+    activeConversationId?: string | null;
+    /** Колбэк выбора диалога */
+    onSelectConversation?: (id: string | null) => void;
+    /** Список диалогов (модуль сообщений) */
+    conversations?: Conversation[];
+    /** Обновить unreadCount для пользователя (из SSE) */
+    updateUnreadCount?: (vkUserId: number, count: number) => void;
+    /** Обновить последнее сообщение для пользователя (из SSE) */
+    updateLastMessage?: (vkUserId: number, message: any) => void;
+    /** Добавить нового пользователя в список диалогов (из SSE mailing_user_updated) */
+    addNewConversationFromSSE?: (user: import('../../messages/types').MailingUserInfo) => void;
+    /** SSE-колбэк: пользователь VK печатает */
+    onUserTyping?: (data: SSEUserTypingData) => void;
+    /** SSE-колбэк: менеджер открыл/покинул диалог */
+    onDialogFocusUpdate?: (data: SSEDialogFocusData, myManagerId: string) => void;
+    /** SSE-колбэк: все диалоги прочитаны другим менеджером */
+    onAllRead?: () => void;
+    /** Set vk_user_id печатающих пользователей */
+    typingUsers?: Set<number>;
+    /** Map: vk_user_id → список менеджеров в диалоге */
+    dialogFocuses?: Map<number, ManagerFocusInfo[]>;
+    /** Оптимистичное обновление бейджа проекта в sidebar (projectId, unreadDialogsCount) */
+    onProjectUnreadUpdate?: (projectId: string, count: number) => void;
+    /** Запросить пересортировку списка диалогов (при новом входящем сообщении) */
+    requestResort?: () => void;
+    /** Переключить пометку «Важное» для диалога */
+    toggleImportant?: (vkUserId: number, isImportant: boolean) => Promise<void>;
 }
 
 export const AppContent: React.FC<AppContentProps> = ({
@@ -56,8 +95,24 @@ export const AppContent: React.FC<AppContentProps> = ({
     onNavigateToContest,
     onNavigateToGeneralContest,
     onNavigateToAiPosts,
+    onNavigateToContestV2,
     setNavigationBlocker,
-    onGoToTraining
+    onGoToTraining,
+    onNavigateToMessages,
+    activeConversationId,
+    onSelectConversation,
+    conversations,
+    updateUnreadCount,
+    updateLastMessage,
+    addNewConversationFromSSE,
+    onUserTyping,
+    onDialogFocusUpdate,
+    onAllRead,
+    typingUsers,
+    dialogFocuses,
+    onProjectUnreadUpdate,
+    requestResort,
+    toggleImportant,
 }) => {
     const {
         projects,
@@ -75,6 +130,9 @@ export const AppContent: React.FC<AppContentProps> = ({
         handleNotesUpdate,
         setAllSuggestedPosts,
     } = useProjects();
+    
+    // Состояние вкладки для Stories Automation (хранится здесь, чтобы сохраняться при смене проекта)
+    const [storiesActiveTab, setStoriesActiveTab] = useState<'settings' | 'stats' | 'create'>('settings');
     
     // State for General Contests Navigation (List <-> Editor) - MOVED TO GeneralContestsPage
 
@@ -102,8 +160,14 @@ export const AppContent: React.FC<AppContentProps> = ({
     if (activeView === 'training') {
         return <TrainingPage />;
     }
+    if (activeView === 'updates') {
+        return <UpdatesPage />;
+    }
     if (activeView === 'vk-auth-test') {
         return <VkTestPage />;
+    }
+    if (activeView === 'sandbox') {
+        return <SandboxPage />;
     }
     
     if (activeView === 'automations') {
@@ -111,7 +175,17 @@ export const AppContent: React.FC<AppContentProps> = ({
     }
     
     if (activeView === 'automations-stories') {
-        return <StoriesAutomationPage projectId={activeProject?.id} />;
+        // ВАЖНО: key={activeProject?.id} заставляет React полностью пересоздавать компонент
+        // при смене проекта, что гарантирует чистое состояние и предотвращает race conditions
+        // activeTab хранится здесь (в AppContent), чтобы сохраняться между переключениями проектов
+        return (
+            <StoriesAutomationPage 
+                key={activeProject?.id} 
+                projectId={activeProject?.id}
+                activeTab={storiesActiveTab}
+                setActiveTab={setStoriesActiveTab}
+            />
+        );
     }
 
     if (activeView === 'automations-reviews-contest') {
@@ -133,6 +207,20 @@ export const AppContent: React.FC<AppContentProps> = ({
         );
     }
     
+    // --- CONTEST V2 ROUTING ---
+    if (activeView === 'automations-contest-v2') {
+        if (!activeProject) return <WelcomeScreen onGoToTraining={onGoToTraining} />;
+        
+        return (
+            <ContestV2Page 
+                projectId={activeProject.id} 
+                setNavigationBlocker={setNavigationBlocker}
+                initialContestId={activeViewParams?.contestId}
+                onClearParams={onClearParams}
+            />
+        );
+    }
+    
     if (activeView === 'automations-ai-posts') {
         if (!activeProject) return <WelcomeScreen onGoToTraining={onGoToTraining} />;
         return (
@@ -145,6 +233,45 @@ export const AppContent: React.FC<AppContentProps> = ({
         );
     }
     
+    // --- МОДУЛЬ СООБЩЕНИЙ ---
+    if (activeView === 'messages-stats') {
+        return (
+            <MessageStatsPage
+                projects={projects}
+                onNavigateToChat={(projectId, vkUserId) => {
+                    if (onNavigateToMessages) {
+                        onNavigateToMessages(projectId, vkUserId);
+                    }
+                }}
+            />
+        );
+    }
+
+    if (activeView === 'messages-vk' || activeView === 'messages-tg') {
+        const channel = activeView === 'messages-tg' ? 'tg' : 'vk';
+        return (
+            <MessagesPage 
+                channel={channel}
+                activeProject={activeProject}
+                activeConversationId={activeConversationId ?? null}
+                onSelectConversation={onSelectConversation ?? (() => {})}
+                conversations={conversations ?? []}
+                updateUnreadCount={updateUnreadCount}
+                updateLastMessage={updateLastMessage}
+                addNewConversationFromSSE={addNewConversationFromSSE}
+                user={user}
+                onUserTyping={onUserTyping}
+                onDialogFocusUpdate={onDialogFocusUpdate}
+                onAllRead={onAllRead}
+                typingUsers={typingUsers}
+                dialogFocuses={dialogFocuses}
+                onProjectUnreadUpdate={onProjectUnreadUpdate}
+                requestResort={requestResort}
+                toggleImportant={toggleImportant}
+            />
+        );
+    }
+
     // ... rest of the component (schedule, products, lists)
     if (activeModule === 'km') {
         if (!activeProject) return <WelcomeScreen onGoToTraining={onGoToTraining} />;
@@ -167,6 +294,7 @@ export const AppContent: React.FC<AppContentProps> = ({
                     onNavigateToContest={onNavigateToContest}
                     onNavigateToGeneralContest={onNavigateToGeneralContest}
                     onNavigateToAiPosts={onNavigateToAiPosts}
+                    onNavigateToContestV2={onNavigateToContestV2}
                 />
             );
         }

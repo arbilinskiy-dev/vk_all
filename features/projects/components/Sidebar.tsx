@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Project } from '../../../shared/types';
-import { TeamFilter, ContentFilter } from '../types';
+import { TeamFilter, ContentFilter, StoriesFilter, ContestFilter, CallbackFilter, UnreadDialogsFilter } from '../types';
 import { AppView } from '../../../App';
 import { ProjectListItem } from './ProjectListItem';
 import { ConfirmationModal } from '../../../shared/components/modals/ConfirmationModal';
@@ -16,6 +16,11 @@ export const Sidebar: React.FC<{
     activeView: AppView;
     scheduledPostCounts: Record<string, number>;
     suggestedPostCounts: Record<string, number>;
+    unreadDialogCounts?: Record<string, number>;
+    /** Обновить счётчики непрочитанных диалогов (batch-запрос к бэкенду) */
+    onRefreshUnreadDialogCounts?: () => void;
+    /** Идёт обновление счётчиков непрочитанных */
+    isRefreshingUnreadDialogCounts?: boolean;
     isLoadingCounts: boolean;
     isCheckingForUpdatesProjectId: string | null;
     projectPermissionErrors: Record<string, string | null>;
@@ -30,6 +35,9 @@ export const Sidebar: React.FC<{
     activeView,
     scheduledPostCounts,
     suggestedPostCounts,
+    unreadDialogCounts,
+    onRefreshUnreadDialogCounts,
+    isRefreshingUnreadDialogCounts = false,
     isLoadingCounts: initialIsLoadingCounts,
     isCheckingForUpdatesProjectId,
     projectPermissionErrors,
@@ -39,8 +47,8 @@ export const Sidebar: React.FC<{
     onRefreshProject, 
     onForceRefresh 
 }) => {
-    // Получаем статусы конкурсов из контекста
-    const { reviewsContestStatuses } = useProjects();
+    // Получаем статусы конкурсов и автоматизации историй из контекста
+    const { reviewsContestStatuses, storiesAutomationStatuses } = useProjects();
     
     // Получаем данные текущего пользователя
     const { user, logout } = useAuth();
@@ -59,9 +67,16 @@ export const Sidebar: React.FC<{
     const [searchQuery, setSearchQuery] = useState('');
     const [teamFilter, setTeamFilter] = useState<TeamFilter>('All');
     const [contentFilter, setContentFilter] = useState<ContentFilter>('all');
+    const [storiesFilter, setStoriesFilter] = useState<StoriesFilter>('all');
+    const [contestFilter, setContestFilter] = useState<ContestFilter>('all');
     const [showDisabled, setShowDisabled] = useState(true);
+    // Фильтры модуля сообщений
+    const [callbackFilter, setCallbackFilter] = useState<CallbackFilter>('all');
+    const [unreadDialogsFilter, setUnreadDialogsFilter] = useState<UnreadDialogsFilter>('all');
     
     const [isForceRefreshing, setIsForceRefreshing] = useState(false);
+    // Счётчики загружаются только при начальной загрузке (initialIsLoadingCounts)
+    // Фоновая загрузка не должна скрывать список проектов
     const [isLoadingCounts, setIsLoadingCounts] = useState(initialIsLoadingCounts);
 
     // State for mass update (server-side)
@@ -98,7 +113,10 @@ export const Sidebar: React.FC<{
     const uniqueTeams = useMemo(() => {
         const teams = new Set<string>();
         projects.forEach(p => {
-            if (p.team) {
+            // Поддержка нового поля teams (массив) и старого team (строка)
+            if (p.teams && p.teams.length > 0) {
+                p.teams.forEach(t => teams.add(t));
+            } else if (p.team) {
                 teams.add(p.team);
             }
         });
@@ -113,6 +131,7 @@ export const Sidebar: React.FC<{
     }, [activeView, scheduledPostCounts, suggestedPostCounts]);
     
     useEffect(() => {
+        // Счётчики загружаются только от родителя (начальная загрузка)
         setIsLoadingCounts(initialIsLoadingCounts);
     }, [initialIsLoadingCounts]);
     
@@ -129,8 +148,9 @@ export const Sidebar: React.FC<{
                 return false;
             }
             if (teamFilter !== 'All') {
-                if (teamFilter === 'NoTeam' && p.team) return false;
-                if (teamFilter !== 'NoTeam' && p.team !== teamFilter) return false;
+                const projectTeams = p.teams && p.teams.length > 0 ? p.teams : (p.team ? [p.team] : []);
+                if (teamFilter === 'NoTeam' && projectTeams.length > 0) return false;
+                if (teamFilter !== 'NoTeam' && !projectTeams.includes(teamFilter)) return false;
             }
 
             // Фильтр по контенту, применяется только для вкладок с постами
@@ -145,6 +165,37 @@ export const Sidebar: React.FC<{
                     default: break;
                 }
             }
+            
+            // Фильтр по статусу автоматизации историй
+            if (activeView === 'automations-stories' && storiesFilter !== 'all') {
+                const isStoriesActive = storiesAutomationStatuses[p.id] === true;
+                if (storiesFilter === 'active' && !isStoriesActive) return false;
+                if (storiesFilter === 'inactive' && isStoriesActive) return false;
+            }
+            
+            // Фильтр по статусу конкурса отзывов
+            if (activeView === 'automations-reviews-contest' && contestFilter !== 'all') {
+                const contestStatus = reviewsContestStatuses[p.id];
+                const isContestActive = contestStatus?.isActive === true;
+                if (contestFilter === 'active' && !isContestActive) return false;
+                if (contestFilter === 'inactive' && isContestActive) return false;
+            }
+
+            // Фильтры модуля сообщений (только для messages-vk / messages-tg)
+            if (activeView === 'messages-vk' || activeView === 'messages-tg') {
+                // Фильтр по подключению callback (токен + код подтверждения)
+                if (callbackFilter !== 'all') {
+                    const isConnected = !!(p.communityToken && p.vk_confirmation_code);
+                    if (callbackFilter === 'connected' && !isConnected) return false;
+                    if (callbackFilter === 'not-connected' && isConnected) return false;
+                }
+                // Фильтр по наличию непрочитанных диалогов
+                if (unreadDialogsFilter === 'has-unread') {
+                    const unreadCount = unreadDialogCounts?.[p.id] ?? 0;
+                    if (unreadCount === 0) return false;
+                }
+            }
+
             return true;
         };
 
@@ -156,7 +207,7 @@ export const Sidebar: React.FC<{
             }
         });
         return { filteredEnabledProjects: enabled, filteredDisabledProjects: disabled };
-    }, [projects, searchQuery, teamFilter, contentFilter, postCounts, activeView]);
+    }, [projects, searchQuery, teamFilter, contentFilter, postCounts, activeView, storiesFilter, storiesAutomationStatuses, contestFilter, reviewsContestStatuses, callbackFilter, unreadDialogsFilter, unreadDialogCounts]);
 
     const handleConfirmMassUpdate = async () => {
         setShowMassUpdateConfirm(false);
@@ -238,6 +289,15 @@ export const Sidebar: React.FC<{
 
     // Определяем, нужно ли показывать статус конкурса
     const showContestStatus = activeView === 'automations-reviews-contest';
+    
+    // Определяем, нужно ли показывать статус автоматизации историй
+    const showStoriesStatus = activeView === 'automations-stories';
+
+    // Определяем, находимся ли мы в модуле сообщений
+    const isMessagesView = activeView === 'messages-vk' || activeView === 'messages-tg';
+
+    // Определяем, показывать ли счётчик постов (только в контент-модуле)
+    const isContentView = activeView === 'schedule' || activeView === 'suggested';
 
     const renderProjectList = (projectList: Project[], startIndex: number = 0) => {
         return projectList.map((p, i) => (
@@ -245,18 +305,23 @@ export const Sidebar: React.FC<{
                 key={p.id}
                 project={p}
                 isActive={activeProjectId === p.id}
-                postCount={postCounts[p.id]}
+                postCount={isContentView ? postCounts[p.id] : undefined}
                 isLoadingCount={isLoadingCounts}
                 isCheckingForUpdates={isCheckingForUpdatesProjectId === p.id}
                 isSequentiallyUpdating={processingProjectId === p.id} 
                 errorDetails={projectPermissionErrors[p.id] || null}
-                hasUpdate={updatedProjectIds.has(p.id)}
+                // Синяя точка (hasUpdate) показывается только для schedule/suggested — контент-модуль
+                hasUpdate={isContentView ? updatedProjectIds.has(p.id) : false}
                 onSelectProject={onSelectProject}
                 onRefreshProject={(id) => onRefreshProject(id, activeView, false)}
                 onOpenSettings={onOpenSettings}
                 animationIndex={startIndex + i}
                 // Передаем статус конкурса, если мы на нужной вкладке
                 contestStatus={showContestStatus ? reviewsContestStatuses[p.id] : undefined}
+                // Передаем статус автоматизации историй
+                storiesAutomationActive={showStoriesStatus ? (storiesAutomationStatuses[p.id] === true) : undefined}
+                // Количество диалогов с непрочитанными — ТОЛЬКО в модуле сообщений
+                unreadDialogsCount={isMessagesView ? unreadDialogCounts?.[p.id] : undefined}
             />
         ));
     };
@@ -306,13 +371,26 @@ export const Sidebar: React.FC<{
             </div>
 
             <div className="p-3 space-y-4 border-b border-gray-200">
-                <input
-                    type="text"
-                    placeholder="Поиск по названию..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                />
+                <div className="relative">
+                    <input
+                        type="text"
+                        placeholder="Поиск по названию..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full px-3 py-1.5 pr-8 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    />
+                    {searchQuery && (
+                        <button
+                            onClick={() => setSearchQuery('')}
+                            title="Сбросить поиск"
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    )}
+                </div>
                 <div>
                     <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Команды</h4>
                     <div className="flex flex-wrap gap-1.5">
@@ -340,17 +418,91 @@ export const Sidebar: React.FC<{
                         </div>
                     </div>
                 )}
+
+                {/* Фильтр по статусу конкурса отзывов */}
+                {activeView === 'automations-reviews-contest' && (
+                    <div>
+                        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Конкурс отзывов</h4>
+                        <div className="flex flex-wrap gap-1.5">
+                            <button
+                                onClick={() => setContestFilter('all')}
+                                className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors bg-gray-200 text-gray-700 hover:bg-gray-300 ${contestFilter === 'all' ? 'ring-2 ring-indigo-500' : ''}`}
+                            >Все</button>
+                            <button
+                                onClick={() => setContestFilter('active')}
+                                className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors bg-green-100 text-green-800 hover:bg-green-200 ${contestFilter === 'active' ? 'ring-2 ring-indigo-500' : ''}`}
+                            >Включены</button>
+                            <button
+                                onClick={() => setContestFilter('inactive')}
+                                className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors bg-gray-200 text-gray-600 hover:bg-gray-300 ${contestFilter === 'inactive' ? 'ring-2 ring-indigo-500' : ''}`}
+                            >Выключены</button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Фильтры модуля сообщений: подключено/не подключено + есть новые диалоги */}
+                {(activeView === 'messages-vk' || activeView === 'messages-tg') && (
+                    <>
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Callback API</h4>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                                <button onClick={() => { setCallbackFilter('all'); onRefreshUnreadDialogCounts?.(); }} className={getTeamFilterButtonClasses(callbackFilter === 'all')}>Все</button>
+                                <button onClick={() => { setCallbackFilter('connected'); onRefreshUnreadDialogCounts?.(); }} className={getTeamFilterButtonClasses(callbackFilter === 'connected')}>Подключено</button>
+                                <button onClick={() => { setCallbackFilter('not-connected'); onRefreshUnreadDialogCounts?.(); }} className={getTeamFilterButtonClasses(callbackFilter === 'not-connected')}>Не подключено</button>
+                            </div>
+                        </div>
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Диалоги</h4>
+                                {/* Кнопка обновления счётчиков непрочитанных */}
+                                {onRefreshUnreadDialogCounts && (
+                                    <button
+                                        onClick={onRefreshUnreadDialogCounts}
+                                        disabled={isRefreshingUnreadDialogCounts}
+                                        title="Обновить счётчики непрочитанных диалогов"
+                                        className="p-1 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors disabled:opacity-50"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-3.5 w-3.5 ${isRefreshingUnreadDialogCounts ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                                <button onClick={() => { setUnreadDialogsFilter('all'); onRefreshUnreadDialogCounts?.(); }} className={getTeamFilterButtonClasses(unreadDialogsFilter === 'all')}>Все</button>
+                                <button onClick={() => { setUnreadDialogsFilter('has-unread'); onRefreshUnreadDialogCounts?.(); }} className={getTeamFilterButtonClasses(unreadDialogsFilter === 'has-unread')}>Есть новые</button>
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {/* Фильтр по статусу автоматизации историй */}
+                {activeView === 'automations-stories' && (
+                    <div>
+                        <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Посты в истории</h4>
+                        <div className="flex flex-wrap gap-1.5">
+                            <button
+                                onClick={() => setStoriesFilter('all')}
+                                className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors bg-gray-200 text-gray-700 hover:bg-gray-300 ${storiesFilter === 'all' ? 'ring-2 ring-indigo-500' : ''}`}
+                            >Все</button>
+                            <button
+                                onClick={() => setStoriesFilter('active')}
+                                className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors bg-green-100 text-green-800 hover:bg-green-200 ${storiesFilter === 'active' ? 'ring-2 ring-indigo-500' : ''}`}
+                            >Включены</button>
+                            <button
+                                onClick={() => setStoriesFilter('inactive')}
+                                className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors bg-gray-200 text-gray-600 hover:bg-gray-300 ${storiesFilter === 'inactive' ? 'ring-2 ring-indigo-500' : ''}`}
+                            >Выключены</button>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <nav className="flex-grow overflow-y-auto custom-scrollbar">
-                {isLoadingCounts && projects.length > 0 && (
-                    <div className="p-4 space-y-2">
-                        {Array.from({ length: 5 }).map((_, i) => (
-                            <div key={i} className="h-10 bg-gray-200 rounded animate-pulse"></div>
-                        ))}
-                    </div>
-                )}
-                {!isLoadingCounts && renderProjectList(filteredEnabledProjects)}
+                {/* Список проектов показывается всегда, скелетон только для счётчиков внутри элементов */}
+                {renderProjectList(filteredEnabledProjects)}
 
                 {filteredDisabledProjects.length > 0 && (
                     <div className="flex justify-between items-center px-4 pt-4 pb-2 mt-2 border-t border-gray-200">
@@ -369,7 +521,7 @@ export const Sidebar: React.FC<{
                     </div>
                 )}
                 
-                {!isLoadingCounts && showDisabled && renderProjectList(filteredDisabledProjects, filteredEnabledProjects.length)}
+                {showDisabled && renderProjectList(filteredDisabledProjects, filteredEnabledProjects.length)}
             </nav>
             {showMassUpdateConfirm && (
                 <ConfirmationModal

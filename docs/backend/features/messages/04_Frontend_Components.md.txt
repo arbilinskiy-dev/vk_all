@@ -1,0 +1,234 @@
+
+# Фронтенд: Компоненты и хуки модуля «Сообщения»
+
+**Директория:** `features/messages/`
+
+---
+
+## 1. Структура файлов
+
+```
+features/messages/
+├── types.ts                          # Все TypeScript типы модуля
+├── components/
+│   ├── MessagesPage.tsx              # Хаб-контейнер (ChatView + UserInfoPanel)
+│   ├── ConversationsSidebar.tsx      # Сайдбар со списком диалогов
+│   ├── ConversationItem.tsx          # Один элемент списка диалогов
+│   ├── ChatView.tsx                  # Рабочая область чата (шапка + список + ввод)
+│   ├── ChatHeader.tsx                # Шапка чата (имя, статус, действия)
+│   ├── ChatMessageList.tsx           # Список сообщений (виртуализация)
+│   ├── ChatMessage.tsx               # Одно сообщение (текст + вложения + кнопки)
+│   ├── ChatMessageAttachments.tsx    # Вложения к сообщению
+│   ├── ChatMessageKeyboard.tsx       # Кнопки бота (inline keyboard)
+│   ├── ChatInput.tsx                 # Поле ввода сообщения
+│   ├── ChatInputToolbar.tsx          # Тулбар ввода (emoji, переменные, вложения)
+│   ├── ChatInputAttachments.tsx      # Превью вложений к отправке
+│   ├── ChatInputVariablesBar.tsx     # Панель быстрой вставки переменных
+│   ├── UserInfoPanel.tsx             # Боковая панель информации о пользователе
+│   ├── UserInfoPanelHeader.tsx       # Шапка панели пользователя
+│   ├── UserInfoProfileTab.tsx        # Вкладка «Профиль» в панели пользователя
+│   ├── UserPostsTab.tsx              # Вкладка «Посты» пользователя
+│   ├── MessagesEmptyState.tsx        # Пустое состояние (нет выбранного диалога)
+│   ├── MailingOnboarding.tsx         # Онбординг: нет токена/callback
+│   │
+│   │   # === Статистика ===
+│   ├── MessageStatsPage.tsx          # Дашборд статистики (хаб)
+│   ├── MessageStatsChart.tsx         # График пиковых нагрузок
+│   ├── MessageStatsHelpers.tsx       # Карточки сводки (SummaryCard)
+│   ├── MessageStatsSkeleton.tsx      # Скелетон загрузки
+│   ├── MessageStatsUsersTable.tsx    # Таблица пользователей в проекте
+│   ├── ProjectsStatsTable.tsx        # Таблица проектов
+│   ├── useMessageStatsLogic.ts       # Логика дашборда статистики
+│   ├── messageStatsConstants.ts      # Константы (периоды, конфигурация)
+│   │
+│   │   # === Вложения ===
+│   ├── AttachmentsTab.tsx            # Вкладка «Вложения» в панели пользователя
+│   ├── PhotoGrid.tsx / PhotosGrid.tsx # Сетка фотографий
+│   ├── PhotoLightbox.tsx             # Просмотр фото (лайтбокс)
+│   ├── FilesList.tsx                 # Список файлов
+│   ├── VideosList.tsx                # Список видео
+│   ├── LinksList.tsx                 # Список ссылок
+│   └── attachmentsConstants.tsx      # Константы вложений
+│
+├── hooks/
+│   ├── useConversations.ts           # Загрузка списка диалогов (хаб-хук)
+│   ├── conversationsTypes.ts         # Типы для useConversations
+│   ├── conversationsMappers.ts       # Маппинг подписчиков → Conversation
+│   ├── useMessageHistory.ts          # История сообщений (хаб-хук)
+│   ├── messageHistoryTypes.ts        # Типы для useMessageHistory
+│   ├── messageHistoryMappers.ts      # Маппинг VK → ChatMessageData
+│   ├── useMessagesSSE.ts             # SSE-подключение (push-уведомления)
+│   ├── useGlobalUnreadSSE.ts         # Глобальный SSE (счётчики навигации)
+│   ├── useMessagesPageLogic.ts       # Логика MessagesPage
+│   ├── useChatInputLogic.ts          # Логика поля ввода
+│   ├── useConversationAttachments.ts # Загрузка вложений диалога
+│   ├── useMailingCollection.ts       # Сбор рассылки и проверка callback
+│   ├── useMailingUserInfo.ts         # Загрузка данных пользователя
+│   ├── useTypingState.ts             # Состояние «печатает» и фокусы менеджеров
+│   ├── useUnreadDialogCounts.ts      # Непрочитанные диалоги
+│   └── useUserPosts.ts              # Посты пользователя (для панели)
+│
+└── utils/
+    ├── getManagerId.ts               # Генерация уникального manager_id вкладки
+    └── messagesLogger.ts             # Модуль логирования (цветные логи)
+```
+
+---
+
+## 2. Ключевые хуки
+
+### useConversations
+
+Загружает список диалогов из списка рассылки проекта.
+
+**Параметры:** `{ projectId, channel, filterUnread }`
+
+**Возвращает:**
+- `subscribers` — массив подписчиков
+- `conversations` — массив `Conversation[]` (маппинг из подписчиков)
+- `unreadCountsMap` — словарь `{ vk_user_id: unread_count }`
+- `lastMessagesMap` — словарь `{ vk_user_id: VkMessageItem }`
+- `fetchData()`, `loadMore()`, `refresh()` — управление загрузкой
+
+**Стратегия unread-first:** На первой странице параллельно загружаются обычная страница и непрочитанные, затем мержатся — непрочитанные всегда первые.
+
+### useMessageHistory
+
+Работа с историей сообщений в активном диалоге.
+
+**Параметры:** `{ projectId, userId, groupId }`
+
+**Возвращает:**
+- `messages` — массив `ChatMessageData[]`
+- `loadInitial()` — загрузка первой страницы
+- `loadMore()` — подгрузка старых (offset-пагинация)
+- `loadAll()` — загрузка всех сообщений
+- `sendMessage()` — отправка с оптимистичным обновлением
+- `messageStats` — статистика (incoming/outgoing count)
+- `isFullyLoaded`, `totalCount`, `source`
+
+### useMessagesSSE
+
+Подключение к SSE-потоку сообщений.
+
+**Параметры:** `{ projectId, callbacks, managerName }`
+
+**Колбэки:**
+- `onNewMessage` — новое сообщение
+- `onMessageRead` — диалог прочитан другим менеджером
+- `onUserRead` — пользователь VK прочитал
+- `onUserTyping` — пользователь печатает
+- `onDialogFocus` — менеджер открыл/покинул диалог
+- `onMailingUserUpdated` — обновление данных пользователя
+- `onAllRead` — все диалоги прочитаны
+
+**Автопереподключение:** EventSource автоматически переподключается при обрыве.
+
+### useGlobalUnreadSSE
+
+Глобальный SSE-стрим для счётчика непрочитанных в навигации.
+
+### useTypingState
+
+Управление индикаторами «печатает» и фокусами менеджеров.
+
+- `typingUsers` — Set vk_user_id печатающих пользователей (сброс через 6с)
+- `dialogFocuses` — Map: vk_user_id → список менеджеров в диалоге
+
+---
+
+## 3. Ключевые типы (types.ts)
+
+### Модель сообщения — ChatMessageData
+
+```typescript
+interface ChatMessageData {
+    id: string;
+    direction: 'incoming' | 'outgoing';
+    text: string;
+    timestamp: string;         // ISO строка
+    isRead: boolean;
+    attachments?: MessageAttachment[];
+    keyboard?: MessageKeyboard;
+    sentByName?: string;       // Имя менеджера-отправителя
+    isBotMessage?: boolean;    // Связано с ботом
+}
+```
+
+### Модель диалога — Conversation
+
+```typescript
+interface Conversation {
+    id: string;
+    user: ConversationUser;
+    lastMessage?: ChatMessageData;
+    unreadCount: number;
+    channel: 'vk' | 'tg';
+    projectId: string;
+}
+```
+
+### Модель пользователя — MailingUserInfo
+
+Данные пользователя из таблицы рассылки, обогащённые информацией из VK API (`users.get`):
+- Имя, фамилия, аватар, пол, дата рождения
+- Город, страна, домен, платформа
+- Даты первого и последнего сообщения
+- Статус диалога, источник
+- `last_incoming_message_date`, `last_outgoing_message_date`
+
+### SSE-события
+
+Типизированы через дискриминированные union-типы:
+- `SSENewMessageData`
+- `SSEMessageReadData`
+- `SSEAllReadData`
+- `SSEUserReadData`
+- `SSEUserTypingData`
+- `SSEDialogFocusData`
+- `SSEMailingUserUpdatedData`
+
+---
+
+## 4. Компонентная иерархия
+
+```
+App.tsx
+  ├─ ConversationsSidebar (левый сайдбар)
+  │   ├─ MailingOnboarding (если нет токена/callback)
+  │   ├─ Поиск по имени
+  │   ├─ Фильтр «все / непрочитанные»
+  │   ├─ Кнопка «Прочитать все»
+  │   └─ ConversationItem[] (список диалогов)
+  │       ├─ Аватар + имя
+  │       ├─ Последнее сообщение (превью)
+  │       └─ Бейдж непрочитанных
+  │
+  └─ MessagesPage (основная область)
+      ├─ MessagesEmptyState (если диалог не выбран)
+      │
+      ├─ ChatView (активный диалог)
+      │   ├─ ChatHeader
+      │   │   ├─ Имя + статус пользователя
+      │   │   ├─ «Печатает...» / другие менеджеры
+      │   │   └─ Кнопки: обновить, VK ссылка, пометить непрочитанным
+      │   │
+      │   ├─ ChatMessageList
+      │   │   ├─ Кнопка «Загрузить старые» / «Загрузить все»
+      │   │   └─ ChatMessage[]
+      │   │       ├─ Текст + время + имя менеджера
+      │   │       ├─ ChatMessageAttachments (фото, файлы, аудио)
+      │   │       └─ ChatMessageKeyboard (кнопки бота)
+      │   │
+      │   └─ ChatInput
+      │       ├─ ChatInputToolbar (emoji, переменные)
+      │       ├─ ChatInputVariablesBar
+      │       └─ ChatInputAttachments (превью прикреплённых файлов)
+      │
+      └─ UserInfoPanel (правая панель)
+          ├─ UserInfoPanelHeader (аватар, имя, VK ссылка)
+          ├─ UserInfoProfileTab (детали профиля)
+          ├─ AttachmentsTab (вложения диалога)
+          └─ UserPostsTab (посты пользователя)
+```
+

@@ -9,20 +9,14 @@ import httpx
 import schemas
 import services.ai_token_service as ai_token_service
 import services.ai_log_service as ai_log_service
-from database import SessionLocal
+from database import get_db
+from config import settings
 import models
 
 router = APIRouter(prefix="/ai-tokens", tags=["AI Tokens"])
 
 # URL для проверки токенов Google Gemini API
 GEMINI_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 class TokenIdPayload(BaseModel):
     tokenId: str
@@ -45,13 +39,21 @@ def delete_token(payload: schemas.DeleteAiTokenPayload, db: Session = Depends(ge
 async def verify_tokens(db: Session = Depends(get_db)):
     """
     Проверяет все AI токены на валидность через Google Gemini API.
+    Использует прокси (если настроен) для обхода геоблокировки.
     Делает запрос /v1beta/models с каждым ключом, сохраняет статус в БД и возвращает результаты.
     """
     tokens = ai_token_service.get_all_tokens(db)
     results = []
     now = datetime.now(timezone.utc)
     
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    # Настраиваем прокси (если задан в конфиге)
+    client_kwargs = {"timeout": 10.0}
+    if settings.gemini_proxy_url:
+        proxy_url = settings.gemini_proxy_url
+        client_kwargs["proxy"] = proxy_url
+        print(f"   📡 Verify: используем прокси {proxy_url[:30]}...")
+    
+    async with httpx.AsyncClient(**client_kwargs) as client:
         for token in tokens:
             is_valid = False
             error_msg = None
@@ -70,11 +72,18 @@ async def verify_tokens(db: Session = Depends(get_db)):
                     models_count = len(data.get("models", []))
                     is_valid = True
                 else:
-                    # Токен невалидный - получили ошибку
                     error_data = response.json()
-                    error_msg = error_data.get("error", {}).get("message", "Unknown error")
                     error_status = error_data.get("error", {}).get("status", "UNKNOWN")
-                    error_msg = f"{error_status}: {error_msg}"
+                    error_message = error_data.get("error", {}).get("message", "Unknown error")
+                    
+                    # ФИКС: FAILED_PRECONDITION (геоблокировка) означает что токен ВАЛИДНЫЙ,
+                    # просто Google блокирует доступ из текущей локации.
+                    # Токен работает через прокси или из разрешённых регионов (Yandex Cloud).
+                    if error_status == "FAILED_PRECONDITION" and "location" in error_message.lower():
+                        is_valid = True
+                        error_msg = "⚠️ Токен валиден, но доступ заблокирован из текущей локации (нужен прокси)"
+                    else:
+                        error_msg = f"{error_status}: {error_message}"
                     
             except httpx.TimeoutException:
                 error_msg = "TIMEOUT: Превышено время ожидания ответа"

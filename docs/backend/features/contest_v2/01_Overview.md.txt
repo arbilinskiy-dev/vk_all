@@ -1,0 +1,203 @@
+# Модуль Конкурс 2.0 (Contest V2)
+
+## Обзор
+
+Модуль `contest_v2` — это система проведения конкурсов нового поколения, интегрированная с системными постами и расписанием. Позволяет создавать конкурсы, автоматически публиковать стартовые посты и отслеживать их статус.
+
+---
+
+## Архитектура
+
+```
+routers/contest_v2.py              # API эндпоинты
+├── schemas/contest_v2.py          # Pydantic схемы
+├── crud/contest_v2_crud.py        # CRUD операции
+├── services/contest_v2_service.py # Бизнес-логика
+└── models_library/contest_v2.py   # SQLAlchemy модель
+```
+
+---
+
+## Модель данных
+
+### Таблица `contest_v2`
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | UUID | Первичный ключ |
+| `project_id` | UUID | FK на проект |
+| `is_active` | Boolean | Активен ли конкурс |
+| `title` | String | Название конкурса |
+| `description` | Text | Описание |
+| `start_type` | Enum | `'new_post'` \| `'existing_post'` |
+| `existing_post_link` | String | Ссылка на существующий пост VK |
+| `start_post_date` | String | Дата стартового поста (YYYY-MM-DD) |
+| `start_post_time` | String | Время стартового поста (HH:mm) |
+| `start_post_text` | Text | Текст стартового поста |
+| `start_post_images` | JSON | Массив изображений `[{id, url}]` |
+| `status` | Enum | `'draft'` \| `'active'` \| `'finished'` |
+| `vk_start_post_id` | Integer | ID поста в VK после публикации |
+| `created_at` | DateTime | Дата создания |
+| `updated_at` | DateTime | Дата обновления |
+
+---
+
+## API эндпоинты
+
+### `POST /api/contest-v2/list`
+Получение списка конкурсов проекта.
+
+**Request:**
+```json
+{
+  "project_id": "uuid-проекта"
+}
+```
+
+**Response:** `List[ContestV2Response]`
+
+---
+
+### `POST /api/contest-v2/get`
+Получение конкурса по ID.
+
+**Request:**
+```json
+{
+  "contest_id": "uuid-конкурса"
+}
+```
+
+**Response:** `ContestV2Response`
+
+---
+
+### `POST /api/contest-v2/create`
+Создание нового конкурса.
+
+**Request (`ContestV2Create`):**
+```json
+{
+  "project_id": "uuid-проекта",
+  "title": "Новогодний розыгрыш",
+  "description": "Описание условий",
+  "is_active": true,
+  "start_type": "new_post",
+  "start_post_date": "2025-12-31",
+  "start_post_time": "12:00",
+  "start_post_text": "Текст поста для розыгрыша",
+  "start_post_images": [
+    {"id": "photo-1", "url": "https://..."}
+  ]
+}
+```
+
+**Response:** `ContestV2Response`
+
+**Побочный эффект:** Автоматически создаётся `SystemPost` с `post_type='contest_v2_start'`.
+
+---
+
+### `POST /api/contest-v2/update`
+Обновление конкурса.
+
+**Request (`ContestV2UpdateRequest`):**
+```json
+{
+  "contest_id": "uuid-конкурса",
+  "contest": {
+    "title": "Обновлённое название",
+    "is_active": false
+  }
+}
+```
+
+**Response:** `ContestV2Response`
+
+---
+
+### `POST /api/contest-v2/delete`
+Удаление конкурса и связанных системных постов.
+
+**Request:**
+```json
+{
+  "contest_id": "uuid-конкурса"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Конкурс удален"
+}
+```
+
+---
+
+## Логика синхронизации
+
+### `sync_contest_start_post(db, contest)`
+
+Синхронизирует стартовый пост конкурса с системными постами:
+
+| `start_type` | Действие |
+|--------------|----------|
+| `new_post` | Создаёт/обновляет `SystemPost` с датой, текстом и изображениями |
+| `existing_post` | Удаляет связанный `SystemPost`, парсит VK post ID из ссылки |
+
+**Статусы SystemPost:**
+- `pending_publication` — если конкурс активен
+- `paused` — если конкурс неактивен
+
+---
+
+### `on_start_post_published(db, system_post, vk_post_id)`
+
+Вызывается когда стартовый пост опубликован в VK:
+1. Обновляет `vk_start_post_id` конкурса
+2. Переводит статус конкурса в `active`
+
+---
+
+### `mark_published_contest_posts(db, project_id)`
+
+Помечает опубликованные посты, связанные с конкурсами:
+- Вызывается после загрузки постов с VK
+- Проставляет `post_type` и `related_id` для поста в таблице `posts`
+
+---
+
+## Жизненный цикл конкурса
+
+```
+┌─────────┐       ┌───────────────┐       ┌────────────────┐
+│  draft  │ ───▶  │ pending_pub.  │ ───▶  │    active      │
+└─────────┘       └───────────────┘       └────────────────┘
+   (создан)       (стартовый пост       (пост опубликован)
+                    в расписании)
+```
+
+1. **Создание** — конкурс в статусе `draft`, создаётся SystemPost
+2. **Активация** — при `is_active=true` SystemPost переходит в `pending_publication`
+3. **Публикация** — Пост-трекер публикует пост, вызывается `on_start_post_published`
+4. **Завершение** — (будет реализовано) автоматическое определение победителей
+
+---
+
+## Связь с SystemPost
+
+| Поле SystemPost | Значение |
+|-----------------|----------|
+| `post_type` | `'contest_v2_start'` |
+| `related_id` | ID конкурса (`contest.id`) |
+| `title` | `"🎁 Конкурс 2.0: {title} (Старт)"` |
+
+---
+
+## См. также
+
+- [System Posts Lifecycle](../posts/03_System_Posts_Lifecycle.md.txt)
+- [Post Tracker](../../06_BACKGROUND_SYSTEMS.md.txt)
+- [General Contests](../automations/03_General_Contests.md.txt) — старая система конкурсов

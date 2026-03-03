@@ -1,4 +1,5 @@
 import { MarketItem, MarketAlbum } from '../../../shared/types';
+import { getOriginalPhotoUrl } from './photoUrlHelper';
 
 // Вспомогательная функция для безопасного экранирования полей CSV
 const escapeCsvField = (field: any): string => {
@@ -61,7 +62,7 @@ export const exportProductsToCsv = (items: MarketItem[], allAlbums: MarketAlbum[
             escapeCsvField(price),
             escapeCsvField(oldPrice),
             escapeCsvField(item.sku || ''),
-            escapeCsvField(item.thumb_photo),
+            escapeCsvField(getOriginalPhotoUrl(item.thumb_photo)),
             escapeCsvField(albumTitles),
             escapeCsvField(category),
         ].join(',');

@@ -24,15 +24,17 @@ interface CreateMultipleProductsModalProps {
     loadCategories: () => void;
     projectId: string;
     initialRows?: NewProductRow[] | null;
+    onAlbumsCreated?: (newAlbums: MarketAlbum[]) => void;
 }
 
 export const CreateMultipleProductsModal: React.FC<CreateMultipleProductsModalProps> = ({
-    isOpen, onClose, onSave, albums, groupedCategories, areCategoriesLoading, loadCategories, projectId, initialRows
+    isOpen, onClose, onSave, albums, groupedCategories, areCategoriesLoading, loadCategories, projectId, initialRows, onAlbumsCreated
 }) => {
     const { 
         rows, urlInputs, showCloseConfirm, activeDescriptionRowId, activeDescriptionText, errors,
         serverErrors, isSubmitting, showConfirmSave, validRowsToSave,
         selectedTempIds, isBulkEditOpen, activeBulkModal, isPasteModalOpen,
+        creationProgress, showCancelCreation,
         actions
     } = useCreateMultipleProducts({ onSave, onClose, initialRows });
     
@@ -136,11 +138,66 @@ export const CreateMultipleProductsModal: React.FC<CreateMultipleProductsModalPr
                         </div>
                     )}
 
-                     <footer className="p-4 border-t border-gray-200 flex justify-end gap-3 bg-white flex-shrink-0 rounded-b-lg">
-                        <button type="button" onClick={actions.handleCloseRequest} disabled={isSubmitting} className="px-4 py-2 text-sm font-medium rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200">Отмена</button>
-                        <button type="button" onClick={actions.handleSave} disabled={isSubmitting} className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 text-white hover:bg-green-700 shadow-sm flex items-center justify-center min-w-[140px]">
-                            {isSubmitting ? <div className="loader border-white border-t-transparent h-4 w-4"></div> : 'Создать товары'}
-                        </button>
+                     <footer className="p-4 border-t border-gray-200 bg-white flex-shrink-0 rounded-b-lg">
+                        {/* Прогресс-бар создания товаров */}
+                        {isSubmitting && creationProgress && (
+                            <div className="mb-3 animate-fade-in-up">
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <div className="flex items-center gap-2">
+                                        <div className="loader border-indigo-500 border-t-transparent h-3.5 w-3.5"></div>
+                                        <span className="text-sm font-semibold text-gray-800">
+                                            Создание: {creationProgress.current} из {creationProgress.total}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-3 text-xs">
+                                        {creationProgress.succeeded > 0 && (
+                                            <span className="flex items-center gap-1 text-green-600 font-medium">
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                                {creationProgress.succeeded}
+                                            </span>
+                                        )}
+                                        {creationProgress.failed > 0 && (
+                                            <span className="flex items-center gap-1 text-red-600 font-medium">
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                {creationProgress.failed}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                                    <div 
+                                        className="h-full rounded-full transition-all duration-500 ease-out bg-indigo-500"
+                                        style={{ width: `${(creationProgress.current / creationProgress.total) * 100}%` }}
+                                    ></div>
+                                </div>
+                                <p className="mt-1 text-xs text-gray-500 truncate">
+                                    {creationProgress.status === 'processing' && (
+                                        <>Загружаю: <span className="font-medium text-gray-700">{creationProgress.currentName}</span></>
+                                    )}
+                                    {creationProgress.status === 'done' && (
+                                        <>Готово: <span className="font-medium text-green-700">{creationProgress.currentName}</span></>
+                                    )}
+                                    {creationProgress.status === 'error' && (
+                                        <>Ошибка: <span className="font-medium text-red-700">{creationProgress.currentName}</span></>
+                                    )}
+                                </p>
+                            </div>
+                        )}
+                        <div className="flex justify-end gap-3">
+                            <button type="button" onClick={actions.handleCloseRequest} className="px-4 py-2 text-sm font-medium rounded-md bg-gray-100 text-gray-700 hover:bg-gray-200">
+                                {isSubmitting ? 'Остановить' : 'Отмена'}
+                            </button>
+                            <button type="button" onClick={actions.handleSave} disabled={isSubmitting} className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 text-white hover:bg-green-700 shadow-sm flex items-center justify-center min-w-[140px] disabled:bg-gray-400">
+                                {isSubmitting && creationProgress ? (
+                                    <span className="flex items-center gap-2">
+                                        <div className="loader border-white border-t-transparent h-4 w-4"></div>
+                                        {creationProgress.current}/{creationProgress.total}
+                                    </span>
+                                ) : isSubmitting ? (
+                                    <div className="loader border-white border-t-transparent h-4 w-4"></div>
+                                ) : 'Создать товары'}
+                            </button>
+                        </div>
                     </footer>
                 </div>
             </div>
@@ -152,6 +209,7 @@ export const CreateMultipleProductsModal: React.FC<CreateMultipleProductsModalPr
             {activeBulkModal === 'price' && <BulkPriceEditModal isOpen={true} onClose={() => actions.setActiveBulkModal(null)} selectedItemsCount={selectedCount} onConfirm={actions.handleBulkPriceUpdate} />}
 
             {showCloseConfirm && <ConfirmationModal title="Закрыть без сохранения?" message="Все введенные данные будут потеряны." onConfirm={() => { actions.setShowCloseConfirm(false); onClose(); }} onCancel={() => actions.setShowCloseConfirm(false)} confirmText="Да, закрыть" cancelText="Отмена" confirmButtonVariant="danger" zIndex="z-[60]" />}
+            {showCancelCreation && <ConfirmationModal title="Остановить создание?" message={`Уже создано ${creationProgress?.succeeded || 0} из ${creationProgress?.total || 0} товаров. Остальные не будут созданы. Уже созданные товары останутся.`} onConfirm={actions.handleCancelCreation} onCancel={() => actions.setShowCancelCreation(false)} confirmText="Да, остановить" cancelText="Продолжить" confirmButtonVariant="danger" zIndex="z-[60]" />}
             {showConfirmSave && <ConfirmationModal title="Подтвердите создание" message={`Вы готовы создать ${validRowsToSave.length} товаров?`} onConfirm={actions.handleConfirmSave} onCancel={() => actions.setShowConfirmSave(false)} confirmText="Да, создать" cancelText="Отмена" confirmButtonVariant="success" zIndex="z-[60]" />}
 
             {activeDescriptionRowId && (
@@ -165,6 +223,8 @@ export const CreateMultipleProductsModal: React.FC<CreateMultipleProductsModalPr
                     onImport={actions.handleImportFromPaste}
                     allAlbums={albums}
                     allCategories={groupedCategories.flatMap(g => g.categories)}
+                    projectId={projectId}
+                    onAlbumsCreated={onAlbumsCreated}
                 />
             )}
         </>

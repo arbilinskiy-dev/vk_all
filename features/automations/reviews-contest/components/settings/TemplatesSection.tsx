@@ -74,25 +74,92 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({ settings, on
                         helpText={`Этот пост будет опубликован на стене сообщества ${getFinishConditionText()}.`}
                     />
                     
-                    <div className="border border-gray-300 rounded-md bg-white p-3">
-                         <label className="block text-sm font-medium text-gray-700 mb-2">Медиавложения</label>
-                         <PostMediaSection 
-                            mode="edit"
-                            projectId={project.id}
-                            editedImages={settings.winnerPostImages}
-                            onImagesChange={(newImages) => {
-                                // PostMediaSection может вернуть callback, нам нужно обработать значение
-                                if (typeof newImages === 'function') {
-                                    onChange('winnerPostImages', newImages(settings.winnerPostImages));
-                                } else {
-                                    onChange('winnerPostImages', newImages);
-                                }
-                            }}
-                            onUploadStateChange={() => {}} // TODO: Handle loading state
-                            postAttachments={[]}
-                            editedAttachments={[]}
-                            onAttachmentsChange={() => {}}
-                         />
+                    {/* Изображение-доказательство розыгрыша */}
+                    <div className="border border-gray-200 rounded-lg bg-gradient-to-br from-gray-50 to-white p-4 space-y-3">
+                        {/* Основной тумблер - генерировать изображение */}
+                        <div className="flex-1 min-w-0">
+                            <label className="flex items-center gap-3 cursor-pointer group">
+                                {/* Тумблер */}
+                                <div className="relative shrink-0">
+                                    <input
+                                        type="checkbox"
+                                        checked={settings.useProofImage ?? true}
+                                        onChange={(e) => {
+                                            onChange('useProofImage', e.target.checked);
+                                            // Если выключаем основной тумблер, выключаем и дополнительный
+                                            if (!e.target.checked) {
+                                                onChange('attachAdditionalMedia', false);
+                                            }
+                                        }}
+                                        className="sr-only peer"
+                                    />
+                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                </div>
+                                <span className="text-sm font-semibold text-gray-800 group-hover:text-blue-600 transition-colors">
+                                    🎲 Генерировать изображение-доказательство
+                                </span>
+                            </label>
+                            
+                            {/* Описание - появляется при включении */}
+                            <div className={`overflow-hidden transition-all duration-300 ${(settings.useProofImage ?? true) ? 'max-h-40 opacity-100 mt-2' : 'max-h-0 opacity-0 mt-0'}`}>
+                                <div className="pl-14 text-xs text-gray-500">
+                                    <p>
+                                        Автоматически создаётся картинка с номером победителя, аватарками участников 
+                                        и датой розыгрыша — как доказательство честности.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {/* Второй тумблер - прикрепить дополнительные медиа (только при включённом первом) */}
+                        <div className={`overflow-hidden transition-all duration-300 ${(settings.useProofImage ?? true) ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'}`}>
+                            <div className="pl-14 border-t border-gray-100 pt-3">
+                                <label className="flex items-center gap-3 cursor-pointer group">
+                                    <div className="relative shrink-0">
+                                        <input
+                                            type="checkbox"
+                                            checked={settings.attachAdditionalMedia ?? false}
+                                            onChange={(e) => onChange('attachAdditionalMedia', e.target.checked)}
+                                            className="sr-only peer"
+                                        />
+                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-100 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                    </div>
+                                    <span className="text-xs text-gray-600 group-hover:text-blue-600 transition-colors">
+                                        📎 Прикрепить дополнительные медиа
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Медиавложения - показываются если: НЕТ изображения-доказательства ИЛИ включён режим дополнительных медиа */}
+                    <div className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                        (!(settings.useProofImage ?? true) || (settings.attachAdditionalMedia ?? false)) 
+                            ? 'max-h-[500px] opacity-100' 
+                            : 'max-h-0 opacity-0'
+                    }`}>
+                        <div className="border border-gray-300 rounded-md bg-white p-3">
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                {(settings.useProofImage ?? true) ? 'Дополнительные медиавложения' : 'Медиавложения'}
+                            </label>
+                            <PostMediaSection 
+                                mode="edit"
+                                projectId={project.id}
+                                editedImages={settings.winnerPostImages}
+                                onImagesChange={(newImages) => {
+                                    // PostMediaSection может вернуть callback, нам нужно обработать значение
+                                    if (typeof newImages === 'function') {
+                                        onChange('winnerPostImages', newImages(settings.winnerPostImages));
+                                    } else {
+                                        onChange('winnerPostImages', newImages);
+                                    }
+                                }}
+                                onUploadStateChange={() => {}} // TODO: Handle loading state
+                                postAttachments={[]}
+                                editedAttachments={[]}
+                                onAttachmentsChange={() => {}}
+                            />
+                        </div>
                     </div>
                 </div>
             </div>

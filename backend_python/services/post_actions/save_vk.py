@@ -10,6 +10,7 @@ import schemas
 from services import vk_service, global_variable_service
 from services.vk_service import VkApiError
 from services.post_helpers import find_conflict_free_time, assign_tags_to_post
+from services.polls_service import resolve_poll_attachments
 
 def save_to_vk_schedule(db: Session, payload: schemas.SavePostPayload, user_token: str) -> schemas.ScheduledPost:
     """Внутренняя функция для сохранения поста в отложенную очередь VK."""
@@ -31,7 +32,13 @@ def save_to_vk_schedule(db: Session, payload: schemas.SavePostPayload, user_toke
     # Подстановка глобальных переменных
     substituted_text = global_variable_service.substitute_global_variables(db, payload.post.text or '', project.id)
     
-    attachments = [img.id for img in payload.post.images] + [att.id for att in payload.post.attachments or []]
+    # Собираем ID изображений
+    image_ids = [img.id for img in payload.post.images]
+    # Обрабатываем аттачменты: если есть черновой опрос (poll_data) — создаём через polls.create
+    other_att_ids = resolve_poll_attachments(
+        payload.post.attachments or [], owner_id, preferred_token, numeric_id
+    )
+    attachments = image_ids + other_att_ids
     print(f"SERVICE: Attachments string for VK API = {attachments}", flush=True)
     
     # Базовые параметры для wall.post / wall.edit
@@ -65,9 +72,9 @@ def save_to_vk_schedule(db: Session, payload: schemas.SavePostPayload, user_toke
 
     for attempt in range(MAX_RETRIES):
         try:
-            # Вызываем универсальный метод с ротацией
+            # Вызываем универсальный метод с ротацией и приоритетом админов группы
             # Передаем method, чтобы поддерживать и wall.post, и wall.edit
-            response = vk_service.publish_with_fallback(params, method=method, preferred_token=preferred_token)
+            response = vk_service.publish_with_admin_priority(params, method=method, group_id=numeric_id, preferred_token=preferred_token)
             
             if is_new:
                 saved_post_id = response.get('post_id')
@@ -90,11 +97,11 @@ def save_to_vk_schedule(db: Session, payload: schemas.SavePostPayload, user_toke
         raise HTTPException(500, "VK API did not return post_id after saving.")
 
     # Получаем сохраненный пост для кеширования
-    # Используем publish_with_fallback для wall.getById с ТЕМ ЖЕ приоритетным токеном.
+    # Используем publish_with_admin_priority для wall.getById с приоритетом админов группы.
     # Это критично для отложенных постов, так как системные токены их не видят.
     try:
         fetch_params = {'posts': f"{owner_id}_{saved_post_id}"}
-        response = vk_service.publish_with_fallback(fetch_params, method='wall.getById', preferred_token=preferred_token)
+        response = vk_service.publish_with_admin_priority(fetch_params, method='wall.getById', group_id=numeric_id, preferred_token=preferred_token)
         
         fresh_posts = response.get('posts', response.get('items', []))
         print(f"SERVICE: wall.getById returned {len(fresh_posts)} posts", flush=True)

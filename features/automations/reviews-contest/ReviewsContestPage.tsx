@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Project } from '../../../shared/types';
 import { ContestSettings, PromoCode } from './types';
+import { ConfirmationModal } from '../../../shared/components/modals/ConfirmationModal';
 import { SettingsTab } from './components/SettingsTab';
 import { PostsTab } from './components/PostsTab';
 import { WinnersTab } from './components/WinnersTab';
@@ -29,7 +30,9 @@ const DEFAULT_SETTINGS: ContestSettings = {
     finishTime: '10:00',
     templateComment: 'Спасибо за отзыв! Ваш номер участника: {number}. Желаем удачи!',
     templateWinnerPost: 'Поздравляем победителей!\n\n{winners_list}\n\nСпасибо всем за участие!',
-    winnerPostImages: [], 
+    winnerPostImages: [],
+    useProofImage: true, // Генерировать изображение-доказательство
+    attachAdditionalMedia: false, // По умолчанию дополнительные медиа не крепятся
     templateDm: 'Поздравляем! Вы выиграли в конкурсе отзывов.\nВаш приз: {description}\nВаш промокод: {promo_code}',
     templateErrorComment: '{user_name}, поздравляем с победой!\n\nНе смогли прислать вам промокод в сообщениях сообщества, возможно вы еще нам не писали или запретили присылать сообщения от лица сообщества.\n\nНапишите нам в сообщения сообщества или разрешите получать сообщения, чтобы забрать приз!'
 };
@@ -47,6 +50,7 @@ export const ReviewsContestPage: React.FC<ReviewsContestPageProps> = ({ project 
     
     const [previewPromo, setPreviewPromo] = useState<PromoCode | null>(null);
     const [freePromocodesCount, setFreePromocodesCount] = useState<number>(0);
+    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
 
     useEffect(() => {
         const loadData = async () => {
@@ -74,6 +78,8 @@ export const ReviewsContestPage: React.FC<ReviewsContestPageProps> = ({ project 
                     templateComment: settingsData.templateComment,
                     templateWinnerPost: settingsData.templateWinnerPost,
                     winnerPostImages: settingsData.winnerPostImages || [],
+                    useProofImage: settingsData.useProofImage ?? true,
+                    attachAdditionalMedia: settingsData.attachAdditionalMedia ?? false,
                     templateDm: settingsData.templateDm,
                     templateErrorComment: settingsData.templateErrorComment
                 };
@@ -147,19 +153,22 @@ export const ReviewsContestPage: React.FC<ReviewsContestPageProps> = ({ project 
     };
     
     const handleCancel = () => {
-        if (confirm("Отменить все несохраненные изменения?")) {
-            setSettings(initialSettings);
-        }
+        setShowCancelConfirm(true);
+    };
+    
+    const confirmCancel = () => {
+        setSettings(initialSettings);
+        setShowCancelConfirm(false);
     };
 
     const handleSettingsChange = useCallback((field: keyof ContestSettings, value: any) => {
         setSettings(prev => ({ ...prev, [field]: value }));
     }, []);
 
-    const tabButtonClass = (tab: Tab) => `px-3 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${
+    const tabButtonClass = (tab: Tab) => `py-2 px-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
         activeTab === tab 
-        ? 'bg-white text-indigo-600 shadow-sm' 
-        : 'text-gray-600 hover:bg-gray-300'
+        ? 'border-indigo-600 text-indigo-600' 
+        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
     }`;
     
     if (isLoading) {
@@ -180,7 +189,7 @@ export const ReviewsContestPage: React.FC<ReviewsContestPageProps> = ({ project 
             </header>
 
             <div className="px-6 pt-4 flex-shrink-0 flex justify-between items-start gap-4">
-                <div className="flex space-x-1 bg-gray-200 p-1 rounded-lg overflow-x-auto custom-scrollbar max-w-full">
+                <div className="flex gap-4 border-b border-gray-200 overflow-x-auto custom-scrollbar max-w-full">
                     <button onClick={() => setActiveTab('settings')} className={tabButtonClass('settings')}>
                         Настройки
                     </button>
@@ -237,7 +246,7 @@ export const ReviewsContestPage: React.FC<ReviewsContestPageProps> = ({ project 
                 )}
                 {activeTab === 'posts' && (
                     <div className="flex-grow p-6 overflow-y-auto custom-scrollbar">
-                        <PostsTab projectId={project.id} />
+                        <PostsTab projectId={project.id} project={project} />
                     </div>
                 )}
                 {activeTab === 'winners' && (
@@ -264,6 +273,18 @@ export const ReviewsContestPage: React.FC<ReviewsContestPageProps> = ({ project 
                     </div>
                 )}
             </main>
+            
+            {/* Модалка подтверждения отмены изменений */}
+            {showCancelConfirm && (
+                <ConfirmationModal
+                    onCancel={() => setShowCancelConfirm(false)}
+                    onConfirm={confirmCancel}
+                    title="Отменить изменения?"
+                    message="Все несохранённые изменения будут потеряны. Вы уверены?"
+                    confirmText="Да, отменить"
+                    cancelText="Нет, продолжить"
+                />
+            )}
         </div>
     );
 };

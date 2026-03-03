@@ -91,7 +91,11 @@ export const useProjectContext = () => {
     const uniqueTeams = useMemo(() => {
         const teams = new Set<string>();
         projects.forEach(p => {
-            if (p.team) teams.add(p.team);
+            if (p.teams && p.teams.length > 0) {
+                p.teams.forEach(t => teams.add(t));
+            } else if (p.team) {
+                teams.add(p.team);
+            }
         });
         return Array.from(teams).sort();
     }, [projects]);
@@ -104,10 +108,11 @@ export const useProjectContext = () => {
             }
             // Team filter
             if (teamFilter !== 'All') {
+                const projectTeams = p.teams && p.teams.length > 0 ? p.teams : (p.team ? [p.team] : []);
                 if (teamFilter === 'NoTeam') {
-                    if (p.team) return false;
+                    if (projectTeams.length > 0) return false;
                 } else {
-                    if (p.team !== teamFilter) return false;
+                    if (!projectTeams.includes(teamFilter)) return false;
                 }
             }
             return true;

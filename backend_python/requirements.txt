@@ -1,25 +1,52 @@
-fastapi==0.109.2
-uvicorn==0.27.1
-sqlalchemy==2.0.27
-pydantic==2.6.1
-pydantic-settings==2.1.0
-python-multipart==0.0.9
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-bcrypt==4.1.2
-requests==2.31.0
+# Веб-фреймворк
+fastapi>=0.109.2
+uvicorn>=0.27.1
+starlette>=0.36.3
+
+# ORM и база данных
+sqlalchemy>=2.0.27
+psycopg2-binary>=2.9.9  # Для PostgreSQL (прод). Локально используется SQLite.
+
+# Валидация данных
+pydantic>=2.6.1
+pydantic-settings>=2.1.0
+
+# Утилиты веб
+python-multipart>=0.0.9
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.1.2
+requests>=2.31.0
 requests[socks]
-PySocks==1.7.1
-httpx==0.26.0
-python-dotenv==1.0.1
-APScheduler==3.10.4
-pytz==2024.1
-cryptography==42.0.2
-pillow==10.2.0
-pilmoji==2.0.3
-google-generativeai==0.3.2
-redis==5.0.1
-numpy==1.26.4
+PySocks>=1.7.1
+httpx>=0.26.0
+python-dotenv>=1.0.1
+
+# Планировщик задач
+APScheduler>=3.10.4
+pytz>=2024.1
+
+# Безопасность
+cryptography>=42.0.2
+
+# Работа с изображениями
+pillow>=11.0.0
+pilmoji>=2.0.3
+
+# AI
+google-generativeai>=0.3.2
+
+# Кэширование
+redis>=5.0.1
+
+# Математика
+numpy>=1.26.4
+
+# VK API
 vk_api
-gunicorn==21.2.0
-psycopg2-binary==2.9.9
+
+# Тестирование
+pytest>=8.0.0
+
+# Сервер (прод)
+gunicorn>=21.2.0

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import Dict, Optional
 
 # Импорт новых модулей
-from .stats.utils import get_model_by_list_type
+from .stats.utils import get_model_by_list_type, get_resolver
 from .stats.core import get_core_counts
 from .stats.demographics import get_gender_stats, get_geo_stats, get_age_and_bdate_stats
 from .stats.technical import get_platform_stats, get_online_stats
@@ -24,11 +24,13 @@ def get_user_stats(
     Собирает данные из модульных функций.
     """
     
-    # 1. Выбор модели
-    model = get_model_by_list_type(list_type)
+    # 1. Выбор модели (кортеж: query_model, profile_model, needs_join)
+    model, pm, needs_join = get_model_by_list_type(list_type)
+    # Полный resolver для type_filter и aggregate_by_user
+    r = get_resolver(list_type)
     
     # 2. Базовые счетчики (Total/Active/Banned/Deleted)
-    core_stats = get_core_counts(db, model, project_id)
+    core_stats = get_core_counts(db, model, pm, project_id, needs_join, r=r)
     
     # Инициализация структуры ответа
     stats = {
@@ -55,22 +57,22 @@ def get_user_stats(
         return stats
 
     # 3. Демография
-    stats["gender_stats"] = get_gender_stats(db, model, project_id)
-    stats["geo_stats"] = get_geo_stats(db, model, project_id)
+    stats["gender_stats"] = get_gender_stats(db, model, pm, project_id, needs_join, r=r)
+    stats["geo_stats"] = get_geo_stats(db, model, pm, project_id, needs_join, r=r)
     
-    age_data = get_age_and_bdate_stats(db, model, project_id)
+    age_data = get_age_and_bdate_stats(db, model, pm, project_id, needs_join, r=r)
     stats["bdate_stats"] = age_data["bdate_stats"]
     stats["age_stats"] = age_data["age_stats"]
 
     # 4. Технические данные
-    stats["platform_stats"] = get_platform_stats(db, model, project_id)
-    stats["online_stats"] = get_online_stats(db, model, project_id)
+    stats["platform_stats"] = get_platform_stats(db, model, pm, project_id, needs_join, r=r)
+    stats["online_stats"] = get_online_stats(db, model, pm, project_id, needs_join, r=r)
 
     # 5. Специфика Рассылки
     if list_type == 'mailing':
         mailing_data = get_mailing_specific_stats(
-            db, model, project_id, stats["total_users"],
-            period, group_by, date_from, date_to, filter_can_write
+            db, model, pm, project_id, stats["total_users"],
+            period, group_by, date_from, date_to, filter_can_write, needs_join
         )
         stats.update(mailing_data)
 

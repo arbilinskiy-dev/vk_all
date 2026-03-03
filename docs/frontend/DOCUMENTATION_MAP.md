@@ -61,6 +61,19 @@
 ### 🧠 ai/ (AI Промпты и Настройки)
 *   **[08_AI_PROMPT_PRESETS_GUIDE.md](./08_AI_PROMPT_PRESETS_GUIDE.md)**: Руководство по шаблонам AI-инструкций.
 
+### 🎁 contest_v2/ (Конкурс 2.0)
+*Интерфейс для создания и управления конкурсами нового поколения.*
+*   **[01_Overview.md](./features/contest_v2/01_Overview.md)**: Компоненты, типы, интеграция с API.
+
+### ⭐ reviews_contest/ (Конкурс отзывов)
+*Автоматизация конкурсов отзывов: мониторинг, регистрация, промокоды, шаблоны.*
+*   **[01_Overview.md](./features/reviews_contest/01_Overview.md)**: Структура, вкладки, типы, шаблоны.
+*   **[02_RichTemplateEditor.md](./features/reviews_contest/02_RichTemplateEditor.md)**: Текстовый редактор шаблонов (аккордеон, анимации, undo/redo).
+
+### 😊 emoji/ (Эмодзи)
+*Работа с эмодзи в приложении.*
+*   **[01_Overview.md](./features/emoji/01_Overview.md)**: Палитра, недавние, VK-эмодзи.
+
 ---
 
 ## 📂 shared/ (Общее и Архитектура)
@@ -79,6 +92,9 @@
 
 ### Специфические Гайды
 *   **[01_Api_Client_Architecture.md](./shared/01_Api_Client_Architecture.md)**: Устройство HTTP-клиента.
+*   **[02_Global_Hooks.md](./shared/02_Global_Hooks.md)**: Глобальные хуки `useAppState` и `useSmartRefresh`.
+*   **[03_API_Clients.md](./shared/03_API_Clients.md)**: Типизированные API-клиенты (`services/api/`).
+*   **[04_Shared_Components.md](./shared/04_Shared_Components.md)**: Общие компоненты, модальные окна, пикеры.
 *   **[07_PUBLISHED_POSTS_GUIDE.md](./07_PUBLISHED_POSTS_GUIDE.md)**: Регламент работы с опубликованными постами.
 *   **[08_SYSTEM_POSTS_GUIDE.md](./08_SYSTEM_POSTS_GUIDE.md)**: Регламент работы с системными постами.
 

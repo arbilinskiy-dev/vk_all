@@ -3,22 +3,56 @@ from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 import uuid
 from typing import Dict, Union
+from pydantic import BaseModel
 
 import schemas
 import services.task_monitor as task_monitor
 # Explicitly importing the module where clear_list_data is defined
 import services.lists.system_list_service as system_list_service
-from database import SessionLocal
+from database import get_db
 from config import settings
 
 router = APIRouter()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+
+# =============================================================================
+# RESUMABLE BULK TASK ENDPOINTS
+# =============================================================================
+
+class ProcessNextPayload(BaseModel):
+    task_id: str
+
+@router.post("/lists/bulk-subscribers/process-next")
+def process_next_subscribers(payload: ProcessNextPayload):
+    """
+    Обрабатывает следующий проект в bulk-задаче подписчиков.
+    Вызывается через self-trigger или для продолжения после рестарта.
+    """
+    from services.lists.resumable_bulk_service import process_next_project, BulkTaskType
+    result = process_next_project(payload.task_id, BulkTaskType.SUBSCRIBERS)
+    return result
+
+@router.post("/lists/bulk-posts/process-next")
+def process_next_posts(payload: ProcessNextPayload):
+    """
+    Обрабатывает следующий проект в bulk-задаче постов.
+    Вызывается через self-trigger или для продолжения после рестарта.
+    """
+    from services.lists.resumable_bulk_service import process_next_project, BulkTaskType
+    result = process_next_project(payload.task_id, BulkTaskType.POSTS)
+    return result
+
+@router.post("/lists/bulk/cancel/{task_id}")
+def cancel_bulk_task(task_id: str):
+    """Отменяет активную bulk-задачу."""
+    from services.lists.resumable_bulk_service import cancel_bulk_task as do_cancel
+    do_cancel(task_id)
+    return {"success": True}
+
+
+# =============================================================================
+# ORIGINAL ENDPOINTS
+# =============================================================================
 
 @router.post("/lists/system/getMeta", response_model=schemas.SystemListMetaResponse)
 def get_list_meta(payload: schemas.ProjectIdPayload, db: Session = Depends(get_db)):
@@ -53,12 +87,27 @@ def get_subscribers(payload: schemas.SystemListPayload, db: Session = Depends(ge
         filter_can_write=payload.filterCanWrite or 'all', # New parameter
         filter_bdate_month=payload.filterBdateMonth or 'any', # NEW
         filter_platform=payload.filterPlatform or 'any', # NEW
-        filter_age=payload.filterAge or 'any' # NEW
+        filter_age=payload.filterAge or 'any', # NEW
+        filter_unread=payload.filterUnread or 'all' # Фильтр по непрочитанным
     )
 
 @router.post("/lists/system/getPosts", response_model=schemas.SystemListPostsResponse)
 def get_posts(payload: schemas.SystemListPayload, db: Session = Depends(get_db)):
     return system_list_service.get_posts(db, payload.projectId, payload.page, payload.searchQuery)
+
+@router.post("/lists/system/getUserPosts", response_model=schemas.UserPostsResponse)
+def get_user_posts(payload: schemas.UserPostsPayload, db: Session = Depends(get_db)):
+    """Получает посты конкретного пользователя (автора) в сообществе."""
+    from crud.lists.posts import get_posts_by_author
+    items, total_count = get_posts_by_author(
+        db, payload.projectId, payload.vkUserId, payload.page, payload.pageSize
+    )
+    return {
+        "items": items,
+        "total_count": total_count,
+        "page": payload.page,
+        "page_size": payload.pageSize,
+    }
 
 @router.post("/lists/system/getInteractions", response_model=schemas.SystemListInteractionsResponse)
 def get_interactions(payload: schemas.SystemListPayload, db: Session = Depends(get_db)):

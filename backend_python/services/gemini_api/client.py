@@ -1,12 +1,20 @@
 
 import requests
 import time
+import threading
 from typing import Optional, List, Set
 from config import settings
 from database import SessionLocal
 import crud.ai_token_crud as ai_token_crud
 # Отложенный импорт во избежание циклических зависимостей
 import services.ai_log_service as ai_log_service
+
+# Thread-local хранилище для последней использованной модели
+_thread_local = threading.local()
+
+def get_last_model_used() -> str:
+    """Возвращает название последней использованной модели в текущем потоке."""
+    return getattr(_thread_local, 'last_model_used', 'unknown')
 
 # === ОПРЕДЕЛЕНИЕ СЕМЕЙСТВ МОДЕЛЕЙ ===
 
@@ -209,6 +217,8 @@ def generate_text(user_prompt: str, system_instruction: Optional[str] = None, st
             
             try:
                 result = _execute_single_request(api_key, model_name, payload, proxies)
+                # Сохраняем имя модели, которая успешно ответила
+                _thread_local.last_model_used = model_name
                 return result
                 
             except KeySpecificError as e:

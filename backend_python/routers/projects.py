@@ -9,16 +9,9 @@ import services.project_service as project_service
 import services.task_monitor as task_monitor
 # ИЗМЕНЕНО: Прямой импорт для предотвращения циклических зависимостей
 import services.update_tracker as update_tracker
-from database import SessionLocal
+from database import get_db
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/getInitialData", response_model=schemas.InitialDataResponse)
 def get_initial_data(db: Session = Depends(get_db)):

@@ -13,8 +13,8 @@ from typing import Dict, Any, Optional
 
 VK_API_VERSION = '5.199'
 VK_API_BASE_URL = 'https://api.vk.com/method/'
-MAX_RETRIES = 5
-INITIAL_DELAY = 2 # seconds
+MAX_RETRIES = 3
+INITIAL_DELAY = 1 # seconds
 
 # --- SESSION MANAGEMENT ---
 # Используем глобальную сессию для переиспользования TCP-соединений (Keep-Alive).
@@ -22,10 +22,16 @@ INITIAL_DELAY = 2 # seconds
 _session = requests.Session()
 
 # Настройка стратегии повторных попыток на уровне TCP/HTTP
+# ВАЖНО: read=0 — НЕ ретраить при таймауте ответа!
+# POST-запросы НЕ идемпотентны (market.addAlbum, market.add).
+# Если VK обработал запрос, но ответ не дошел — повторная отправка создаст дубликат.
+# Ретраим только ошибки УСТАНОВКИ соединения (connect), не чтения ответа (read).
 retries = Retry(
-    total=3,
+    total=2,
+    connect=2,
+    read=0,
     backoff_factor=0.5,
-    status_forcelist=[500, 502, 503, 504],
+    status_forcelist=[502, 503, 504],
     allowed_methods=["POST"]
 )
 _session.mount('https://', HTTPAdapter(max_retries=retries))
@@ -90,9 +96,11 @@ def call_vk_api(method: str, params: Dict[str, Any], project_id: Optional[str] =
     last_exception = None
     # Error codes that are "permanent" - retrying with the same token/params won't help.
     # Added 901 (Can't send messages) and 902 (Privacy settings) to stop retries immediately.
-    # REMOVED 6 (Too many requests) from permanent list explicitly to be safe, though it wasn't there.
+    # REMOVED 6 (Too many requests) and 9 (Flood control) - they are TEMPORARY!
+    # Added 14 (Captcha needed) - невозможно решить капчу автоматически
+    # Added 1402 (Album not found) - подборка не существует, повторять бессмысленно
     PERMANENT_ERROR_CODES = {
-        5, 7, 9, 15, 27, 100, 113, 200, 210, 211, 212, 213, 214, 219, 901, 902
+        5, 7, 14, 15, 27, 100, 113, 200, 203, 210, 211, 212, 213, 214, 219, 901, 902, 1402
     }
 
     for attempt in range(MAX_RETRIES):
@@ -106,7 +114,7 @@ def call_vk_api(method: str, params: Dict[str, Any], project_id: Optional[str] =
             # print(f"🚀 VK API Call [SENDING] (Attempt {attempt + 1}/{MAX_RETRIES}) -> {method} (v={payload['v']})")
             
             # ИСПОЛЬЗУЕМ ГЛОБАЛЬНУЮ СЕССИЮ ВМЕСТО requests.post
-            response = _session.post(url, data=payload, timeout=30)
+            response = _session.post(url, data=payload, timeout=15)
             
             data = response.json()
 
@@ -150,6 +158,13 @@ def call_vk_api(method: str, params: Dict[str, Any], project_id: Optional[str] =
                 print(f"⚠️ VK Code 6 (Too many requests). Sleeping {sleep_time}s and retrying...")
                 time.sleep(sleep_time)
                 continue # Принудительно идем на следующий круг цикла ретраев
+            
+            # CODE 9 (Flood control) - НЕ делаем retry!
+            # Это лимит на метод в час, повторять бессмысленно.
+            # Сразу выбрасываем ошибку для перераспределения задачи на другой токен.
+            if e.code == 9:
+                print(f"⚠️ VK Code 9 (Flood control). Перераспределяем на другой токен...")
+                raise e
 
             if e.code in PERMANENT_ERROR_CODES:
                 print(f"VK API Error {e.code} is permanent. Stopping retries for this token.")

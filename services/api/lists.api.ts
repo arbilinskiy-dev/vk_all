@@ -96,6 +96,39 @@ export interface RefreshProgress {
     message?: string;
     error?: string;
     taskId?: string;
+    // Вложенный прогресс (для bulk-задач) - показывает детализацию внутри текущего проекта
+    sub_loaded?: number;
+    sub_total?: number;
+    sub_message?: string;  // Может содержать JSON с данными о воркерах
+    // Временные метки для трекинга длительности
+    created_at?: number;
+    finished_at?: number;
+}
+
+// Интерфейс для данных о воркере (параллельная обработка) - старый формат
+export interface WorkerProgress {
+    id: number;
+    name: string;
+    status: 'pending' | 'processing' | 'done' | 'error' | 'cancelled';
+    current: string;  // Текущий проект
+    processed: number;
+    total: number;
+    errors: number;
+}
+
+// Интерфейс для прогресса отдельного проекта (новый формат v2)
+export interface ProjectProgress {
+    project_id: string;
+    project_name: string;
+    vk_id: string;
+    status: 'pending' | 'processing' | 'fetching' | 'saving' | 'done' | 'error' | 'reassigned' | 'skipped';
+    token_name: string;
+    loaded: number;      // Скачано подписчиков
+    total: number;       // Всего подписчиков
+    added: number;       // Новых
+    left: number;        // Ушедших
+    error: string;
+    is_admin?: boolean;  // Токен - админ в этой группе (опционально)
 }
 
 export interface TaskStatusResponse extends RefreshProgress {
@@ -142,7 +175,8 @@ export const getSubscribers = async (
     filter_can_write: string = 'all',
     filterBdateMonth: string = 'any', // NEW
     filterPlatform: string = 'any', // NEW
-    filterAge: string = 'any' // NEW
+    filterAge: string = 'any', // NEW
+    filterUnread: string = 'all' // Фильтр по непрочитанным (all | unread)
 ): Promise<{ 
     meta: ProjectListMeta, 
     items: SystemListSubscriber[], 
@@ -159,7 +193,8 @@ export const getSubscribers = async (
         filterCanWrite: filter_can_write,
         filterBdateMonth,
         filterPlatform,
-        filterAge
+        filterAge,
+        filterUnread,
     });
 };
 
@@ -169,6 +204,24 @@ export const getPostsList = async (projectId: string, page: number = 1, searchQu
     total_count: number
 }> => {
     return callApi('lists/system/getPosts', { projectId, page, searchQuery, listType: 'posts' });
+};
+
+/**
+ * Получает посты конкретного пользователя (автора) в сообществе.
+ * Ищет по signer_id / post_author_id в таблице system_list_posts.
+ */
+export const getUserPosts = async (
+    projectId: string,
+    vkUserId: number,
+    page: number = 1,
+    pageSize: number = 20,
+): Promise<{
+    items: SystemListPost[],
+    total_count: number,
+    page: number,
+    page_size: number,
+}> => {
+    return callApi('lists/system/getUserPosts', { projectId, vkUserId, page, pageSize });
 };
 
 export const getInteractionList = async (
@@ -228,6 +281,16 @@ export const deleteAllTasks = async (): Promise<{ success: boolean }> => {
     return callApi('tasks/deleteAll');
 };
 
+/**
+ * Получает статус конкретной задачи по её ID.
+ */
+export const getTaskStatus = async (taskId: string): Promise<RefreshProgress> => {
+    const response = await fetch(`${API_BASE_URL}/lists/system/getTaskStatus/${taskId}`, {
+        cache: 'no-store'
+    });
+    return response.json();
+};
+
 
 // --- Task Polling Helpers ---
 
@@ -244,7 +307,9 @@ export const pollTask = async (
 
         const intervalId = setInterval(async () => {
             try {
-                const response = await fetch(`${API_BASE_URL}/lists/system/getTaskStatus/${taskId}`);
+                const response = await fetch(`${API_BASE_URL}/lists/system/getTaskStatus/${taskId}`, {
+                    cache: 'no-store'
+                });
                 const data = await response.json();
                 
                 if (data.status === 'error') {

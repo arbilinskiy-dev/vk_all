@@ -59,14 +59,68 @@ def refresh_all_market_data(db: Session, project_id: str, user_token: str) -> di
         numeric_id = vk_service.resolve_vk_group_id(project.vkProjectId, user_token)
         owner_id = vk_service.vk_owner_id_string(numeric_id)
 
-        # 2. Загружаем и сохраняем все альбомы (1 запрос)
+        # 2. Загружаем и сохраняем все альбомы
+        # VK API market.getAlbums НЕ возвращает пустые подборки (count=0).
+        # Для получения полного списка используем пагинацию и дополняем из локальной БД.
         print(f"  -> Fetching albums...")
-        vk_albums = vk_service.call_vk_api('market.getAlbums', {
-            'owner_id': owner_id, 
-            'count': 100, 
-            'access_token': user_token
-        })
-        crud.replace_market_albums_for_project(db, project_id, vk_albums.get('items', []), timestamp)
+        all_vk_albums = []
+        albums_offset = 0
+        albums_total = None
+        
+        while True:
+            vk_albums = vk_service.call_vk_api('market.getAlbums', {
+                'owner_id': owner_id, 
+                'count': 100, 
+                'offset': albums_offset,
+                'access_token': user_token
+            })
+            batch = vk_albums.get('items', [])
+            all_vk_albums.extend(batch)
+            
+            if albums_total is None:
+                albums_total = vk_albums.get('count', 0)
+            
+            if not batch or len(all_vk_albums) >= albums_total:
+                break
+            albums_offset += 100
+        
+        vk_album_items = all_vk_albums
+        
+        # ЛОГИРОВАНИЕ: Что вернул VK
+        print(f"  [ALBUMS LOG] VK сообщил count={albums_total}, реально вернул {len(vk_album_items)} подборок:")
+        for a in vk_album_items:
+            print(f"    - id={a['id']}, title='{a['title']}', count={a['count']}")
+        
+        if albums_total and albums_total > len(vk_album_items):
+            print(f"  [ALBUMS LOG] ⚠️ VK скрывает {albums_total - len(vk_album_items)} пустых подборок!")
+        
+        # VK API не возвращает пустые подборки (count=0).
+        # Сохраняем их из локальной БД, чтобы не потерять при синхронизации.
+        vk_album_ids = {album['id'] for album in vk_album_items}
+        local_albums = crud.get_market_albums_by_project(db, project_id)
+        
+        # ЛОГИРОВАНИЕ: Что есть в локальной БД
+        print(f"  [ALBUMS LOG] В локальной БД {len(local_albums)} подборок:")
+        for la in local_albums:
+            print(f"    - pk='{la.id}', album_id={la.album_id}, owner_id={la.owner_id}, title='{la.title}', count={la.count}")
+        
+        preserved_count = 0
+        for local_album in local_albums:
+            if local_album.album_id not in vk_album_ids:
+                # Альбом есть в БД, но VK его не вернул — сохраняем с count=0
+                preserved_count += 1
+                print(f"  [ALBUMS LOG] СОХРАНЯЕМ локальный альбом (не в VK): id={local_album.album_id}, title='{local_album.title}'")
+                vk_album_items.append({
+                    'id': local_album.album_id,
+                    'owner_id': local_album.owner_id,
+                    'title': local_album.title,
+                    'count': 0,
+                    'updated_time': local_album.updated_time or 0,
+                })
+        
+        print(f"  [ALBUMS LOG] Итого для записи в БД: {len(vk_album_items)} подборок ({preserved_count} сохранено из локальной БД)")
+        
+        crud.replace_market_albums_for_project(db, project_id, vk_album_items, timestamp)
 
         # 3. Загружаем ВСЕ товары с пагинацией (N/200 запросов)
         # Используем extended=1, чтобы получить поле 'albums_ids' для каждого товара сразу
@@ -91,6 +145,17 @@ def refresh_all_market_data(db: Session, project_id: str, user_token: str) -> di
             items_batch = vk_items_response.get('items', [])
             if not items_batch:
                 break
+            
+            # Логируем ключи первого товара для диагностики (наличие photos[])
+            if offset == 0 and len(items_batch) > 0:
+                first_item = items_batch[0]
+                print(f"     [DEBUG] Ключи первого товара: {list(first_item.keys())}")
+                has_photos = 'photos' in first_item
+                print(f"     [DEBUG] photos[] присутствует: {has_photos}")
+                if has_photos:
+                    photos = first_item['photos']
+                    print(f"     [DEBUG] photos[0].sizes count: {len(photos[0].get('sizes', []))}")
+                print(f"     [DEBUG] thumb_photo: {first_item.get('thumb_photo', 'НЕТ')[:80]}...")
                 
             for item in items_batch:
                 # VK возвращает ключ 'albums_ids' (множественное число), 

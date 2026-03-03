@@ -1,0 +1,158 @@
+# 11. Планировщик задач (Cron / APScheduler)
+
+Бэкенд использует **APScheduler** (`BackgroundScheduler`) для выполнения периодических задач.
+Сервис определён в `services/scheduler_service.py`, запускается при старте приложения в `main.py → startup_event()`.
+
+---
+
+## 1. Архитектура
+
+```
+main.py (startup)
+  └── scheduler_service.start()
+        └── BackgroundScheduler (12 задач)
+              ├── Группа 1: Оперативные (50с / 5м / 10м)
+              ├── Группа 2: Ротация логов (24ч)
+              ├── Группа 3: Обслуживание (2ч / 6ч)
+              └── Группа 4: Низкий приоритет (24ч)
+```
+
+### Redis Lock
+
+Все задачи используют Redis-блокировку (`SET key NX EX ttl`), чтобы в кластере Gunicorn (4 воркера) задача выполнялась **только одним процессом**. Если Redis недоступен (локальная разработка), задача выполняется без блокировки.
+
+Утилита: `_acquire_lock(lock_key, ttl) → bool`
+
+---
+
+## 2. Полный список задач
+
+### Группа 1: Оперативные задачи (высокая частота)
+
+| ID в APScheduler | Функция | Интервал | Redis Lock | Описание |
+|---|---|---|---|---|
+| `system_post_tracker` | `job_system_post_publisher` | **50 сек** | `tracker_lock` (55с) | Ищет `system_posts` со статусом `pending_publication` и `publication_date ≤ NOW`. Публикует через VK API. Поддерживает: обычные, конкурсы, AI-посты, циклические. |
+| `stories_automation_bg` | `job_stories_automation` | **10 мин** | `stories_bg_lock` (590с) | Синхронизирует посты со стены → локальная БД. Генерирует истории по ключевым словам для проектов с активной автоматизацией. |
+| `auth_session_cleanup` | `job_session_cleanup` | **5 мин** | — | Деактивирует сессии авторизации (`auth_sessions`) с `last_activity` старше 20 минут. Пишет лог таймаута в `auth_logs`. |
+
+### Группа 2: Ротация логов (раз в сутки)
+
+| ID в APScheduler | Функция | Интервал | Redis Lock | Что чистит | Порог |
+|---|---|---|---|---|---|
+| `rotate_token_logs` | `job_rotate_token_logs` | **24 ч** | `rotate_token_logs_lock` (86000с) | `token_logs` — логи VK API вызовов | >30 дней |
+| `rotate_ai_logs` | `job_rotate_ai_logs` | **24 ч** | `rotate_ai_logs_lock` (86000с) | `ai_token_logs` — логи Gemini/AI вызовов | >30 дней |
+| `rotate_auth_logs` | `job_rotate_auth_logs` | **24 ч** | `rotate_auth_logs_lock` (86000с) | `auth_logs` — логи авторизации | >90 дней |
+| `rotate_callback_logs` | `job_rotate_callback_logs` | **24 ч** | `rotate_callback_logs_lock` (86000с) | `vk_callback_logs` — логи Callback API | >30 дней |
+| `cleanup_inactive_sessions` | `job_cleanup_inactive_sessions` | **24 ч** | `cleanup_dead_sessions_lock` (86000с) | `auth_sessions` с `is_active=False` | >7 дней |
+
+### Группа 3: Обслуживание (средний приоритет)
+
+| ID в APScheduler | Функция | Интервал | Redis Lock | Описание |
+|---|---|---|---|---|
+| `verify_vk_tokens` | `job_verify_vk_tokens` | **2 ч** | `verify_tokens_lock` (7100с) | Проверяет валидность всех VK-токенов (`system_accounts`). Обновляет `status` → `active` / `error`. Пауза 0.5с между запросами для rate limit. |
+| `cleanup_system_tasks` | `job_cleanup_system_tasks` | **6 ч** | `cleanup_tasks_lock` (21500с) | Удаляет `system_tasks` старше 24ч. Дублирует inline-очистку из `get_all_tasks()`, но работает даже если никто не заходит в UI. |
+
+### Группа 4: Низкий приоритет (раз в сутки)
+
+| ID в APScheduler | Функция | Интервал | Redis Lock | Описание |
+|---|---|---|---|---|
+| `finalize_stories_logs` | `job_finalize_stories_logs` | **24 ч** | `finalize_stories_lock` (86000с) | Финализирует `stories_automation_logs` старше 48ч с `is_active=False`. Устанавливает `stats_finalized=True`, `viewers_finalized=True`. |
+| `cleanup_expired_blacklist` | `job_cleanup_expired_blacklist` | **24 ч** | `cleanup_blacklist_lock` (86000с) | Удаляет записи `review_contest_blacklist` с истёкшим `until_date`. |
+
+---
+
+## 3. Зависимости (CRUD-функции)
+
+Задачи ротации используют следующие CRUD-функции:
+
+| Задача | CRUD | Функция |
+|---|---|---|
+| Ротация token_logs | `crud/token_log_crud.py` | `clear_old_logs(db, older_than_days=30)` |
+| Ротация ai_token_logs | `crud/ai_log_crud.py` | `clear_old_logs(db, older_than_days=30)` |
+| Ротация auth_logs | `crud/auth_log_crud.py` | `clear_logs(db, older_than_days=90)` |
+| Ротация callback_logs | inline в задаче | `db.query(VkCallbackLog).filter(timestamp < cutoff).delete()` |
+| Очистка сессий | `services/session_auth_service.py` | `cleanup_expired_sessions(db, timeout_minutes=20)` |
+| Верификация токенов | `services/vk_api/api_client.py` | `call_vk_api('users.get', ...)` |
+
+---
+
+## 4. Жизненный цикл
+
+### Запуск
+
+```python
+# main.py → startup_event()
+scheduler_service.start()
+# → BackgroundScheduler запускает 12 задач
+# → Консоль: "✅ APScheduler started — 12 scheduled jobs registered."
+```
+
+### Остановка
+
+```python
+# main.py → shutdown_event()
+scheduler_service.shutdown()
+# → scheduler.shutdown(wait=False) — не ждём завершения текущих задач
+# → Консоль: "✅ APScheduler stopped gracefully."
+```
+
+### При ошибке задачи
+
+- Каждая задача обёрнута в `try/except` — ошибка одной задачи **не влияет** на остальные.
+- Ошибки пишутся в stdout: `SCHEDULER ERROR (<имя>): <сообщение>`.
+- APScheduler **автоматически повторяет** задачу в следующем цикле.
+
+---
+
+## 5. Мониторинг
+
+Все задачи выводят сообщения в stdout при успешном выполнении:
+
+```
+SCHEDULER: Rotated 1523 old token_logs (>30 days).
+SCHEDULER: Token verify — 8 accounts OK.
+SCHEDULER: Cleaned up 3 old system_tasks (>24h).
+```
+
+Для мониторинга в продакшене проверяйте логи контейнера:
+```bash
+docker logs <container_name> | grep "SCHEDULER"
+```
+
+---
+
+## 6. Настройка параметров
+
+Все пороги захардкожены в `scheduler_service.py`. Для изменения:
+
+| Параметр | Где менять | По умолчанию |
+|---|---|---|
+| Интервал публикации постов | `IntervalTrigger(seconds=50)` | 50 сек |
+| Интервал автоматизации историй | `IntervalTrigger(minutes=10)` | 10 мин |
+| Таймаут сессии | `timeout_minutes=20` | 20 мин |
+| Срок хранения token_logs | `older_than_days=30` | 30 дней |
+| Срок хранения ai_token_logs | `older_than_days=30` | 30 дней |
+| Срок хранения auth_logs | `older_than_days=90` | 90 дней |
+| Срок хранения callback_logs | `timedelta(days=30)` | 30 дней |
+| Срок хранения неактивных сессий | `timedelta(days=7)` | 7 дней |
+| Интервал проверки токенов | `IntervalTrigger(hours=2)` | 2 часа |
+| Интервал очистки задач | `IntervalTrigger(hours=6)` | 6 часов |
+| Порог финализации историй | `timedelta(hours=48)` | 48 часов |
+
+> **Будущее улучшение:** Вынести пороги в `config.py` или переменные окружения для гибкой настройки без правки кода.
+
+---
+
+## 7. Визуализация расписания
+
+```
+Время:  0   1   2   3   4   5   6 ... 24ч
+        ╠═══╬═══╬═══╬═══╬═══╬═══╬═══╬═══╣
+50с     ████████████████████████████████████  Публикация постов
+5мин    ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██  Очистка сессий
+10мин   █  █  █  █  █  █  █  █  █  █  █  █  Автоматизация историй
+2ч      █        █        █        █         Проверка VK-токенов
+6ч      █              █              █      Очистка system_tasks
+24ч     █                                    Ротация логов (5 задач)
+24ч     █                                    Финализация + blacklist
+```

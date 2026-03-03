@@ -7,17 +7,10 @@ from typing import Dict
 import schemas
 
 import services.ai_service as ai_service
-from database import SessionLocal
+from database import get_db
 from config import settings
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/generatePostText", response_model=schemas.GeneratedTextResponse)
 def generate_post_text(payload: schemas.GenerateTextPayload, db: Session = Depends(get_db)):
@@ -25,11 +18,11 @@ def generate_post_text(payload: schemas.GenerateTextPayload, db: Session = Depen
     Генерирует текст для поста с помощью Gemini.
     Принимает основной промпт и опциональный системный промпт.
     """
-    generated_text = ai_service.generate_text_from_prompt(
+    result = ai_service.generate_text_from_prompt(
         prompt=payload.prompt,
         system_prompt=payload.system_prompt
     )
-    return {"generatedText": generated_text}
+    return result
 
 @router.post("/generateBatchPostTexts", response_model=schemas.GeneratedBatchTextResponse)
 def generate_batch_post_texts(payload: schemas.GenerateBatchTextPayload, db: Session = Depends(get_db)):
@@ -54,6 +47,15 @@ def correct_text(payload: schemas.CorrectTextPayload, db: Session = Depends(get_
     corrected_text = ai_service.correct_suggested_text(db, payload.text, payload.projectId, settings.vk_user_token)
     return {"correctedText": corrected_text}
 
+@router.post("/bulkCorrectSuggestedPosts", response_model=schemas.BulkCorrectedSuggestedPostsResponse)
+def bulk_correct_suggested_posts(payload: schemas.BulkCorrectSuggestedPostsPayload, db: Session = Depends(get_db)):
+    """
+    Массовая коррекция всех предложенных постов одним запросом.
+    Принимает массив [{id, text}], возвращает [{id, correctedText}].
+    """
+    results = ai_service.bulk_correct_suggested_texts(db, payload.posts, payload.projectId, settings.vk_user_token)
+    return {"results": results}
+
 @router.post("/runAiVariableSetup", response_model=schemas.AiVariableSetupResponse)
 def run_ai_variable_setup(payload: schemas.AiVariablePayload, db: Session = Depends(get_db)):
     return ai_service.run_ai_variable_setup(db, payload, settings.vk_user_token)
@@ -63,8 +65,8 @@ def process_post_text(payload: schemas.ProcessTextPayload, db: Session = Depends
     """
     Обрабатывает текст поста с помощью AI по заданному действию (рерайт, исправление ошибок).
     """
-    processed_text = ai_service.process_post_text(
+    result = ai_service.process_post_text(
         text=payload.text,
         action=payload.action
     )
-    return {"generatedText": processed_text}
+    return result

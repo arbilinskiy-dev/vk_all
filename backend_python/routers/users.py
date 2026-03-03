@@ -4,16 +4,9 @@ from typing import List
 
 import schemas
 import services.user_service as user_service
-from database import SessionLocal
+from database import get_db
 
 router = APIRouter(prefix="/users", tags=["User Management"])
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/getAll", response_model=List[schemas.User])
 def get_all_users(db: Session = Depends(get_db)):

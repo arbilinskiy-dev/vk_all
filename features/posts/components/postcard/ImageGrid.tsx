@@ -2,29 +2,35 @@ import React from 'react';
 import { ScheduledPost } from '../../../../shared/types';
 import { LazyImage } from '../../../../shared/components/LazyImage';
 
+/**
+ * Минималистичные превью-квадратики изображений поста.
+ * Показываем до 5 маленьких квадратов в ряд, при большем кол-ве — "+N".
+ */
+const MAX_VISIBLE = 5;
+
 export const ImageGrid: React.FC<{ images: ScheduledPost['images'] }> = React.memo(({ images }) => {
     if (images.length === 0) return null;
 
-    if (images.length === 1) {
-        return (
-            <div className="group relative aspect-video w-full mt-2 mb-1 rounded-md bg-gray-200">
-                <LazyImage src={images[0].url} alt="Post image" className="w-full h-full object-cover rounded-md transition-transform duration-300 ease-in-out"/>
-            </div>
-        );
-    }
-
-    const remainingCount = images.length - 4;
+    const visibleImages = images.slice(0, MAX_VISIBLE);
+    const remainingCount = images.length - MAX_VISIBLE;
 
     return (
-        <div className="grid grid-cols-2 gap-1 my-2">
-            {images.slice(0, images.length > 4 ? 3 : 4).map((img, idx) => (
-                <div key={img.id} className="group relative aspect-square">
-                    <LazyImage src={img.url} className="rounded object-cover w-full h-full transition-transform duration-300 ease-in-out" alt={`Post image ${idx + 1}`} />
+        <div className="flex items-center gap-1.5 mt-2 mb-1">
+            {visibleImages.map((img, idx) => (
+                <div
+                    key={img.id}
+                    className="w-10 h-10 flex-shrink-0 rounded-md overflow-hidden bg-gray-100"
+                >
+                    <LazyImage
+                        src={img.url}
+                        alt={`Фото ${idx + 1}`}
+                        className="w-full h-full object-cover"
+                    />
                 </div>
             ))}
-            {images.length > 4 && (
-                <div className="aspect-square bg-gray-200 rounded flex items-center justify-center">
-                    <span className="text-gray-600 font-bold text-lg">+{remainingCount + 1}</span>
+            {remainingCount > 0 && (
+                <div className="w-10 h-10 flex-shrink-0 rounded-md bg-gray-100 flex items-center justify-center">
+                    <span className="text-[11px] font-semibold text-gray-500">+{remainingCount}</span>
                 </div>
             )}
         </div>

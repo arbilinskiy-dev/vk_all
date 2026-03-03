@@ -22,10 +22,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 }) => {
     return (
         <div className="flex flex-col lg:flex-row flex-grow overflow-hidden h-full">
-            {/* ЛЕВАЯ КОЛОНКА: Настройки */}
-            <div className="w-full lg:w-1/2 overflow-y-auto custom-scrollbar p-6 border-r border-gray-200 bg-white">
+            {/* ЛЕВАЯ КОЛОНКА: Настройки (приоритет по ширине) */}
+            <div className="w-full lg:flex-[3] lg:min-w-0 overflow-y-auto custom-scrollbar p-6 border-r border-gray-200 bg-white">
                  <div className="max-w-2xl mx-auto space-y-8">
-                    <MainSettings settings={settings} onChange={onChange} />
+                    <MainSettings settings={settings} onChange={onChange} project={project} />
                     <FinishConditions settings={settings} onChange={onChange} />
                     <TemplatesSection settings={settings} onChange={onChange} project={project} />
                  </div>

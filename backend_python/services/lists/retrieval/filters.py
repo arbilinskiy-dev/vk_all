@@ -6,6 +6,14 @@ import time
 import datetime
 import models
 
+
+def _get_fallback_model(list_type: str):
+    """Fallback-маппинг модели по list_type (только для случаев, когда profile_model не передан)."""
+    if list_type in ('reviews_participants', 'reviews_winners', 'reviews_posts'):
+        return models.ReviewContestEntry
+    # Для всех нормализованных типов используем VkProfile
+    return models.VkProfile
+
 def apply_filters(
     query: Any,
     list_type: str,
@@ -14,54 +22,41 @@ def apply_filters(
     filter_sex: str = 'all',
     filter_online: str = 'any',
     filter_can_write: str = 'all',
-    filter_bdate_month: str = 'any', # NEW
-    filter_platform: str = 'any', # NEW
-    filter_age: str = 'any' # NEW
+    filter_bdate_month: str = 'any',
+    filter_platform: str = 'any',
+    filter_age: str = 'any',
+    profile_model: Any = None
 ) -> Any:
     """
     Применяет фильтры к запросу SQLAlchemy в зависимости от типа списка и параметров.
+    
+    profile_model: модель с полями профиля (VkProfile для нормализованных таблиц,
+                   или сама модель для старых/специальных таблиц).
+                   Обязательный параметр для всех стандартных типов списков.
     """
     
-    # Определяем модель для корректного обращения к полям
-    if list_type == 'mailing':
-        model = models.SystemListMailing
-    elif list_type == 'subscribers':
-        model = models.SystemListSubscriber
-    elif list_type == 'history_join':
-        model = models.SystemListHistoryJoin
-    elif list_type == 'history_leave':
-        model = models.SystemListHistoryLeave
-    elif list_type == 'likes':
-        model = models.SystemListLikes
-    elif list_type == 'comments':
-        model = models.SystemListComments
-    elif list_type == 'reposts':
-        model = models.SystemListReposts
-    elif list_type == 'authors': # NEW
-        model = models.SystemListAuthor
-    elif list_type == 'reviews_participants' or list_type == 'reviews_winners' or list_type == 'reviews_posts':
-        model = models.ReviewContestEntry
-    else:
-        model = models.SystemListSubscriber # Default fallback
+    # Для нормализованных таблиц: profile_model содержит поля профиля (VkProfile)
+    # Для старых/специальных таблиц: profile_model == query_model
+    pm = profile_model if profile_model is not None else _get_fallback_model(list_type)
 
     # 1. Применение фильтров качества, пола и онлайна (только для пользователей)
     if list_type != 'posts' and list_type != 'reviews_posts' and list_type != 'reviews_participants' and list_type != 'reviews_winners':
         # Качество (active, banned, deleted)
         if filter_quality == 'active':
-            query = query.filter(model.deactivated.is_(None))
+            query = query.filter(pm.deactivated.is_(None))
         elif filter_quality == 'banned':
-            query = query.filter(model.deactivated == 'banned')
+            query = query.filter(pm.deactivated == 'banned')
         elif filter_quality == 'deleted':
-            query = query.filter(model.deactivated == 'deleted')
+            query = query.filter(pm.deactivated == 'deleted')
             
         # Пол (female, male, unknown)
         # sex: 1 = female, 2 = male, 0 = unknown
         if filter_sex == 'female':
-            query = query.filter(model.sex == 1)
+            query = query.filter(pm.sex == 1)
         elif filter_sex == 'male':
-            query = query.filter(model.sex == 2)
+            query = query.filter(pm.sex == 2)
         elif filter_sex == 'unknown':
-            query = query.filter(or_(model.sex == 0, model.sex == None))
+            query = query.filter(or_(pm.sex == 0, pm.sex == None))
             
         # Онлайн (today, 3_days, week, month)
         if filter_online != 'any':
@@ -79,34 +74,34 @@ def apply_filters(
                 threshold_ts = now_ts - (30 * day_seconds)
                 
             if threshold_ts > 0:
-                query = query.filter(model.last_seen >= threshold_ts)
+                query = query.filter(pm.last_seen >= threshold_ts)
         
         # Платформа
-        if filter_platform != 'any' and hasattr(model, 'platform'):
+        if filter_platform != 'any' and hasattr(pm, 'platform'):
             if filter_platform.isdigit():
-                 query = query.filter(model.platform == int(filter_platform))
+                 query = query.filter(pm.platform == int(filter_platform))
             elif filter_platform == 'unknown':
-                 query = query.filter(model.platform.is_(None))
+                 query = query.filter(pm.platform.is_(None))
         
         # Месяц рождения
-        if filter_bdate_month != 'any' and hasattr(model, 'bdate'):
+        if filter_bdate_month != 'any' and hasattr(pm, 'bdate'):
              if filter_bdate_month == 'unknown':
-                  query = query.filter(model.bdate.is_(None))
+                  query = query.filter(pm.bdate.is_(None))
              elif filter_bdate_month.isdigit():
                   m = filter_bdate_month
                   query = query.filter(or_(
-                      model.bdate.like(f'%.{m}.%'),
-                      model.bdate.like(f'%.{m}')
+                      pm.bdate.like(f'%.{m}.%'),
+                      pm.bdate.like(f'%.{m}')
                   ))
         
         # Возраст
-        if filter_age != 'any' and hasattr(model, 'bdate'):
+        if filter_age != 'any' and hasattr(pm, 'bdate'):
             if filter_age == 'unknown':
                 # Те, у кого нет bdate или bdate без года
                 # bdate без года выглядит как "D.M" (2 части), с годом "D.M.YYYY" (3 части)
                 query = query.filter(or_(
-                    model.bdate.is_(None),
-                    model.bdate.notlike('%.%.%') # Нет двух точек
+                    pm.bdate.is_(None),
+                    pm.bdate.notlike('%.%.%') # Нет двух точек
                 ))
             else:
                 current_year = datetime.datetime.now().year
@@ -167,21 +162,21 @@ def apply_filters(
                 # Создаем условия LIKE для каждого года
                 year_conditions = []
                 for y in range(start_check, end_check + 1):
-                    year_conditions.append(model.bdate.like(f'%{y}'))
+                    year_conditions.append(pm.bdate.like(f'%{y}'))
                 
                 if year_conditions:
                     query = query.filter(or_(*year_conditions))
                 else:
                     # Невозможный диапазон, ничего не возвращаем
-                    query = query.filter(model.id == 'impossible')
+                    query = query.filter(pm.id == 'impossible')
 
         # Фильтр "Разрешено писать" (только для mailing)
         if list_type == 'mailing' and filter_can_write != 'all':
             if filter_can_write == 'allowed':
-                query = query.filter(model.can_access_closed.is_(True))
+                query = query.filter(pm.can_access_closed.is_(True))
             elif filter_can_write == 'forbidden':
                 # IS NOT TRUE покрывает и FALSE, и NULL (для старых или битых записей)
-                query = query.filter(model.can_access_closed.isnot(True))
+                query = query.filter(pm.can_access_closed.isnot(True))
 
     # 2. Логика поиска (текст, ссылки, ID)
     if search_query and search_query.strip():
@@ -200,33 +195,33 @@ def apply_filters(
                  query = query.filter(models.ReviewContestEntry.user_name.ilike(f"%{search}%"))
         else:
             # Для пользователей сложнее: ссылка, ID или имя
-            # Попытка извлечь ID или screen_name из ссылки
-            link_match = re.search(r'(?:vk\.com\/)(id\d+|[\w\.]+)', search)
+            # Попытка извлечь ID или screen_name из ссылки (поддерживаем vk.com и vk.ru)
+            link_match = re.search(r'(?:vk\.(?:com|ru)\/)(id\d+|[\w\.]+)', search)
             
             if link_match:
                 identifier = link_match.group(1)
                 if identifier.startswith('id') and identifier[2:].isdigit():
                     clean_id = identifier[2:]
-                    query = query.filter(model.vk_user_id == int(clean_id))
+                    query = query.filter(pm.vk_user_id == int(clean_id))
                 elif list_type == 'subscribers' or list_type == 'mailing' or list_type.startswith('history') or list_type == 'authors': 
-                    if hasattr(model, 'domain'):
-                        query = query.filter(model.domain.ilike(f"%{identifier}%"))
+                    if hasattr(pm, 'domain'):
+                        query = query.filter(pm.domain.ilike(f"%{identifier}%"))
             
             elif search.isdigit():
                 query = query.filter(or_(
-                    model.vk_user_id == int(search),
-                    model.first_name.ilike(f"%{search}%"),
-                    model.last_name.ilike(f"%{search}%")
+                    pm.vk_user_id == int(search),
+                    pm.first_name.ilike(f"%{search}%"),
+                    pm.last_name.ilike(f"%{search}%")
                 ))
                 
             else:
                 search_pattern = f"%{search}%"
                 criteria = [
-                    model.first_name.ilike(search_pattern),
-                    model.last_name.ilike(search_pattern)
+                    pm.first_name.ilike(search_pattern),
+                    pm.last_name.ilike(search_pattern)
                 ]
-                if hasattr(model, 'domain'):
-                    criteria.append(model.domain.ilike(search_pattern))
+                if hasattr(pm, 'domain'):
+                    criteria.append(pm.domain.ilike(search_pattern))
                     
                 query = query.filter(or_(*criteria))
     

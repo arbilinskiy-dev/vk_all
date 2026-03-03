@@ -113,7 +113,7 @@ export const ProjectSettingsModal: React.FC<{
                     </button>
                 </header>
                 
-                <main className="px-6 overflow-y-auto custom-scrollbar">
+                <main className="px-6 overflow-y-auto custom-scrollbar flex-1 min-h-0">
                     <StatusSection 
                         formData={formData} 
                         handleSetFormData={handleSetFormData} 

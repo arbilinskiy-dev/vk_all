@@ -34,6 +34,16 @@ class PostBase(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     is_active: Optional[bool] = True
+    
+    # Поля для связи с автоматизациями (Конкурс 2.0 и т.д.)
+    post_type: Optional[str] = None  # 'contest_v2_start', etc.
+    related_id: Optional[str] = None  # ID связанной сущности
+
+    # Флаг закрепления поста на стене при публикации
+    is_pinned: Optional[bool] = False
+
+    # Текст первого комментария (публикуется от имени сообщества после wall.post)
+    first_comment_text: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
     
@@ -80,6 +90,12 @@ class SystemPost(BaseModel):
     description: Optional[str] = None
     is_active: Optional[bool] = True
     related_id: Optional[str] = None # Added for linking to other entities (e.g. general contest)
+
+    # Флаг закрепления поста на стене при публикации
+    is_pinned: Optional[bool] = False
+
+    # Текст первого комментария (публикуется от имени сообщества после wall.post)
+    first_comment_text: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

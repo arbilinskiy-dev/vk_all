@@ -42,6 +42,9 @@ export const useScheduleInteraction = ({
     // Drag & Drop states
     const draggedPostRef = useRef<UnifiedPost | null>(null);
     const draggedNoteRef = useRef<Note | null>(null);
+    
+    // Состояние для заблокированного перетаскивания (contest_v2_start посты)
+    const [blockedDragPost, setBlockedDragPost] = useState<UnifiedPost | null>(null);
 
     // Loading states for interactions
     const [loadingStates, setLoadingStates] = useState({
@@ -116,37 +119,56 @@ export const useScheduleInteraction = ({
     
     const handleConfirmBulkDelete = useCallback(async (
         closeModal: () => void, 
-        deletePostAction: (post: UnifiedPost) => Promise<boolean>,
-        deleteNoteAction: (note: Note) => Promise<boolean>
+        bulkDeleteAction: (postsToDelete: UnifiedPost[], notesToDelete: Note[]) => Promise<{ successCount: number; totalCount: number }>
     ) => {
         setLoadingStates(prev => ({ ...prev, isBulkDeleting: true }));
         
-        const postsToDelete = Array.from(selectedPostIds).map(id => posts.find(p => p.id === id)).filter((p): p is UnifiedPost => !!p);
+        const postsToDelete = Array.from(selectedPostIds)
+            .map(id => posts.find(p => p.id === id))
+            .filter((p): p is UnifiedPost => !!p)
+            // Фильтруем посты contest_v2_start - их нельзя удалять массово
+            .filter(p => !(p.postType === 'system' && 'post_type' in p && p.post_type === 'contest_v2_start'));
         const notesToDelete = Array.from(selectedNoteIds).map(id => notes.find(n => n.id === id)).filter((n): n is Note => !!n);
+        
+        // Предупреждаем если были пропущены защищённые посты
+        const skippedContestPosts = Array.from(selectedPostIds)
+            .map(id => posts.find(p => p.id === id))
+            .filter((p): p is UnifiedPost => !!p && p.postType === 'system' && 'post_type' in p && p.post_type === 'contest_v2_start');
+        if (skippedContestPosts.length > 0) {
+            window.showAppToast?.(`${skippedContestPosts.length} пост(ов) Конкурс 2.0 пропущено. Удалите их через настройки конкурса.`, 'warning');
+        }
 
-        const postPromises = postsToDelete.map(p => deletePostAction(p));
-        const notePromises = notesToDelete.map(n => deleteNoteAction(n));
-
-        const results = await Promise.allSettled([...postPromises, ...notePromises]);
-        const successfulDeletes = results.filter(r => r.status === 'fulfilled' && r.value).length;
-        window.showAppToast?.(`Успешно удалено: ${successfulDeletes} элементов.\nНе удалось удалить: ${results.length - successfulDeletes} элементов.`, 'info');
+        // FIX RACE CONDITION: Вместо N параллельных удалений с индивидуальными рефрешами,
+        // делаем только API-вызовы удаления, а потом ОДИН финальный рефреш.
+        // Это устраняет гонку, при которой параллельные handleRefreshPublished 
+        // могли затирать stories пустым массивом.
+        const { successCount, totalCount } = await bulkDeleteAction(postsToDelete, notesToDelete);
+        const failedCount = totalCount - successCount;
+        window.showAppToast?.(`Успешно удалено: ${successCount} элементов.\nНе удалось удалить: ${failedCount} элементов.`, 'info');
 
         setLoadingStates(prev => ({ ...prev, isBulkDeleting: false }));
         closeModal();
         setIsSelectionMode(false);
         setSelectedPostIds(new Set());
         setSelectedNoteIds(new Set());
+        
+        // Один финальный рефреш вместо N+1 параллельных
         await onRefreshAll();
     }, [selectedPostIds, selectedNoteIds, posts, notes, onRefreshAll]);
 
 
     const handlePostDragStart = useCallback((e: DragEvent<HTMLDivElement>, post: UnifiedPost) => {
+        // Блокируем перетаскивание для постов contest_v2_start
+        if (post.postType === 'system' && 'post_type' in post && post.post_type === 'contest_v2_start') {
+            e.preventDefault();
+            setBlockedDragPost(post);
+            return;
+        }
+        
         draggedNoteRef.current = null;
         draggedPostRef.current = post;
         
-        if (post.postType === 'system' && post.status === 'publishing') {
-            e.dataTransfer.effectAllowed = 'copy';
-        } else if (post.postType === 'published') {
+        if (post.postType === 'published') {
             e.dataTransfer.effectAllowed = 'copy';
         } else {
             e.dataTransfer.effectAllowed = 'move';
@@ -170,17 +192,24 @@ export const useScheduleInteraction = ({
     
     const handleDrop = useCallback((e: DragEvent<HTMLDivElement>, targetDay: Date, openMoveConfirm: (info: any, date: Date) => void) => {
         e.preventDefault();
+        e.stopPropagation(); // Предотвращаем всплытие события drop
+        
+        // Забираем данные из ref и СРАЗУ очищаем, чтобы предотвратить повторную обработку
         const postToMove = draggedPostRef.current;
         const noteToMove = draggedNoteRef.current;
+        draggedPostRef.current = null;
+        draggedNoteRef.current = null;
+        
+        // Если нет данных — значит drop уже был обработан ранее
+        if (!postToMove && !noteToMove) return;
 
         if (postToMove && new Date(postToMove.date).toDateString() !== targetDay.toDateString()) {
             const proposedNewDate = new Date(targetDay);
             proposedNewDate.setHours(new Date(postToMove.date).getHours(), new Date(postToMove.date).getMinutes(), 0, 0);
 
-            const isSystemPublishing = postToMove.postType === 'system' && postToMove.status === 'publishing';
             const isAlreadyPublished = postToMove.postType === 'published';
 
-            if (isSystemPublishing || isAlreadyPublished) {
+            if (isAlreadyPublished) {
                 setCopyingPost({ ...postToMove, date: proposedNewDate.toISOString() } as ScheduledPost);
             } else {
                 openMoveConfirm({ id: postToMove.id, originalDate: postToMove.date, type: 'post' }, targetDay);
@@ -267,12 +296,15 @@ export const useScheduleInteraction = ({
                 await onSaveNote(noteToSave);
             }
             window.showAppToast?.(`${itemTypeStr.charAt(0).toUpperCase() + itemTypeStr.slice(1)} успешно ${isCopy ? 'скопирован(а)' : 'перенесен(а)'}.`, 'success');
-            await onRefreshAll();
+            // Сначала закрываем модалку, затем обновляем данные — чтобы модалка не зависала
             closeModal();
+            await onRefreshAll();
 
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             window.showAppToast?.(`Не удалось ${isCopy ? 'скопировать' : 'перенести'} ${itemTypeStr}. Ошибка: ${errorMessage}`, 'error');
+            // Закрываем модалку даже при ошибке, чтобы она не зависала
+            closeModal();
         } finally {
             setLoadingStates(prev => ({ ...prev, isMovingPost: false }));
         }
@@ -314,7 +346,9 @@ export const useScheduleInteraction = ({
         handleNoteDragStart,
         handleDragEnd,
         handleDrop,
-    }), [handleDrop, handleDragEnd, handleNoteDragStart, handlePostDragStart]);
+        blockedDragPost,
+        setBlockedDragPost,
+    }), [handleDrop, handleDragEnd, handleNoteDragStart, handlePostDragStart, blockedDragPost]);
 
 
     return {

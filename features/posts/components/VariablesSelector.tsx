@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { Project, GlobalVariableDefinition } from '../../../../shared/types';
+import { PromoVariableInfo } from '../../../../services/api/promo_lists.api';
 
 interface VariablesSelectorProps {
     isLoading: boolean;
@@ -10,6 +11,9 @@ interface VariablesSelectorProps {
     project: Project | null;
     onInsert: (value: string) => void;
     onEditVariables: () => void;
+    /** Промо-переменные (опционально, только для сообщений) */
+    promoVariables?: PromoVariableInfo[] | null;
+    isLoadingPromoVariables?: boolean;
 }
 
 export const VariablesSelector: React.FC<VariablesSelectorProps> = ({ 
@@ -19,7 +23,9 @@ export const VariablesSelector: React.FC<VariablesSelectorProps> = ({
     globalVariables,
     project, 
     onInsert, 
-    onEditVariables 
+    onEditVariables,
+    promoVariables,
+    isLoadingPromoVariables,
 }) => {
     
     const baseVariables = project ? [
@@ -100,6 +106,56 @@ export const VariablesSelector: React.FC<VariablesSelectorProps> = ({
                 </div>
             </div>
 
+            {/* Промокоды — секция показывается только если пропс передан */}
+            {promoVariables !== undefined && promoVariables !== null && (
+                <div>
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Промокоды</h4>
+                    {isLoadingPromoVariables && (
+                        <div className="flex items-center py-2">
+                            <div className="loader h-4 w-4"></div>
+                        </div>
+                    )}
+                    {!isLoadingPromoVariables && promoVariables.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                            {promoVariables.map(pv => (
+                                <React.Fragment key={pv.slug}>
+                                    <button
+                                        type="button"
+                                        onClick={() => onInsert(pv.code_variable)}
+                                        title={`Вставить код из «${pv.list_name}» (свободных: ${pv.free_count})`}
+                                        className={`px-3 py-1.5 text-xs font-medium border rounded-full transition-colors ${
+                                            pv.free_count > 0
+                                                ? 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 hover:border-amber-400'
+                                                : 'bg-gray-100 border-dashed border-gray-300 text-gray-400'
+                                        }`}
+                                    >
+                                        🎫 {pv.list_name} — код
+                                        {pv.free_count > 0 && (
+                                            <span className="ml-1 text-[10px] opacity-70">({pv.free_count})</span>
+                                        )}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => onInsert(pv.description_variable)}
+                                        title={`Вставить описание из «${pv.list_name}»`}
+                                        className={`px-3 py-1.5 text-xs font-medium border rounded-full transition-colors ${
+                                            pv.free_count > 0
+                                                ? 'bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100 hover:border-purple-400'
+                                                : 'bg-gray-100 border-dashed border-gray-300 text-gray-400'
+                                        }`}
+                                    >
+                                        📝 {pv.list_name} — описание
+                                    </button>
+                                </React.Fragment>
+                            ))}
+                        </div>
+                    )}
+                    {!isLoadingPromoVariables && promoVariables.length === 0 && (
+                        <p className="text-xs text-gray-500">Списки промокодов не созданы. Создайте их во вкладке «Промокоды».</p>
+                    )}
+                </div>
+            )}
+
             <div>
                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Переменные проекта</h4>
                 {isLoading && (
@@ -114,7 +170,7 @@ export const VariablesSelector: React.FC<VariablesSelectorProps> = ({
                             type="button"
                             onClick={onEditVariables}
                             title="Добавить или изменить переменные проекта"
-                            className="px-3 py-1.5 text-xs font-medium border-2 border-dashed rounded-full transition-colors border-blue-400 text-blue-600 bg-white hover:bg-blue-50"
+                            className="px-3 py-1.5 text-xs font-medium border-2 border-dashed rounded-full transition-colors border-indigo-400 text-indigo-600 bg-white hover:bg-indigo-50"
                         >
                             + Добавить
                         </button>

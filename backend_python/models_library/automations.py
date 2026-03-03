@@ -1,5 +1,5 @@
 
-from sqlalchemy import Column, String, Integer, Text, Boolean, ForeignKey, DateTime, BigInteger
+from sqlalchemy import Column, String, Integer, Text, Boolean, ForeignKey, DateTime, BigInteger, UniqueConstraint
 from sqlalchemy.sql import func
 from database import Base
 
@@ -32,6 +32,10 @@ class ReviewContest(Base):
     template_dm = Column(Text, nullable=True)
     template_error_comment = Column(Text, nullable=True)
     
+    # Изображение-доказательство розыгрыша (генерируется автоматически)
+    use_proof_image = Column(Boolean, default=True)
+    attach_additional_media = Column(Boolean, default=False)  # Прикреплять дополнительные медиа
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -46,7 +50,17 @@ class ReviewContestEntry(Base):
     
     user_vk_id = Column(BigInteger, nullable=False)
     user_name = Column(String, nullable=True)
-    user_photo = Column(String, nullable=True) # New
+    user_photo = Column(String, nullable=True)
+    
+    # Дополнительные поля для отображения
+    post_link = Column(String, nullable=True)  # Ссылка на пост VK
+    post_text = Column(Text, nullable=True)    # Текст поста
+    post_date = Column(DateTime(timezone=True), nullable=True)  # Реальная дата публикации поста в VK
+    status = Column(String, default='new')     # Статус: new, commented, error, winner, used
+    entry_number = Column(Integer, nullable=True)  # Номер участника
+    log = Column(Text, nullable=True)  # Диагностический лог (ошибки, результаты)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class StoriesAutomation(Base):
@@ -64,6 +78,10 @@ class StoriesAutomation(Base):
 
 class StoriesAutomationLog(Base):
     __tablename__ = "stories_automation_logs"
+    # Уникальный constraint для предотвращения дублирования историй от параллельных воркеров
+    __table_args__ = (
+        UniqueConstraint('project_id', 'vk_post_id', name='uq_stories_log_project_post'),
+    )
     
     id = Column(String, primary_key=True, index=True) # UUID
     project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -82,6 +100,21 @@ class StoriesAutomationLog(Base):
     # Statistics
     stats = Column(Text, nullable=True) # JSON stored as text
     stats_updated_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Viewers data (JSON array of viewers)
+    viewers = Column(Text, nullable=True) # JSON stored as text
+    viewers_updated_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Статус активности истории (активная/архивная)
+    is_active = Column(Boolean, default=False, nullable=False)
+    
+    # Флаг финализации: история архивная и данные больше не меняются
+    # Устанавливается автоматически, когда архивная история возвращает те же данные что в БД
+    stats_finalized = Column(Boolean, default=False, nullable=False)
+    
+    # Флаг финализации зрителей: после финализации статистики собираем viewers последний раз
+    # и больше не запрашиваем их для этой истории
+    viewers_finalized = Column(Boolean, default=False, nullable=False)
 
 class PromoCode(Base):
     __tablename__ = "promo_codes"

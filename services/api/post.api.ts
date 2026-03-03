@@ -166,6 +166,22 @@ export const pollPostTask = async (
     });
 };
 
+// --- PIN / UNPIN ---
+
+/**
+ * Закрепляет опубликованный пост на стене сообщества.
+ */
+export const pinPost = async (postId: string, projectId: string): Promise<{ success: boolean }> => {
+    return callApi<{ success: boolean }>('pinPost', { postId, projectId });
+};
+
+/**
+ * Открепляет пост со стены сообщества.
+ */
+export const unpinPost = async (postId: string, projectId: string): Promise<{ success: boolean }> => {
+    return callApi<{ success: boolean }>('unpinPost', { postId, projectId });
+};
+
 // --- SUGGESTED POSTS API ---
 
 /**

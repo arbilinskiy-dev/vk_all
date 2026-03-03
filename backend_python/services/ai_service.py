@@ -72,18 +72,21 @@ ADD_EMOJI_SYSTEM_PROMPT = """Ты — редактор текста. Твоя з
 REMOVE_EMOJI_SYSTEM_PROMPT = """Ты — редактор текста. Твоя задача — вернуть ровно тот же текст, который тебе предоставили, но убрать из него наиболее неуместные или избыточные эмоджи. СТРОГО ЗАПРЕЩЕНО: изменять, удалять или перефразировать исходный текст. Ты можешь только удалять эмоджи. Твоя цель — сократить количество эмоджи примерно на 20-50%, убирая самые неподходящие. Например: из 10 эмоджи оставь 7-8, из 5 оставь 2-3, из 2 оставь 1."""
 
 
-def generate_text_from_prompt(prompt: str, system_prompt: Optional[str] = None) -> str:
+def generate_text_from_prompt(prompt: str, system_prompt: Optional[str] = None) -> dict:
     """
     Генерирует текст для поста с помощью Gemini.
     Если system_prompt не предоставлен, используется дефолтный.
+    Возвращает словарь с generatedText и modelUsed.
     """
     # ИЗМЕНЕНО: Отложенный импорт для разрыва циклической зависимости
     from .gemini_service import generate_text
+    from .gemini_api.client import get_last_model_used
 
     final_system_prompt = system_prompt if system_prompt and system_prompt.strip() else DEFAULT_SYSTEM_PROMPT
     try:
         # Генерация постов - это CREATIVE стратегия (Gemini > Gemma)
-        return generate_text(prompt, final_system_prompt, strategy='CREATIVE')
+        result_text = generate_text(prompt, final_system_prompt, strategy='CREATIVE')
+        return {"generatedText": result_text, "modelUsed": get_last_model_used()}
     except Exception as e:
         print(f"ОШИБКА во время генерации текста: {e}")
         raise HTTPException(status_code=500, detail=f"Не удалось сгенерировать текст: {e}")
@@ -95,7 +98,8 @@ def generate_batch_post_text(prompt: str, count: int, system_prompt: Optional[st
     from .gemini_service import generate_text
 
     if count < 2:
-        return [generate_text_from_prompt(prompt, system_prompt)]
+        result = generate_text_from_prompt(prompt, system_prompt)
+        return [result["generatedText"]]
 
     final_system_prompt = system_prompt if system_prompt and system_prompt.strip() else DEFAULT_SYSTEM_PROMPT
     
@@ -209,6 +213,60 @@ def correct_suggested_text(db: Session, text: str, project_id: str, user_token: 
         print(f"ОШИБКА во время коррекции текста для проекта {project_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Не удалось скорректировать текст: {e}")
 
+def bulk_correct_suggested_texts(db: Session, posts: list, project_id: str, user_token: str) -> list:
+    """
+    Массовая коррекция всех предложенных постов за один запрос к AI.
+    group_info и dlvry_link получаются однократно, затем отправляются все тексты в одном промпте.
+    Если постов больше 10, разбивает на батчи.
+    """
+    from .gemini_service import get_bulk_corrected_texts
+
+    project = crud.get_project_by_id(db, project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    try:
+        # 1. Получаем информацию о группе из VK (ОДИН раз для всех постов)
+        numeric_id = vk_service.resolve_vk_group_id(project.vkProjectId, user_token)
+        vk_response = vk_service.call_vk_api('groups.getById', {
+            'group_id': numeric_id,
+            'fields': 'screen_name,site',
+            'access_token': user_token,
+        })
+
+        group_info = _get_community_info_from_vk_response(vk_response)
+        print(f"ℹ️ VK group info for bulk AI correction:\n{json.dumps(vk_response, indent=2, ensure_ascii=False)}")
+
+        # 2. Получаем ссылку DLVRY из переменных проекта (ОДИН раз)
+        variables = crud.get_project_variables(db, project_id)
+        dlvry_link = ""
+        for var in variables:
+            if var.get('name', '').strip().lower() == 'dlvry':
+                dlvry_link = var.get('value', '').strip()
+                break
+
+        print(f"ℹ️ Found DLVRY link for project {project_id}: '{dlvry_link}'")
+
+        # 3. Подготавливаем данные для отправки
+        posts_data = [{"id": p.id, "text": p.text} for p in posts]
+
+        # 4. Батчинг: если постов больше 10, разбиваем на части
+        BATCH_SIZE = 10
+        all_results = []
+
+        for i in range(0, len(posts_data), BATCH_SIZE):
+            batch = posts_data[i:i + BATCH_SIZE]
+            print(f"ℹ️ Обработка батча {i // BATCH_SIZE + 1}: {len(batch)} постов")
+            batch_results = get_bulk_corrected_texts(batch, group_info, dlvry_link)
+            all_results.extend(batch_results)
+
+        return all_results
+
+    except Exception as e:
+        print(f"ОШИБКА во время массовой коррекции текстов для проекта {project_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Не удалось выполнить массовую коррекцию: {e}")
+
+
 def run_ai_variable_setup(db: Session, payload: schemas.AiVariablePayload, user_token: str) -> dict:
     # ИЗМЕНЕНО: Отложенный импорт для разрыва циклической зависимости
     from .gemini_service import get_ai_variables
@@ -237,11 +295,13 @@ def run_ai_variable_setup(db: Session, payload: schemas.AiVariablePayload, user_
         print(f"ОШИБКА во время AI-настройки для проекта {payload.projectId}: {e}")
         raise HTTPException(status_code=500, detail=f"Ошибка во время AI-настройки: {e}")
 
-def process_post_text(text: str, action: str) -> str:
+def process_post_text(text: str, action: str) -> dict:
     """
     Обрабатывает текст поста с помощью AI по заданному действию.
+    Возвращает словарь с generatedText и modelUsed.
     """
     from .gemini_service import generate_text
+    from .gemini_api.client import get_last_model_used
 
     system_instruction = None
     user_prompt = text  # Пользовательский промпт - это просто сам текст для обработки
@@ -270,7 +330,8 @@ def process_post_text(text: str, action: str) -> str:
     
     try:
         # Инструкции теперь передаются через системный промпт
-        return generate_text(user_prompt, system_instruction, strategy=strategy)
+        result_text = generate_text(user_prompt, system_instruction, strategy=strategy)
+        return {"generatedText": result_text, "modelUsed": get_last_model_used()}
     except Exception as e:
         print(f"ОШИБКА во время обработки текста (action: {action}): {e}")
         raise HTTPException(status_code=500, detail=f"Не удалось обработать текст: {e}")

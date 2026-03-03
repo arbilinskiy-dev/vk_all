@@ -55,6 +55,17 @@ def update_project_settings(db: Session, project_data: Project) -> models.Projec
         tokens = [t.strip() for t in tokens if t and t.strip()]
         update_data['additional_community_tokens'] = json.dumps(tokens)
 
+    # Специальная обработка для массива команд -> JSON
+    if 'teams' in update_data:
+        teams_list = update_data['teams']
+        if teams_list is None:
+            teams_list = []
+        # Фильтруем пустые строки
+        teams_list = [t.strip() for t in teams_list if t and t.strip()]
+        update_data['teams'] = json.dumps(teams_list)
+        # Синхронизация со старым полем team для обратной совместимости
+        update_data['team'] = teams_list[0] if teams_list else None
+
     for key, value in update_data.items():
         setattr(db_project, key, value)
         

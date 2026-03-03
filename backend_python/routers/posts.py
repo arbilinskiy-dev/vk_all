@@ -6,21 +6,17 @@ import uuid
 from pydantic import BaseModel
 
 import schemas
+import crud
+import models
 import services.post_service as post_service
 import services.task_monitor as task_monitor
-from database import SessionLocal
+from services import vk_service
+from database import get_db
 from config import settings
 
 router = APIRouter()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-@router.post("/getAllPostsForProjects", response_model=schemas.AllPostsForProjectsResponse)
+@router.post("/getAllPostsForProjects")
 def get_all_posts_for_projects(
     payload: schemas.ProjectIdsPayload, 
     background_tasks: BackgroundTasks,
@@ -134,3 +130,52 @@ def publish_post(payload: schemas.PublishPostPayload, background_tasks: Backgrou
     )
     
     return {"taskId": task_id}
+
+# --- Pin / Unpin ---
+@router.post("/pinPost", response_model=schemas.GenericSuccess)
+def pin_post(payload: schemas.PinPostPayload, db: Session = Depends(get_db)):
+    """Закрепляет опубликованный пост на стене сообщества."""
+    from fastapi import HTTPException
+    project = crud.get_project_by_id(db, payload.projectId)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Извлекаем owner_id и post_id из формата "owner_id_post_id"
+    parts = payload.postId.split('_')
+    if len(parts) < 2:
+        raise HTTPException(status_code=400, detail="Invalid post ID format. Expected: owner_id_post_id")
+    
+    owner_id = parts[0]
+    post_id = int(parts[1])
+    
+    vk_service.pin_post(owner_id, post_id, settings.vk_user_token)
+    
+    # Обновляем is_pinned в БД: сбрасываем у всех постов проекта, ставим у текущего
+    db.query(models.Post).filter(models.Post.projectId == payload.projectId, models.Post.is_pinned == True).update({"is_pinned": False})
+    db.query(models.Post).filter(models.Post.id == payload.postId).update({"is_pinned": True})
+    db.commit()
+    
+    return {"success": True}
+
+@router.post("/unpinPost", response_model=schemas.GenericSuccess)
+def unpin_post(payload: schemas.PinPostPayload, db: Session = Depends(get_db)):
+    """Открепляет пост со стены сообщества."""
+    from fastapi import HTTPException
+    project = crud.get_project_by_id(db, payload.projectId)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    parts = payload.postId.split('_')
+    if len(parts) < 2:
+        raise HTTPException(status_code=400, detail="Invalid post ID format. Expected: owner_id_post_id")
+    
+    owner_id = parts[0]
+    post_id = int(parts[1])
+    
+    vk_service.unpin_post(owner_id, post_id, settings.vk_user_token)
+    
+    # Сбрасываем is_pinned в БД
+    db.query(models.Post).filter(models.Post.id == payload.postId).update({"is_pinned": False})
+    db.commit()
+    
+    return {"success": True}

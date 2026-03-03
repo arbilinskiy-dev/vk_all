@@ -2,8 +2,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { PromoCode, PromoCodeCreatePayload } from '../types';
 import * as api from '../../../../services/api/automations.api';
+import { useProjects } from '../../../../contexts/ProjectsContext';
 
 export const usePromocodesManager = (projectId: string) => {
+    // Получаем функцию обновления глобального состояния конкурсов
+    const { reviewsContestStatuses, setReviewsContestStatuses } = useProjects();
     const [promocodes, setPromocodes] = useState<PromoCode[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -23,19 +26,42 @@ export const usePromocodesManager = (projectId: string) => {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editingDescription, setEditingDescription] = useState('');
 
+    /**
+     * Вспомогательная функция для обновления глобального состояния конкурса в сайдбаре.
+     * Подсчитывает только невыданные промокоды (is_issued === false).
+     * @param updatedPromocodes - Актуальный список промокодов после операции
+     */
+    const updateGlobalContestStatus = useCallback((updatedPromocodes: PromoCode[]) => {
+        // Считаем только невыданные промокоды
+        const availableCount = updatedPromocodes.filter(p => !p.is_issued).length;
+        
+        // Используем функциональное обновление, чтобы избежать зависимости от reviewsContestStatuses
+        // и предотвратить бесконечный цикл перерендеров
+        setReviewsContestStatuses(prev => {
+            const currentStatus = prev[projectId];
+            const isActive = currentStatus?.isActive ?? false;
+            return {
+                ...prev,
+                [projectId]: { isActive, promoCount: availableCount }
+            };
+        });
+    }, [projectId, setReviewsContestStatuses]);
+
     const loadPromocodes = useCallback(async () => {
         setIsLoading(true);
         try {
             const data = await api.getContestPromocodes(projectId);
             setPromocodes(data);
             setSelectedIds(new Set()); // Сбрасываем выделение при обновлении
+            // Синхронизируем глобальное состояние после загрузки
+            updateGlobalContestStatus(data);
         } catch (err) {
             console.error("Failed to load promocodes", err);
             setError("Не удалось загрузить список промокодов.");
         } finally {
             setIsLoading(false);
         }
-    }, [projectId]);
+    }, [projectId, updateGlobalContestStatus]);
 
     useEffect(() => {
         loadPromocodes();
@@ -132,8 +158,12 @@ export const usePromocodesManager = (projectId: string) => {
         setIsSaving(true);
         try {
             await api.deleteContestPromocodesBulk(deleteConfirmation.ids);
-            setPromocodes(prev => prev.filter(p => !deleteConfirmation.ids.includes(p.id)));
+            // Вычисляем новый список промокодов после удаления
+            const updatedPromocodes = promocodes.filter(p => !deleteConfirmation.ids.includes(p.id));
+            setPromocodes(updatedPromocodes);
             setSelectedIds(new Set()); // Сбрасываем выделение
+            // Синхронизируем глобальное состояние с актуальным количеством
+            updateGlobalContestStatus(updatedPromocodes);
         } catch (err) {
              window.showAppToast?.("Не удалось удалить промокоды.", 'error');
         } finally {
@@ -150,6 +180,8 @@ export const usePromocodesManager = (projectId: string) => {
             setPromocodes([]);
             setSelectedIds(new Set());
             setClearAllConfirmation(false);
+            // Синхронизируем глобальное состояние — промокодов теперь 0
+            updateGlobalContestStatus([]);
         } catch (err) {
             window.showAppToast?.("Не удалось очистить базу промокодов.", 'error');
             console.error(err);

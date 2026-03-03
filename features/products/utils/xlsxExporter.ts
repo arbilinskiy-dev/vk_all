@@ -1,4 +1,5 @@
 import { MarketItem, MarketAlbum } from '../../../shared/types';
+import { getOriginalPhotoUrl } from './photoUrlHelper';
 
 // Объявляем глобальную переменную XLSX, чтобы TypeScript не ругался
 declare var XLSX: any;
@@ -48,7 +49,7 @@ export const exportProductsToXlsx = (items: MarketItem[], allAlbums: MarketAlbum
             price,
             oldPrice,
             item.sku || '',
-            item.thumb_photo,
+            getOriginalPhotoUrl(item.thumb_photo),
             albumTitles,
             category,
         ];

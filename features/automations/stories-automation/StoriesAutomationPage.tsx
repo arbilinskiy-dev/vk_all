@@ -1,12 +1,16 @@
 import React from 'react';
 import { useStoriesAutomation } from './hooks/useStoriesAutomation';
 import { StoriesSettingsView } from './components/StoriesSettingsView';
-import { StoriesStatsView } from './components/StoriesStatsView'; // Re-import
+import { StoriesStatsView } from './components/StoriesStatsView';
+import { StoryCreatorView } from './components/StoryCreatorView';
 import { StoriesAutomationPageProps } from './types';
 
-export const StoriesAutomationPage: React.FC<StoriesAutomationPageProps> = ({ projectId }) => {
+export const StoriesAutomationPage: React.FC<StoriesAutomationPageProps> = ({ 
+    projectId, 
+    activeTab, 
+    setActiveTab 
+}) => {
     const {
-        activeTab, setActiveTab,
         stories,
         isLoadingStories,
         loadStories,
@@ -21,12 +25,22 @@ export const StoriesAutomationPage: React.FC<StoriesAutomationPageProps> = ({ pr
         scrollContainerRef,
         handleSave,
         handleUpdateStats,
+        handleUpdateViewers,
+        handleUpdateAll,
         handleManualPublish,
         handleScroll,
         getPostStatus,
         getFirstImage,
-        getCount
-    } = useStoriesAutomation(projectId);
+        getCount,
+        // Пагинация и серверная статистика дашборда
+        totalStories,
+        isLoadingMore,
+        loadMoreStories,
+        hasMore,
+        dashboardStats,
+        isLoadingDashboard,
+        loadDashboardStats
+    } = useStoriesAutomation(projectId, activeTab);
 
     if (!projectId) {
         return (
@@ -55,29 +69,37 @@ export const StoriesAutomationPage: React.FC<StoriesAutomationPageProps> = ({ pr
                         <p className="text-sm text-gray-500 mt-1">Автоматический репост подходящих записей в истории сообщества</p>
                     </div>
                     <div className="flex gap-3">
-                        <button
-                            onClick={handleSave}
-                            disabled={isSaving}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm ${
-                                isSaving 
-                                    ? 'bg-indigo-300 text-white cursor-not-allowed' 
-                                    : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                            }`}
-                        >
-                            {isSaving ? 'Сохранение...' : 'Сохранить изменения'}
-                        </button>
+                        {activeTab !== 'create' && (
+                            <button
+                                onClick={handleSave}
+                                disabled={isSaving}
+                                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors shadow-sm ${
+                                    isSaving 
+                                        ? 'bg-green-400 text-white cursor-not-allowed' 
+                                        : 'bg-green-600 text-white hover:bg-green-700'
+                                }`}
+                            >
+                                {isSaving ? 'Сохранение...' : 'Сохранить изменения'}
+                            </button>
+                        )}
                     </div>
                 </div>
 
-                <div className="flex px-6 gap-6">
+                <div className="flex px-6 gap-4">
                     <button 
-                        className={`pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'settings' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                        className={`py-2 px-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'create' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+                        onClick={() => setActiveTab('create')}
+                    >
+                        Создать историю
+                    </button>
+                    <button 
+                        className={`py-2 px-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'settings' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
                         onClick={() => setActiveTab('settings')}
                     >
                         Настройки и История
                     </button>
                     <button 
-                        className={`pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'stats' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                        className={`py-2 px-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'stats' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
                         onClick={() => setActiveTab('stats')}
                     >
                         Статистика
@@ -89,13 +111,40 @@ export const StoriesAutomationPage: React.FC<StoriesAutomationPageProps> = ({ pr
                 className="flex-grow p-6 overflow-hidden flex flex-col"
             >
                 {isLoading ? (
-                    <div className="flex-1 flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+                    <div className="flex-1 flex flex-col gap-4 p-2">
+                        {/* Скелетон: имитация блоков настроек */}
+                        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4 animate-pulse">
+                            <div className="h-5 bg-gray-200 rounded w-48"></div>
+                            <div className="h-4 bg-gray-200 rounded w-full max-w-md"></div>
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-2 flex-1">
+                                    <div className="h-4 bg-gray-200 rounded w-40"></div>
+                                    <div className="h-3 bg-gray-200 rounded w-72"></div>
+                                </div>
+                                <div className="h-6 w-11 bg-gray-200 rounded-full"></div>
+                            </div>
+                        </div>
+                        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3 animate-pulse">
+                            <div className="h-5 bg-gray-200 rounded w-56"></div>
+                            {[...Array(4)].map((_, i) => (
+                                <div key={i} className="flex items-center gap-4 py-3">
+                                    <div className="h-12 w-12 bg-gray-200 rounded-lg"></div>
+                                    <div className="flex-1 space-y-2">
+                                        <div className="h-4 bg-gray-200 rounded w-full"></div>
+                                        <div className="h-3 bg-gray-200 rounded w-2/3"></div>
+                                    </div>
+                                    <div className="h-4 bg-gray-200 rounded w-20"></div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 ) : (
-                    <div className="h-full flex flex-col overflow-y-auto custom-scrollbar">
-                        {activeTab === 'settings' ? (
+                    <div className="h-full flex flex-col overflow-y-auto custom-scrollbar pr-2">
+                        {activeTab === 'create' ? (
+                            <StoryCreatorView projectId={projectId!} />
+                        ) : activeTab === 'settings' ? (
                             <StoriesSettingsView 
+                                projectId={projectId}
                                 isActive={isActive}
                                 setIsActive={setIsActive}
                                 keywords={keywords}
@@ -115,11 +164,19 @@ export const StoriesAutomationPage: React.FC<StoriesAutomationPageProps> = ({ pr
                         ) : (
                             <StoriesStatsView 
                                 handleUpdateStats={handleUpdateStats}
+                                handleUpdateViewers={handleUpdateViewers}
+                                handleUpdateAll={handleUpdateAll}
                                 updatingStatsId={updatingStatsId}
                                 loadStories={loadStories}
                                 isLoadingStories={isLoadingStories}
                                 stories={stories}
-                                getCount={getCount}
+                                hasMore={hasMore}
+                                isLoadingMore={isLoadingMore}
+                                loadMoreStories={loadMoreStories}
+                                totalStories={totalStories}
+                                dashboardStats={dashboardStats}
+                                isLoadingDashboard={isLoadingDashboard}
+                                loadDashboardStats={loadDashboardStats}
                             />
                         )}
                     </div>

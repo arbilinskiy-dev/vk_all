@@ -44,7 +44,9 @@ def save_as_system_post(db: Session, payload: schemas.SavePostPayload) -> schema
         recurrence_end_date=payload.post.recurrence_end_date,
         recurrence_fixed_day=payload.post.recurrence_fixed_day,
         recurrence_is_last_day=payload.post.recurrence_is_last_day,
-        ai_generation_params=ai_params_json # Сохраняем JSON строку
+        ai_generation_params=ai_params_json, # Сохраняем JSON строку
+        is_pinned=payload.post.is_pinned or False,
+        first_comment_text=payload.post.first_comment_text or None
     )
     
     saved_db_post = crud.create_or_update_system_post(db, payload.projectId, system_post_data)

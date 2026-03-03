@@ -1,0 +1,239 @@
+
+# Потоки данных и бизнес-логика
+
+Этот документ описывает ключевые потоки данных модуля «Сообщения».
+
+---
+
+## 1. Поток: Вход в модуль сообщений (инициализация)
+
+```
+Фронтенд                          Бэкенд
+────────                          ──────
+
+1. POST /conversations-init   →   conversations_init_service.py
+   { project_id, page=1,          │
+     sort_unread_first=true }      ├─ 1. get_unread_user_ids() — определяет пользователей с непрочитанными
+                                   ├─ 2. fetch_list_items() — подписчики рассылки (страница)
+                                   ├─ 3. Стратегия unread-first: подгрузка непрочитанных с других страниц
+                                   ├─ 4. get_unread_counts_batch() — пакетный подсчёт
+                                   ├─ 5. get_last_messages_batch() — последние сообщения
+                                   └─ → JSON: subscribers + unread_counts + last_messages
+
+2. GET /messages/stream       →   sse_service.py → create_project_stream()
+   (SSE подключение)               │
+                                   └─ EventSource: new_message, message_read, user_typing...
+
+3. GET /global-unread-stream  →   sse_service.py → create_global_unread_stream()
+   (SSE подключение)               └─ EventSource: unread_count_changed
+```
+
+**До оптимизации (4 запроса, waterfall ~1-1.5с):**
+1. `getSubscribers` (обычная страница)
+2. `getSubscribers` (фильтр: только непрочитанные)
+3. `getUnreadCounts` (пакетно для загруженных user_ids)
+4. `getLastMessages` (пакетно для загруженных user_ids)
+
+**После оптимизации (1 запрос, ~45ms):**
+1. `conversations-init` — всё за один HTTP-вызов
+
+---
+
+## 2. Поток: Открытие диалога (история сообщений)
+
+```
+Фронтенд                          Бэкенд
+────────                          ──────
+
+useMessageHistory.loadInitial()
+  │
+  ├─ GET /messages/history     →   history_service.get_history()
+  │  { project_id, user_id,        │
+  │    count=50, offset=0 }         ├─ 1. fetch_from_vk() — запрос 200 последних из VK API
+  │                                 ├─ 2. save_vk_messages() — upsert в БД
+  │                                 ├─ 3. recalc_direction_counts() — пересчёт счётчиков
+  │                                 ├─ 4. upsert_cache_meta() — обновление метаданных
+  │                                 ├─ 5. get_cached_messages() — чтение из БД (count/offset)
+  │                                 └─ → JSON: items + cache_meta
+  │
+  ├─ POST /messages/dialog-focus → sse_manager.set_dialog_focus()
+  │  { action: "enter" }           └─ SSE → dialog_focus другим менеджерам
+  │
+  └─ PUT /messages/mark-read   →   read_service.mark_dialog_read()
+     { project_id, user_id }        ├─ mark_dialog_as_read() в БД
+                                    ├─ SSE → message_read другим менеджерам
+                                    └─ SSE → unread_count_changed (глобально)
+```
+
+### Подгрузка старых сообщений (scroll up)
+
+```
+GET /messages/history
+{ project_id, user_id, count=50, offset=50 }
+→ Те же шаги, но VK API не вызывается повторно — чтение из БД
+```
+
+### Загрузка ВСЕХ сообщений
+
+```
+POST /messages/history/all
+{ project_id, user_id }
+
+→ parallel_loader.load_all_messages()
+  ├─ fetch_from_vk() → узнать total_count
+  ├─ Если total > 400 и tokens ≥ 2:
+  │    ├─ distribute_offsets() — round-robin по токенам
+  │    └─ ThreadPoolExecutor → параллельная загрузка
+  ├─ Если нет:
+  │    └─ Последовательная загрузка (200 за раз)
+  └─ save_vk_messages() + upsert_cache_meta(is_fully_loaded=True)
+```
+
+---
+
+## 3. Поток: Отправка сообщения
+
+```
+Фронтенд                          Бэкенд
+────────                          ──────
+
+ChatInput → onSendMessage()
+  │
+  ├─ Оптимистичное добавление      POST /messages/send
+  │  в UI (сразу видно)             { project_id, user_id, message,
+  │                                   sender_id, sender_name }
+  │                                 │
+  │                                 ├─ 1. substitute_global_variables() — подстановка {global_*}
+  │                                 ├─ 2. call_vk_api_for_group("messages.send")
+  │                                 ├─ 3. save_vk_messages() — кэш отправленного
+  │                                 ├─ 4. mark_dialog_as_read() — авто-прочтение
+  │                                 ├─ 5. recalc_direction_counts()
+  │                                 └─ → { success, message_id, item }
+  │
+  └─ Обновление UI:
+     если success → подтверждение
+     если error → откат оптимистичного добавления
+```
+
+---
+
+## 4. Поток: Входящее сообщение (VK Callback → SSE → UI)
+
+```
+VK Server                  Бэкенд                          Фронтенд
+─────────                  ──────                          ────────
+
+POST /callback              vk_callback router
+{ type: "message_new",      │
+  object: { message } }     ├─ 1. save_vk_messages() — кэш входящего
+                             ├─ 2. record_message() — статистика
+                             ├─ 3. SSE publish:
+                             │    event_type: "new_message"
+                             │    data: { vk_user_id, message,
+                             │            unread_count, is_incoming }
+                             │
+                             └───SSE──────────────→ useMessagesSSE
+                                                    │
+                                                    ├─ onNewMessage callback:
+                                                    │   ├─ Добавить сообщение в историю
+                                                    │   ├─ Обновить счётчик unread
+                                                    │   └─ Обновить lastMessage в сайдбаре
+                                                    │
+                                                    └─ onMailingUserUpdated callback:
+                                                        └─ Обновить данные пользователя
+```
+
+---
+
+## 5. Поток: Прочитанность и уведомления
+
+### 5.1. Менеджер читает диалог
+
+```
+UI: открыт диалог             PUT /messages/mark-read
+  │                            │
+  │                            ├─ get_max_incoming_message_id()
+  │                            ├─ mark_dialog_as_read(msg_id, manager_id)
+  │                            ├─ SSE "message_read" → проектный стрим
+  │                            │   (другие менеджеры видят:
+  │                            │    «Диалог прочитан менеджером X»)
+  │                            └─ SSE "unread_count_changed" → глобальный стрим
+  │                                (обновляется значок в навигации)
+```
+
+### 5.2. Пользователь VK прочитал наши сообщения
+
+```
+VK Callback: message_read    →  SSE "user_read" { vk_user_id, read_message_id }
+  │                                │
+  └────────────────────────────────→ Фронтенд: помечает исходящие как прочитанные
+```
+
+### 5.3. Менеджер «Прочитать все» (mark-all-read)
+
+```
+PUT /messages/mark-all-read
+  │
+  ├─ mark_all_dialogs_as_read() — обновляет все записи MessageReadStatus
+  ├─ SSE "all_read" → проектный стрим
+  └─ SSE "unread_count_changed" → глобальный стрим
+```
+
+---
+
+## 6. Поток: Набор текста и фокус менеджера
+
+### 6.1. Наш менеджер печатает
+
+```
+ChatInput → onKeyDown        POST /messages/typing
+  (throttled, каждые 5с)      │
+                               └─ VK API messages.setActivity({ type: "typing" })
+                                  → Пользователь VK видит «сообщество печатает...»
+```
+
+### 6.2. Пользователь VK печатает
+
+```
+VK Callback: message_typing  →  SSE "user_typing" { vk_user_id }
+  │
+  └─ Фронтенд: useTypingState → показывает индикатор «печатает...» (сброс через 6с)
+```
+
+### 6.3. Менеджер открыл/покинул диалог
+
+```
+POST /messages/dialog-focus { action: "enter" / "leave" }
+  │
+  └─ SSE "dialog_focus" →  Другие менеджеры видят:
+                            «В этом диалоге: Администратор, Менеджер 2»
+```
+
+---
+
+## 7. Диаграмма memory + DB кэширования
+
+```
+┌──────────────┐      ┌────────────────┐      ┌──────────┐
+│   Клиент     │─────→│  Memory Cache  │─────→│   БД     │
+│  (Фронтенд)  │      │  TTL 5 мин    │      │ PostgreSQL│
+└──────────────┘      │  thread-safe   │      │ / SQLite  │
+                      │  dict + lock   │      └──────────┘
+                      └────────────────┘             ↑
+                                                     │ upsert при входе
+                                                     │ в диалог
+                                                ┌──────────┐
+                                                │  VK API  │
+                                                │ messages. │
+                                                │ getHistory│
+                                                └──────────┘
+```
+
+**Цепочка при запросе истории:**
+1. Проверка memory-кэша → hit? → возврат
+2. Miss → запрос VK API (200 последних)
+3. Upsert в БД
+4. Чтение из БД (нужная страница)
+5. Запись в memory-кэш
+6. Возврат клиенту
+

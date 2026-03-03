@@ -1,0 +1,315 @@
+import React, { useState } from 'react';
+import { Sandbox, NavigationButtons, type ContentProps } from '../shared';
+import { MockPublishedPostCard, PublishedPostActionsDemo } from './PublishedPostMocks';
+
+/**
+ * Обучающая страница: Опубликованный пост
+ * Path: 2-1-4-2-published-post
+ * 
+ * Детальное объяснение опубликованных постов: что это, как они работают,
+ * какие действия доступны и как происходит синхронизация с ВКонтакте
+ */
+export const PublishedPost: React.FC<ContentProps> = ({ title }) => {
+  const [hoveredCard, setHoveredCard] = useState(false);
+
+  return (
+    <article className="prose prose-indigo max-w-none">
+      <h1 className="!text-3xl !font-bold !tracking-tight !text-gray-900 !border-b !pb-4 !mb-6">
+        {title}
+      </h1>
+
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Опубликованный пост — это публикация, которая уже размещена на стене сообщества ВКонтакте. Такие посты автоматически синхронизируются с календарём планировщика, и вы можете просматривать, редактировать, удалять или копировать их прямо из приложения.
+      </p>
+
+      {/* Главная идея */}
+      <div className="bg-blue-50 border-l-4 border-blue-500 rounded-r-lg p-4 my-6">
+        <div className="flex items-start gap-3">
+          <span className="text-xl flex-shrink-0" aria-hidden="true">💡</span>
+          <div>
+            <h4 className="text-base font-semibold text-gray-900 mb-1">Главная идея</h4>
+            <p className="text-sm text-gray-700">
+              Опубликованные посты появляются в календаре автоматически после размещения на стене ВКонтакте. Приложение синхронизирует последние 20 постов через API и в реальном времени через API уведомлений VK. Вы можете редактировать или удалять их — изменения применяются к оригинальному посту на стене сообщества.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <hr className="!my-10" />
+
+      {/* Как определяется опубликованный пост */}
+      <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">Как определяется опубликованный пост?</h2>
+      
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Пост считается опубликованным, если выполняются два условия:
+      </p>
+
+      <ul className="!text-base !leading-relaxed !text-gray-700">
+        <li>Пост <strong>НЕ является системным</strong> (не создан внутри приложения)</li>
+        <li>Его дата публикации находится <strong>в прошлом</strong> — до текущего момента</li>
+      </ul>
+
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Такие посты хранятся в отдельной таблице <code>posts</code> в базе данных и синхронизируются из ВКонтакте через метод API <code>wall.get</code>.
+      </p>
+
+      <hr className="!my-10" />
+
+      {/* Визуальные характеристики */}
+      <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">Визуальные характеристики</h2>
+
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Опубликованные посты визуально отличаются от других типов постов в календаре. Эти отличия помогают мгновенно определить, что публикация уже размещена на стене сообщества.
+      </p>
+
+      <div className="not-prose my-8">
+        <Sandbox
+          title="Визуальный вид опубликованного поста"
+          description="Наведите курсор на карточку, чтобы увидеть, как исчезает оверлей и иконка"
+          instructions={[
+            '<strong>Наведите курсор</strong> на карточку поста, чтобы увидеть, как оверлей и зелёная галочка исчезают с плавной анимацией.',
+            'Обратите внимание на <strong>сплошную серую рамку</strong> — она отличается от пунктирной рамки системных постов.'
+          ]}
+        >
+          <div 
+            className="max-w-md"
+            onMouseEnter={() => setHoveredCard(true)}
+            onMouseLeave={() => setHoveredCard(false)}
+          >
+            <MockPublishedPostCard isHovered={hoveredCard} />
+          </div>
+        </Sandbox>
+      </div>
+
+      <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">Основные визуальные элементы</h3>
+
+      <ul className="!text-base !leading-relaxed !text-gray-700">
+        <li><strong>Рамка:</strong> сплошная серая линия (<code>border-gray-200</code>) — такая же, как у отложенных постов ВК</li>
+        <li><strong>Полупрозрачный оверлей:</strong> белый градиент слева направо (<code>from-white/80 to-white/10</code>), который приглушает содержимое карточки</li>
+        <li><strong>Зелёная галочка:</strong> SVG-иконка ✓ в левом верхнем углу (<code>text-green-500 opacity-80</code>), символизирующая успешную публикацию</li>
+        <li><strong>Исчезновение при наведении:</strong> оверлей и иконка плавно исчезают (<code>group-hover:opacity-0</code>) при наведении курсора, открывая полное содержимое поста</li>
+      </ul>
+
+      <hr className="!my-10" />
+
+      {/* Доступные действия */}
+      <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">Доступные действия</h2>
+
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Для опубликованных постов доступен полный набор действий. Все изменения применяются к оригинальному посту на стене ВКонтакте через API.
+      </p>
+
+      <div className="not-prose my-8">
+        <Sandbox
+          title="Интерактивная демонстрация действий"
+          description="Нажимайте на кнопки, чтобы увидеть описание каждого действия"
+          instructions={[
+            'Выберите действие из списка, чтобы увидеть <strong>подробное описание</strong> того, что происходит при его выполнении.',
+            'Обратите внимание, что действия <strong>«Опубликовать»</strong> и <strong>«В отложку ВК»</strong> скрыты — они не нужны для уже опубликованных постов.'
+          ]}
+        >
+          <PublishedPostActionsDemo />
+        </Sandbox>
+      </div>
+
+      <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">1. Редактирование</h3>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        При нажатии на кнопку «Редактировать» открывается всплывающее окно с формой редактирования поста. Вы можете изменить текст, добавить или удалить изображения, изменить вложения и время публикации.
+      </p>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        После сохранения изменения <strong>отправляются в ВКонтакте</strong> через метод API <code>wall.edit</code>. Пост на стене сообщества обновляется мгновенно, а в календаре планировщика данные синхронизируются автоматически.
+      </p>
+
+      <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">2. Удаление</h3>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Кнопка «Удалить» вызывает подтверждающее диалоговое окно. После подтверждения пост <strong>удаляется со стены ВКонтакте</strong> через метод API <code>wall.delete</code> и одновременно убирается из локального кэша приложения.
+      </p>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Если пост уже был удалён в ВКонтакте вручную, приложение покажет уведомление «Этот пост уже был удален в VK» и просто очистит его из кэша.
+      </p>
+
+      <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">3. Копирование</h3>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        При нажатии на «Копировать» открывается всплывающее окно с предзаполненной формой нового поста. По умолчанию копия создаётся как <strong>системный пост</strong>, который хранится внутри приложения.
+      </p>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        В модальном окне вы можете изменить текст, изображения, дату публикации и выбрать метод публикации: оставить в системе, опубликовать сейчас или добавить в отложенные записи ВКонтакте.
+      </p>
+
+      <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">4. Посмотреть на VK</h3>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Эта кнопка доступна, если у поста есть ссылка на публикацию в ВКонтакте (поле <code>vkPostUrl</code>). При нажатии открывается новая вкладка браузера со страницей поста на стене сообщества.
+      </p>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Формат ссылки: <code>https://vk.com/wall{'{owner_id}'}_{'{post_id}'}</code> (без параметра <code>?postponed=1</code>, который используется для отложенных постов).
+      </p>
+
+      <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">Скрытые действия</h3>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Для опубликованных постов <strong>недоступны</strong> следующие действия:
+      </p>
+      <ul className="!text-base !leading-relaxed !text-gray-700">
+        <li><strong>«Опубликовать сейчас»</strong> — пост уже опубликован</li>
+        <li><strong>«В отложку ВК»</strong> — нельзя перенести опубликованный пост обратно в отложенные</li>
+        <li><strong>«Подтвердить публикацию»</strong> — доступно только для системных постов в статусе «Возможная ошибка»</li>
+      </ul>
+
+      <hr className="!my-10" />
+
+      {/* Drag and Drop */}
+      <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">Перетаскивание (Drag & Drop)</h2>
+
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Опубликованные посты можно перетаскивать на другие даты в календаре, но поведение отличается от других типов постов: вместо перемещения создаётся <strong>копия</strong>.
+      </p>
+
+      <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">Как это работает</h3>
+      <ol className="!text-base !leading-relaxed !text-gray-700">
+        <li><strong>Захват карточки:</strong> при начале перетаскивания курсор показывает иконку копирования (а не перемещения)</li>
+        <li><strong>Перенос на другую дату:</strong> при отпускании карточки открывается всплывающее окно копирования с предзаполненной новой датой публикации</li>
+        <li><strong>Оригинал остаётся на месте:</strong> опубликованный пост не исчезает с исходной даты — он остаётся в календаре на своём месте</li>
+        <li><strong>Копия создаётся как системный пост:</strong> по умолчанию новый пост сохраняется внутри приложения, и вы можете решить, когда и как его опубликовать</li>
+      </ol>
+
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Это сделано намеренно: опубликованный пост уже существует на стене ВКонтакте с определённой датой, и изменение даты публикации задним числом невозможно. Поэтому единственный способ «перенести» контент — создать его копию.
+      </p>
+
+      <hr className="!my-10" />
+
+      {/* Синхронизация из ВКонтакте */}
+      <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">Синхронизация из ВКонтакте</h2>
+
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Опубликованные посты автоматически появляются в календаре планировщика благодаря двум механизмам синхронизации.
+      </p>
+
+      <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">1. Периодическая синхронизация (wall.get)</h3>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Приложение периодически вызывает метод API ВКонтакте <code>wall.get</code> для загрузки последних 20 постов со стены сообщества. Полученные данные форматируются и сохраняются в локальной таблице <code>posts</code>.
+      </p>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        При синхронизации приложение полностью заменяет кэш опубликованных постов для проекта, что гарантирует актуальность данных.
+      </p>
+
+      <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">2. Обновления в реальном времени (API уведомлений VK)</h3>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Приложение использует API уведомлений ВКонтакте для получения уведомлений о новых публикациях. Когда пост публикуется на стене сообщества (сразу или из отложенных записей), приложение получает событие <code>wall_post_new</code>.
+      </p>
+      <p className="!text-base !leading-relaxed !text-gray-700">
+        Чтобы избежать дублирования при одновременной публикации нескольких постов, используется механизм <strong>debounce</strong> — обновление кэша происходит не чаще одного раза в несколько секунд.
+      </p>
+
+      <h3 className="!text-xl !font-semibold !text-gray-800 !mt-8">Что синхронизируется</h3>
+      <ul className="!text-base !leading-relaxed !text-gray-700">
+        <li><strong>ID поста:</strong> в формате <code>{'{owner_id}'}_{'{post_id}'}</code></li>
+        <li><strong>Дата публикации:</strong> в формате ISO 8601 с часовым поясом UTC</li>
+        <li><strong>Текст поста:</strong> полный текст публикации</li>
+        <li><strong>Изображения:</strong> массив фотографий с URL разных размеров</li>
+        <li><strong>Вложения:</strong> документы, видео, ссылки и другие типы вложений</li>
+        <li><strong>Ссылка на пост:</strong> <code>vkPostUrl</code> для быстрого перехода на стену</li>
+        <li><strong>Теги:</strong> автоматическое применение тегов проекта к синхронизированным постам</li>
+      </ul>
+
+      <hr className="!my-10" />
+
+      {/* FAQ */}
+      <h2 className="!text-2xl !font-bold !tracking-tight !text-gray-900">Частые вопросы</h2>
+
+      <details className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+        <summary className="cursor-pointer font-semibold text-gray-900">
+          Как часто происходит синхронизация опубликованных постов?
+        </summary>
+        <p className="mt-2 text-gray-700">
+          Периодическая синхронизация через <code>wall.get</code> происходит по расписанию, установленному на сервере (обычно раз в несколько минут). Обновления в реальном времени через API уведомлений VK срабатывают мгновенно при публикации нового поста. Вы также можете принудительно обновить кэш, нажав кнопку обновления в интерфейсе календаря.
+        </p>
+      </details>
+
+      <details className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+        <summary className="cursor-pointer font-semibold text-gray-900">
+          Почему в календаре отображаются только последние 20 постов?
+        </summary>
+        <p className="mt-2 text-gray-700">
+          Это ограничение связано с производительностью и актуальностью данных. Метод API <code>wall.get</code> загружает 20 последних постов, что покрывает обычный рабочий период планирования (около 2–3 недель при ежедневных публикациях). Более старые посты остаются доступными в ВКонтакте, но не отображаются в календаре планировщика.
+        </p>
+      </details>
+
+      <details className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+        <summary className="cursor-pointer font-semibold text-gray-900">
+          Что произойдёт, если я отредактирую опубликованный пост через приложение?
+        </summary>
+        <p className="mt-2 text-gray-700">
+          Изменения будут применены к оригинальному посту на стене ВКонтакте через метод API <code>wall.edit</code>. После сохранения пост на стене обновится мгновенно, а данные в календаре синхронизируются автоматически. Все подписчики сообщества увидят обновлённую версию публикации.
+        </p>
+      </details>
+
+      <details className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+        <summary className="cursor-pointer font-semibold text-gray-900">
+          Можно ли создать опубликованный пост напрямую через приложение?
+        </summary>
+        <p className="mt-2 text-gray-700">
+          Нет. Опубликованные посты появляются в календаре только через синхронизацию из ВКонтакте. Чтобы создать новый пост, используйте кнопку «+» в календаре — по умолчанию он будет сохранён как системный пост, и вы сможете опубликовать его сейчас или добавить в отложенные записи ВК.
+        </p>
+      </details>
+
+      <details className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+        <summary className="cursor-pointer font-semibold text-gray-900">
+          Почему при перетаскивании опубликованного поста создаётся копия, а не перемещается сам пост?
+        </summary>
+        <p className="mt-2 text-gray-700">
+          Опубликованный пост уже размещён на стене ВКонтакте с определённой датой публикации. Изменить дату задним числом невозможно — это противоречит логике социальной сети. Поэтому при перетаскивании создаётся копия содержимого поста, которую вы можете опубликовать на новую дату. Оригинальный пост остаётся на стене и в календаре без изменений.
+        </p>
+      </details>
+
+      <hr className="!my-10" />
+
+      {/* Совет эксперта */}
+      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border-l-4 border-indigo-500 p-6 rounded-r-lg my-8">
+        <div className="flex items-start gap-4">
+          <span className="text-2xl flex-shrink-0" aria-hidden="true">💡</span>
+          <div>
+            <h4 className="text-lg font-semibold text-gray-900 mb-2">Совет эксперта</h4>
+            <p className="text-gray-700">
+              Используйте опубликованные посты как источник для создания новых публикаций. Если какой-то пост получил хорошие отклики, просто перетащите его на будущую дату — откроется модалка копирования. Отредактируйте текст под актуальный контекст, и у вас готов новый пост на основе проверенного контента. Это экономит время и повышает эффективность работы с расписанием.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <hr className="!my-10" />
+
+      {/* Итоги */}
+      <div className="bg-gray-100 border border-gray-300 rounded-lg p-6 my-8">
+        <h4 className="text-xl font-bold text-gray-900 mb-4">Итоги</h4>
+        <ul className="space-y-2 text-gray-700">
+          <li className="flex items-start">
+            <span className="text-indigo-600 mr-2">•</span>
+            Опубликованные посты — это публикации, уже размещённые на стене ВКонтакте с датой в прошлом.
+          </li>
+          <li className="flex items-start">
+            <span className="text-indigo-600 mr-2">•</span>
+            Визуально они отличаются полупрозрачным оверлеем и зелёной галочкой, которые исчезают при наведении курсора.
+          </li>
+          <li className="flex items-start">
+            <span className="text-indigo-600 mr-2">•</span>
+            Доступны все основные действия: редактирование, удаление, копирование и просмотр на стене ВК. Изменения применяются к оригинальному посту через API ВКонтакте.
+          </li>
+          <li className="flex items-start">
+            <span className="text-indigo-600 mr-2">•</span>
+            При перетаскивании опубликованного поста создаётся копия — оригинал остаётся на месте, так как изменить дату публикации задним числом невозможно.
+          </li>
+          <li className="flex items-start">
+            <span className="text-indigo-600 mr-2">•</span>
+            Синхронизация происходит автоматически через метод API <code>wall.get</code> (последние 20 постов) и в реальном времени через API уведомлений VK при новых публикациях.
+          </li>
+          <li className="flex items-start">
+            <span className="text-indigo-600 mr-2">•</span>
+            Опубликованные посты хранятся в отдельной таблице <code>posts</code> и не имеют статусов или типов автоматизаций — только базовые данные о контенте.
+          </li>
+        </ul>
+      </div>
+
+      <NavigationButtons currentPath="2-1-4-2-published-post" />
+    </article>
+  );
+};

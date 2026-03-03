@@ -1,8 +1,29 @@
 from PIL import Image, ImageFilter, ImageDraw, ImageOps, ImageFont
 import io
 import os
+import re
 import requests
 import emoji # Installed via pip install emoji
+
+
+def strip_vk_links(text: str) -> str:
+    """
+    Удаляет VK-разметку ссылок из текста.
+    Преобразует [id123|Имя Фамилия] -> Имя Фамилия
+    и [club123|Название] -> Название
+    
+    Args:
+        text: Текст с возможными VK-ссылками
+    
+    Returns:
+        Очищенный текст без разметки
+    """
+    if not text:
+        return text
+    # Паттерн: [id/club/public + число | текст]
+    pattern = r'\[(id|club|public)\d+\|([^\]]+)\]'
+    return re.sub(pattern, r'\2', text)
+
 
 def create_story_image(
     post_image_bytes: bytes | None,
@@ -15,6 +36,11 @@ def create_story_image(
     Returns: (image_bytes, metrics_dict)
     """
     try:
+        # === ОЧИСТКА VK-ССЫЛОК ИЗ ТЕКСТОВ ===
+        # Преобразуем [id123|Имя] -> Имя
+        post_text = strip_vk_links(post_text)
+        group_name = strip_vk_links(group_name)
+        
         # Target size for Stories (HD 9:16)
         target_width = 1080
         target_height = 1920

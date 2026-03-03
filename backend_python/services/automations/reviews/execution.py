@@ -1,7 +1,6 @@
 
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-import time
 import uuid
 from datetime import datetime, timezone
 
@@ -11,6 +10,7 @@ from .finalizer import finalize_contest
 import services.automations.reviews.crud as crud_automations
 import crud
 import models
+from utils.persistent_logger import contest_log
 
 def _create_alert_note(db: Session, project_id: str, message: str):
     """Создает заметку об ошибке/пропуске в календаре."""
@@ -60,11 +60,11 @@ def execute_scheduled_contest(db: Session, project_id: str) -> dict:
         # Если сбор упал, попробуем продолжить (вдруг были старые участники)
         logs.append(f"Collect Error: {e}")
 
-    # Небольшая пауза для БД
-    time.sleep(1)
+
 
     # 3. Обработка и нумерация (Process)
     print(f"AUTOMATION ({project_id}): Step 2 - Processing entries...")
+    process_failed = False
     try:
         process_res = process_new_participants(db, project_id)
         logs.append(f"Processed: {process_res.get('processed', 0)}")
@@ -72,13 +72,17 @@ def execute_scheduled_contest(db: Session, project_id: str) -> dict:
             logs.append(f"Process Errors: {process_res['errors']}")
     except Exception as e:
         print(f"AUTOMATION ERROR (Process): {e}")
-        # Если процессинг упал, финализацию лучше не запускать, чтобы не было дыр в нумерации
         _create_alert_note(db, project_id, f"Ошибка при обработке новых участников: {e}")
-        raise Exception(f"Stage 'Process' failed: {e}")
-
-    time.sleep(1)
+        logs.append(f"Process Error: {e}")
+        process_failed = True
+        # НЕ пробрасываем ошибку — цикл должен продолжаться.
+        # Финализацию пропустим, но следующий еженедельный пост будет создан.
 
     # 4. Подведение итогов (Finalize)
+    if process_failed:
+        print(f"AUTOMATION ({project_id}): Skipping finalize due to process failure.")
+        return {"success": False, "error": "Process stage failed, finalize skipped", "logs": "; ".join(logs)}
+
     print(f"AUTOMATION ({project_id}): Step 3 - Finalizing...")
     try:
         # Финализация может вернуть {skipped: True}, если условий недостаточно.
@@ -105,14 +109,13 @@ def execute_scheduled_contest(db: Session, project_id: str) -> dict:
     except HTTPException as http_e:
         # Перехватываем известные бизнес-ошибки (например, нет промокодов)
         print(f"AUTOMATION ({project_id}): Known Logic Error: {http_e.detail}")
+        contest_log(project_id, "EXECUTION_LOGIC_ERROR", details=http_e.detail, level="ERROR")
         _create_alert_note(db, project_id, http_e.detail)
-        # Мы НЕ пробрасываем ошибку дальше, чтобы планировщик (Post Tracker) мог успешно завершить цикл
-        # и создать следующий "призрачный" пост на новую дату. Иначе цикл встанет.
         return {"success": False, "error": http_e.detail}
         
     except Exception as e:
         # Перехватываем неожиданные ошибки
         print(f"AUTOMATION ERROR (Finalize): {e}")
+        contest_log(project_id, "EXECUTION_CRITICAL_ERROR", error=e, level="CRITICAL")
         _create_alert_note(db, project_id, f"Критическая ошибка при подведении итогов: {e}")
-        # Тоже глушим, чтобы цикл не встал
         return {"success": False, "error": str(e)}

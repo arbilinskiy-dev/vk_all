@@ -11,13 +11,15 @@ export const getInitialData = async (): Promise<{
     projects: Project[], 
     allPosts: AllPosts, 
     suggestedPostCounts: Record<string, number>,
-    reviewsContestStatuses: Record<string, ContestStatus> // Изменено на ContestStatus
+    reviewsContestStatuses: Record<string, ContestStatus>,
+    storiesAutomationStatuses: Record<string, boolean>
 }> => {
     return callApi<{ 
         projects: Project[], 
         allPosts: AllPosts, 
         suggestedPostCounts: Record<string, number>,
-        reviewsContestStatuses: Record<string, ContestStatus>
+        reviewsContestStatuses: Record<string, ContestStatus>,
+        storiesAutomationStatuses: Record<string, boolean>
     }>('getInitialData');
 };
 
@@ -31,8 +33,8 @@ export const forceRefreshProjects = async (): Promise<{ projects: Project[], sug
 /**
  * Проверяет свежесть кешированных данных для всех проектов.
  */
-export const getProjectUpdateStatus = async (): Promise<{ stalePublished: string[], staleScheduled: string[], staleSuggested: string[] }> => {
-    return callApi<{ stalePublished: string[], staleScheduled: string[], staleSuggested: string[] }>('getProjectUpdateStatus');
+export const getProjectUpdateStatus = async (): Promise<{ stalePublished: string[], staleScheduled: string[], staleSuggested: string[], staleStories: string[] }> => {
+    return callApi<{ stalePublished: string[], staleScheduled: string[], staleSuggested: string[], staleStories: string[] }>('getProjectUpdateStatus');
 };
 
 /**

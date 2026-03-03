@@ -5,12 +5,13 @@ import { usePostCardActions } from '../hooks/usePostCardActions';
 import { ImageGrid } from './postcard/ImageGrid'; 
 import { AttachmentsDisplay } from './postcard/Attachments'; 
 import { PostTags } from './postcard/PostTags'; 
+import { renderVkFormattedText } from '../../../shared/utils/renderVkFormattedText';
 
 
 export const PostCard: React.FC<{
     post: ScheduledPost | (SystemPost & { date: string; isGhost?: boolean });
     isSystemPost?: boolean;
-    systemPostStatus?: 'pending_publication' | 'publishing' | 'error' | 'possible_error';
+    systemPostStatus?: 'pending_publication' | 'error';
     isExpanded: boolean;
     isPublished: boolean;
     isSelectionMode: boolean;
@@ -22,8 +23,8 @@ export const PostCard: React.FC<{
     onDelete: (post: ScheduledPost | SystemPost) => void;
     onPublishNow: (post: ScheduledPost) => void;
     onMoveToScheduled?: (post: SystemPost) => void;
-    onConfirmPublication?: (post: SystemPost) => void;
-    onCancelPublicationCheck?: (post: SystemPost) => void;
+    onPinPost?: (postId: string) => void;
+    onUnpinPost?: (postId: string) => void;
     onDragStart: (e: DragEvent<HTMLDivElement>, post: ScheduledPost | SystemPost) => void;
     onDragEnd: (e: DragEvent<HTMLDivElement>) => void;
     onToggleSelect: (id: string) => void;
@@ -32,21 +33,26 @@ export const PostCard: React.FC<{
     globalVarDefs?: GlobalVariableDefinition[];
     globalVarValues?: ProjectGlobalVariableValue[];
     isHighlighted?: boolean;
-}> = React.memo(({ post, isSystemPost, systemPostStatus, isExpanded, isPublished, isSelectionMode, isSelected, onToggleExpand, onView, onEdit, onCopy, onDelete, onPublishNow, onMoveToScheduled, onConfirmPublication, onCancelPublicationCheck, onDragStart, onDragEnd, onToggleSelect, animationIndex = 0, showTags = true, globalVarDefs, globalVarValues, isHighlighted }) => {
+}> = React.memo(({ post, isSystemPost, systemPostStatus, isExpanded, isPublished, isSelectionMode, isSelected, onToggleExpand, onView, onEdit, onCopy, onDelete, onPublishNow, onMoveToScheduled, onPinPost, onUnpinPost, onDragStart, onDragEnd, onToggleSelect, animationIndex = 0, showTags = true, globalVarDefs, globalVarValues, isHighlighted }) => {
     
-    const isSystemError = isSystemPost && (systemPostStatus === 'error' || systemPostStatus === 'possible_error');
-    const isSystemPublishing = isSystemPost && systemPostStatus === 'publishing';
+    const isSystemError = isSystemPost && systemPostStatus === 'error';
     const isGhost = 'isGhost' in post && post.isGhost;
     const isCyclic = 'is_cyclic' in post && post.is_cyclic;
     
-    // Определяем типы автоматизаций
+    // Определяем типы автоматизаций (для системных постов)
     const isContestWinner = isSystemPost && 'post_type' in post && post.post_type === 'contest_winner';
     const isAiFeed = isSystemPost && 'post_type' in post && post.post_type === 'ai_feed';
     const isGeneralContestStart = isSystemPost && 'post_type' in post && (post.post_type === 'GENERAL_CONTEST_START' || post.post_type === 'general_contest_start');
     const isGeneralContestEnd = isSystemPost && 'post_type' in post && (post.post_type === 'GENERAL_CONTEST_END' || post.post_type === 'general_contest_result');
+    const isContestV2Start = isSystemPost && 'post_type' in post && post.post_type === 'contest_v2_start';
+    
+    // Определяем типы для опубликованных постов (связанных с автоматизациями)
+    const isPublishedContestV2 = !isSystemPost && isPublished && 'post_type' in post && post.post_type === 'contest_v2_start';
     
     const isGeneralContest = isGeneralContestStart || isGeneralContestEnd;
-    const isAutomation = isContestWinner || isAiFeed || isGeneralContest;
+    const isContestV2 = isContestV2Start || isPublishedContestV2; // В будущем добавим другие типы постов конкурса 2.0
+    const isAutomation = isContestWinner || isAiFeed || isGeneralContest || isContestV2Start; // Только системные посты автоматизаций
+    const isProtectedPublished = isPublishedContestV2; // Защищённые опубликованные посты
 
     const actionsContainerRef = useRef<HTMLDivElement>(null);
 
@@ -54,10 +60,11 @@ export const PostCard: React.FC<{
     const { visibleActions, hiddenActions, availableActions } = usePostCardActions({
         post, isSystemPost, systemPostStatus, isPublished, 
         onPublishNow: onPublishNow as (post: ScheduledPost) => void, 
-        onMoveToScheduled, onConfirmPublication, 
+        onMoveToScheduled, 
         onCopy: onCopy as (post: ScheduledPost) => void, 
         onEdit: onEdit as (post: ScheduledPost) => void, 
-        onDelete, actionsContainerRef
+        onDelete, actionsContainerRef,
+        onPinPost, onUnpinPost
     });
     
     // Для постов автоматизации убираем действия, кроме просмотра (который будет вести на настройки/превью)
@@ -82,7 +89,7 @@ export const PostCard: React.FC<{
         return post.text;
     }, [post.text, isSystemPost, globalVarDefs, globalVarValues]);
     
-    const isDraggable = !isSelectionMode && !isSystemPublishing && !isGhost && !isAutomation;
+    const isDraggable = !isSelectionMode && !isGhost && !isAutomation && !isProtectedPublished;
     
     // Стилизация контейнера
     let borderClass = 'border-gray-200';
@@ -115,6 +122,18 @@ export const PostCard: React.FC<{
             bgClass = 'bg-orange-50/20 opacity-70';
             borderClass = 'border border-orange-200 border-dashed';
         }
+    } else if (isContestV2Start) {
+        // Стиль для Конкурс 2.0 - Старт (изумрудный/зелёный)
+        borderClass = 'border border-emerald-400';
+        bgClass = 'bg-emerald-50/50 text-emerald-900';
+        if (isGhost) {
+            bgClass = 'bg-emerald-50/20 opacity-70';
+            borderClass = 'border border-emerald-200 border-dashed';
+        }
+    } else if (isPublishedContestV2) {
+        // Стиль для опубликованных постов Конкурс 2.0 (изумрудный, но без пунктира)
+        borderClass = 'border border-emerald-300';
+        bgClass = 'bg-emerald-50/30';
     } else if (isAiFeed) {
         // Уникальный стиль для AI Feed (индиго/синий, более технологичный)
         borderClass = 'border border-indigo-300';
@@ -130,6 +149,12 @@ export const PostCard: React.FC<{
         borderClass = 'border border-dashed border-gray-400';
     } else if (isSystemError) {
         borderClass = 'border border-red-400';
+    }
+
+    // Стиль для закреплённого поста (поверх обычного стиля)
+    if (post.is_pinned && isPublished && !isSystemPost && !isSelected) {
+        borderClass = 'border border-amber-300';
+        bgClass = 'bg-amber-50/40';
     }
 
     const containerClasses = `relative group p-2.5 rounded-lg border shadow-sm text-xs 
@@ -180,6 +205,18 @@ export const PostCard: React.FC<{
                     </svg>
                 </div>
             )}
+
+            {/* Бейдж закреплённого поста */}
+            {post.is_pinned && isPublished && !isSystemPost && (
+                <div className="absolute top-[-8px] left-[-4px] flex items-center gap-1 z-10">
+                    <div className="bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 border border-amber-300 shadow-sm flex items-center gap-1" title="Закреплён на стене">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="currentColor" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                        </svg>
+                        <span className="text-[9px] font-bold uppercase tracking-wider">Закреплён</span>
+                    </div>
+                </div>
+            )}
             
             {/* Бейдж для автоматизации конкурса */}
             {isContestWinner && (
@@ -217,6 +254,18 @@ export const PostCard: React.FC<{
                 </div>
             )}
 
+            {/* Бейдж для Конкурс 2.0 (Старт) */}
+            {isContestV2Start && (
+                <div className="absolute top-[-8px] right-[-4px] flex items-center gap-1 z-10">
+                     <div className="bg-emerald-100 text-emerald-700 rounded-full px-1.5 py-0.5 border border-emerald-200 shadow-sm flex items-center gap-1" title="Конкурс 2.0: Старт">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                        <span className="text-[9px] font-bold uppercase tracking-wider">Конкурс 2.0</span>
+                    </div>
+                </div>
+            )}
+
             {/* Бейдж для AI автоматизации */}
             {isAiFeed && (
                 <div className="absolute top-[-8px] right-[-4px] flex items-center gap-1 z-10">
@@ -225,6 +274,18 @@ export const PostCard: React.FC<{
                              <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
                         </svg>
                         <span className="text-[9px] font-bold uppercase tracking-wider">AI Auto</span>
+                    </div>
+                </div>
+            )}
+
+            {/* Бейдж для ОПУБЛИКОВАННЫХ постов Конкурс 2.0 (защищённые от удаления/редактирования) */}
+            {isPublishedContestV2 && (
+                <div className="absolute top-[-8px] right-[-4px] flex items-center gap-1 z-10">
+                     <div className="bg-emerald-100 text-emerald-700 rounded-full px-1.5 py-0.5 border border-emerald-200 shadow-sm flex items-center gap-1" title="Конкурс 2.0: Опубликовано (защищён)">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                        <span className="text-[9px] font-bold uppercase tracking-wider">Конкурс 2.0</span>
                     </div>
                 </div>
             )}
@@ -238,6 +299,8 @@ export const PostCard: React.FC<{
                     isAiFeed ? 'text-indigo-800' : 
                     isGeneralContestStart ? 'text-sky-800' :
                     isGeneralContestEnd ? 'text-orange-800' :
+                    isContestV2Start ? 'text-emerald-800' :
+                    isPublishedContestV2 ? 'text-emerald-700' :
                     'text-gray-500'
                 }`}>{new Date(post.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                 
@@ -286,9 +349,9 @@ export const PostCard: React.FC<{
 
             <p 
                 onClick={!isSelectionMode ? () => isAutomation ? handleClick() : onToggleExpand(post.id) : undefined}
-                className={`text-gray-800 break-words ${!isSelectionMode ? 'cursor-pointer' : ''} overflow-hidden transition-[max-height] duration-500 ease-in-out mt-2 ${isExpanded ? 'max-h-96' : 'max-h-5'} ${isSelectionMode ? 'opacity-50' : ''}`}
+                className={`text-gray-800 break-words whitespace-pre-wrap ${!isSelectionMode ? 'cursor-pointer' : ''} overflow-hidden transition-[max-height] duration-500 ease-in-out mt-2 ${isExpanded ? 'max-h-96' : 'max-h-5'} ${isSelectionMode ? 'opacity-50' : ''}`}
             >
-                {displayText}
+                {renderVkFormattedText(displayText)}
             </p>
             
             {showTags && 'tags' in post && <PostTags tags={post.tags} />}
@@ -312,24 +375,10 @@ export const PostCard: React.FC<{
             {/* Статусы для обычных системных постов (не автоматизаций) */}
             {isSystemPost && !isAutomation && (
                 <div className="absolute top-2 left-2 pointer-events-none">
-                    {systemPostStatus === 'publishing' && onCancelPublicationCheck ? (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); onCancelPublicationCheck(post as SystemPost); }}
-                            className="p-1 rounded-full hover:bg-blue-100 transition-colors pointer-events-auto"
-                            title="Идет проверка публикации в VK. Нажмите, чтобы отменить проверку и удалить системный пост."
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924-1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0 3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826 3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                        </button>
-                    ) : (
-                         <div title={`Системный пост: ${systemPostStatus}`}>
-                            {systemPostStatus === 'pending_publication' && <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
-                            {systemPostStatus === 'possible_error' && <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 3.001-1.742 3.001H4.42c-1.53 0-2.493-1.667-1.743-3.001l5.58-9.92zM10 13a1 1 0 100-2 1 1 0 000 2zm-1-4a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clipRule="evenodd" /></svg>}
-                            {systemPostStatus === 'error' && <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>}
-                        </div>
-                    )}
+                    <div title={`Системный пост: ${systemPostStatus}`}>
+                        {systemPostStatus === 'pending_publication' && <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
+                        {systemPostStatus === 'error' && <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>}
+                    </div>
                 </div>
             )}
         </div>

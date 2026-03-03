@@ -8,6 +8,7 @@ interface ChatHistoryProps {
     turnRefs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
     highlightedTurnId: string | null;
     handleAddToPost: (text: string) => void;
+    handleReplacePostText: (text: string) => void;
     setReplyToTurn: (turn: ChatTurn) => void;
     handleJumpToTurn: (turnId: string) => void;
     getRepliedTurnText: (turnId: string) => string | undefined;
@@ -21,7 +22,7 @@ interface ChatHistoryProps {
 
 export const ChatHistory: React.FC<ChatHistoryProps> = ({
     chatHistory, chatContainerRef, turnRefs, highlightedTurnId,
-    handleAddToPost, setReplyToTurn, handleJumpToTurn, getRepliedTurnText,
+    handleAddToPost, handleReplacePostText, setReplyToTurn, handleJumpToTurn, getRepliedTurnText,
     onRegenerate, isMultiGenerationMode, selectedTurnId, onToggleSelection,
     className
 }) => {
@@ -47,6 +48,7 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({
                             <ChatTurnDisplay
                                 turn={turn}
                                 onAddToPost={handleAddToPost}
+                                onReplacePostText={handleReplacePostText}
                                 onReply={setReplyToTurn}
                                 onJumpToTurn={handleJumpToTurn}
                                 getRepliedTurnText={getRepliedTurnText}

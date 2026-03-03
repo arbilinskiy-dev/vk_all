@@ -32,6 +32,7 @@ class GeneralContestBase(BaseModel):
     # Auto-Restart
     is_cyclic: Optional[bool] = False
     restart_type: Optional[str] = 'manual'
+    restart_delay_hours: Optional[int] = None  # Задержка перезапуска в часах
     restart_settings: Optional[str] = None # JSON string
     
     # Templates

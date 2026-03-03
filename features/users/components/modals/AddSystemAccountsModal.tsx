@@ -45,7 +45,7 @@ export const AddSystemAccountsModal: React.FC<AddSystemAccountsModalProps> = ({ 
                             rows={10}
                             disabled={isProcessing}
                             className="w-full border rounded p-2 text-sm border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 custom-scrollbar"
-                            placeholder="https://vk.com/id12345&#10;https://vk.com/durov"
+                            placeholder="https://vk.com/id12345&#10;https://vk.ru/durov"
                         />
                     </div>
                     {error && (

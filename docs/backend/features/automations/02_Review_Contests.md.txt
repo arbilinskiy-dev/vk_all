@@ -5,23 +5,26 @@
 ## 📋 Описание
 
 Функционал позволяет:
-1. Автоматически находить посты с отзывами по ключевому слову
+1. Автоматически находить посты с отзывами по ключевому слову (хештегу)
 2. Нумеровать участников комментарием от имени сообщества
-3. Проводить розыгрыш в назначенное время
-4. Выдавать призы (промокоды) победителям
+3. Проводить розыгрыш в назначенное время (автоматически через Post Tracker)
+4. Генерировать изображение-доказательство розыгрыша
+5. Выдавать призы (промокоды) победителям через ЛС
+6. Публиковать пост с итогами
 
 ## 🗂️ Файлы модуля
 
 ```
 services/automations/reviews/
-├── service.py        # Фасад (точка входа, реэкспорт функций)
-├── collector.py      # collect_participants() — сбор участников
-├── processor.py      # process_new_participants() — нумерация и комментирование
-├── finalizer.py      # finalize_contest() — подведение итогов
-├── execution.py      # execute_scheduled_contest() — запланированное завершение
-├── retrieval.py      # get_contest_entries() — получение списка участников
-├── blacklist_service.py  # Работа с чёрным списком
-└── scheduler.py      # Планирование времени завершения
+├── service.py           # Фасад (точка входа, реэкспорт функций)
+├── collector.py         # collect_participants() — сбор участников из SystemListPost + VK API
+├── processor.py         # process_new_participants() — нумерация и комментирование
+├── finalizer.py         # finalize_contest() — подведение итогов, выбор победителя
+├── execution.py         # execute_scheduled_contest() — оркестратор полного цикла
+├── retrieval.py         # get_contest_entries() — получение списка участников
+├── blacklist_service.py # Работа с чёрным списком
+├── scheduler.py         # sync_contest_post() — создание триггерного системного поста
+└── crud.py              # CRUD операции с БД
 ```
 
 ## ⚙️ Настройки конкурса
@@ -33,33 +36,44 @@ services/automations/reviews/
 | `id` | String (PK) | UUID |
 | `project_id` | String (FK, unique) | ID проекта (один конкурс на проект) |
 | `is_active` | Boolean | Активен ли конкурс |
-| `keywords` | String | Ключевое слово для поиска (например, "отзыв") |
-| `start_date` | String (ISO) | Дата начала конкурса |
+| `keywords` | String | Ключевое слово/хештег для поиска (например, `#отзыв@clubname`) |
+| `start_date` | String (ISO) | Дата начала конкурса (посты до этой даты игнорируются) |
 | **Условия завершения** | | |
 | `finish_condition` | String | `count` / `date` / `mixed` |
 | `target_count` | Integer | Целевое количество участников |
-| `finish_date` | String | Прямая дата завершения |
-| `finish_day_of_week` | Integer | День недели (1-7) |
-| `finish_time` | String | Время завершения (HH:MM) |
+| `finish_date` | String | Прямая дата завершения (legacy) |
+| `finish_day_of_week` | Integer | День недели для розыгрыша (1=Пн, 7=Вс) |
+| `finish_time` | String | Время розыгрыша (HH:MM, по МСК) |
 | **Авто-бан** | | |
-| `auto_blacklist` | Boolean | Добавлять победителей в ЧС |
+| `auto_blacklist` | Boolean | Добавлять победителей в ЧС после победы |
 | `auto_blacklist_duration` | Integer | Длительность бана (дни) |
 | **Шаблоны** | | |
-| `template_comment` | Text | Шаблон комментария: `Вы участник #{number}` |
-| `template_winner_post` | Text | Шаблон поста о победителе |
-| `winner_post_images` | Text (JSON) | Изображения для поста |
-| `template_dm` | Text | Шаблон личного сообщения победителю |
-| `template_error_comment` | Text | Шаблон при ошибке |
+| `template_comment` | Text | Шаблон комментария: `Ваш номер: {number}` |
+| `template_winner_post` | Text | Шаблон поста о победителе: `{winners_list}`, `{user_name}`, `{post_link}` |
+| `winner_post_images` | Text (JSON) | Изображения для поста с итогами |
+| `template_dm` | Text | Шаблон личного сообщения: `{promo_code}`, `{description}`, `{user_name}` |
+| `template_error_comment` | Text | Шаблон комментария при ошибке отправки ЛС |
+| **Изображение-доказательство** | | |
+| `use_proof_image` | Boolean | Генерировать изображение-доказательство розыгрыша (по умолчанию true) |
+| `attach_additional_media` | Boolean | Прикреплять дополнительные медиа к посту с итогами |
 
 ### Условия завершения (finish_condition)
 
 | Значение | Описание |
 |----------|----------|
 | `count` | По достижении целевого количества участников |
-| `date` | В указанную дату/время |
-| `mixed` | Первое из условий (количество ИЛИ дата) |
+| `date` | В указанный день недели и время (еженедельно) |
+| `mixed` | День настал + достигнуто целевое количество участников |
 
-## 🔄 Алгоритм работы
+## 🔄 Полный автоматический цикл
+
+### Триггер: Post Tracker
+
+При наступлении времени розыгрыша, Post Tracker находит системный пост с `post_type='contest_winner'` и вызывает:
+
+```python
+contest_service.execute_scheduled_contest(db, project_id)
+```
 
 ### Этап 1: Сбор участников (`collector.py`)
 
@@ -72,11 +86,18 @@ services/automations/reviews/
    │
 3. Фильтруем уже добавленных участников
    │
-4. Дозапрашиваем данные авторов из VK (users.get)
+4. Находим токен администратора группы (get_admin_token_for_group)
    │
-5. Проверяем чёрный список
+5. Запрашиваем wall.get с extended=1 и АДМИНСКИМ токеном
    │
-6. Сохраняем новых участников в ReviewContestEntry (status='new')
+   └─ ВАЖНО: Только админский токен возвращает post_author_data!
+   │
+6. Извлекаем ИСТИННОГО автора из post_author_data.author
+   │   (НЕ signer_id — это только визуальная подпись)
+   │
+7. Проверяем чёрный список
+   │
+8. Сохраняем новых участников в ReviewContestEntry (status='new')
 ```
 
 ### Этап 2: Нумерация (`processor.py`)
@@ -102,15 +123,44 @@ services/automations/reviews/
 ### Этап 3: Завершение (`finalizer.py`)
 
 ```
-1. Выбираем случайного победителя среди 'commented' записей
+1. Проверяем условия завершения
    │
-2. Отправляем личное сообщение с призом (messages.send)
+   ├─ mixed: Если участников < target_count → {skipped: true}
    │
-3. Публикуем пост о победителе (если настроено)
+   ├─ count: Если участников < target_count → {skipped: true}
    │
-4. Добавляем в чёрный список (если auto_blacklist=true)
+   └─ date: Розыгрыш состоится при любом количестве > 0
    │
-5. Сбрасываем номера участников для нового раунда
+2. Очищаем просроченные баны в ЧС
+   │
+3. Фильтруем участников по активному ЧС
+   │
+4. Случайно выбираем победителя
+   │
+5. Получаем свободный промокод
+   │
+6. Отправляем ЛС победителю (messages.send)
+   │
+   └─ Fallback: Если ЛС не отправлено → комментарий под постом с template_error_comment
+   │
+7. Генерируем изображение-доказательство (если use_proof_image=true)
+   │
+   └─ create_random_proof_image() → upload_wall_photo()
+   │
+8. Публикуем пост с итогами (wall.post)
+   │
+9. Добавляем победителя в ЧС (если auto_blacklist=true)
+   │
+10. Обновляем статусы: winner='winner', остальные='used'
+   │
+11. Создаем запись в журнале доставки (ReviewContestDeliveryLog)
+```
+
+### После завершения (Post Tracker)
+
+```python
+_create_next_cyclic_post(db, post)  # Создаёт следующий триггер (через неделю)
+crud.delete_system_post(db, post.id)  # Удаляет текущий триггер
 ```
 
 ## 📊 Участники конкурса
@@ -122,23 +172,25 @@ services/automations/reviews/
 | `id` | String (PK) | UUID |
 | `contest_id` | String (FK) | ID конкурса |
 | `vk_post_id` | Integer | ID поста с отзывом |
-| `vk_owner_id` | Integer | ID владельца (группы) |
-| `user_vk_id` | BigInteger | VK ID участника |
-| `user_name` | String | Имя участника |
-| `user_photo` | String | Аватар |
-| `entry_number` | Integer | Номер участника |
-| `status` | String | new / commented / winner / error / used |
+| `vk_owner_id` | Integer | ID владельца (группы, отрицательный) |
+| `user_vk_id` | BigInteger | VK ID автора поста |
+| `user_name` | String | Имя автора |
+| `user_photo` | String | URL аватара |
+| `post_link` | String | Полная ссылка на пост VK |
+| `post_text` | Text | Текст поста |
+| `entry_number` | Integer | Присвоенный номер участника |
+| `status` | String | new / processing / commented / winner / used / error |
 | `created_at` | DateTime | Дата добавления |
-| `log` | Text | Лог ошибок |
 
 ### Статусы участников
 
 | Статус | Описание |
 |--------|----------|
 | `new` | Найден, но ещё не обработан |
-| `commented` | Пронумерован комментарием |
+| `processing` | В процессе обработки |
+| `commented` | Пронумерован комментарием (готов к розыгрышу) |
 | `winner` | Победитель текущего раунда |
-| `used` | Участвовал в прошлых раундах |
+| `used` | Участвовал в прошлых раундах (не участвует в текущем) |
 | `error` | Ошибка при обработке |
 
 ## 🚫 Чёрный список
@@ -149,9 +201,11 @@ services/automations/reviews/
 |------|-----|----------|
 | `id` | String (PK) | UUID |
 | `contest_id` | String (FK) | ID конкурса |
+| `general_contest_id` | String (FK) | ID универсального конкурса (если применимо) |
 | `user_vk_id` | BigInteger | VK ID пользователя |
-| `reason` | String | Причина бана |
-| `expires_at` | DateTime | Когда истекает бан |
+| `user_name` | String | Имя для отображения |
+| `user_screen_name` | String | screen_name или id123 |
+| `until_date` | DateTime | Дата окончания бана (null = навсегда) |
 | `created_at` | DateTime | Дата добавления |
 
 ## 🎁 Промокоды
@@ -162,86 +216,179 @@ services/automations/reviews/
 |------|-----|----------|
 | `id` | String (PK) | UUID |
 | `contest_id` | String (FK) | ID конкурса отзывов |
+| `general_contest_id` | String (FK) | ID универсального конкурса |
 | `code` | String | Код промокода |
-| `description` | String | Описание |
+| `description` | String | Описание (напр. "Скидка 500р") |
 | `is_issued` | Boolean | Выдан ли |
 | `issued_at` | DateTime | Когда выдан |
-| `issued_to_user_id` | BigInteger | Кому выдан |
+| `issued_to_user_id` | BigInteger | Кому выдан (VK ID) |
+| `issued_to_user_name` | String | Имя получателя |
+| `delivery_status` | String | sent / error (legacy) |
+| `delivery_message` | Text | Текст сообщения (legacy) |
+
+## 📬 Журнал доставки
+
+### Модель `ReviewContestDeliveryLog`
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `id` | String (PK) | UUID |
+| `contest_id` | String (FK) | ID конкурса |
+| `general_contest_id` | String (FK) | ID универсального конкурса |
+| `user_vk_id` | BigInteger | VK ID получателя |
+| `user_name` | String | Имя получателя |
+| `promo_code` | String | Выданный промокод |
+| `prize_description` | String | Описание приза |
+| `message_text` | Text | Полный текст отправленного сообщения |
+| `status` | String | pending / sent / error |
+| `error_details` | Text | Текст ошибки (если есть) |
+| `winner_post_link` | String | Ссылка на пост победителя (отзыв) |
+| `results_post_link` | String | Ссылка на пост с итогами |
+| `created_at` | DateTime | Дата создания записи |
 
 ## 🌐 API эндпоинты
 
 ### Роутер: `routers/automations.py`
 
+**Настройки:**
 | Метод | Путь | Описание |
 |-------|------|----------|
-| `GET` | `/api/automations/{project_id}/settings` | Настройки конкурса |
-| `POST` | `/api/automations/{project_id}/settings` | Сохранить настройки |
-| `POST` | `/api/automations/{project_id}/collect` | Собрать участников |
-| `POST` | `/api/automations/{project_id}/process` | Пронумеровать новых |
-| `POST` | `/api/automations/{project_id}/finalize` | Завершить конкурс |
-| `GET` | `/api/automations/{project_id}/entries` | Список участников |
-| `DELETE` | `/api/automations/{project_id}/entries` | Очистить участников |
-| **Промокоды** | | |
-| `GET` | `/api/automations/{project_id}/promo-codes` | Список промокодов |
-| `POST` | `/api/automations/{project_id}/promo-codes` | Добавить промокод |
-| `DELETE` | `/api/automations/promo-codes/{id}` | Удалить промокод |
-| **Чёрный список** | | |
-| `GET` | `/api/automations/{project_id}/blacklist` | Список забаненных |
-| `POST` | `/api/automations/{project_id}/blacklist` | Добавить в ЧС |
-| `DELETE` | `/api/automations/blacklist/{id}` | Убрать из ЧС |
+| `POST` | `/api/automations/reviews/getSettings` | Получить настройки конкурса |
+| `POST` | `/api/automations/reviews/saveSettings` | Сохранить настройки |
+
+**Участники:**
+| Метод | Путь | Описание |
+|-------|------|----------|
+| `POST` | `/api/automations/reviews/collectPosts` | Собрать участников |
+| `POST` | `/api/automations/reviews/processEntries` | Пронумеровать новых |
+| `POST` | `/api/automations/reviews/finalize` | Завершить конкурс (ручной запуск) |
+| `POST` | `/api/automations/reviews/getEntries` | Список участников |
+| `POST` | `/api/automations/reviews/clearEntries` | Очистить участников |
+
+**Промокоды:**
+| Метод | Путь | Описание |
+|-------|------|----------|
+| `POST` | `/api/automations/reviews/promocodes/get` | Список промокодов |
+| `POST` | `/api/automations/reviews/promocodes/add` | Добавить промокоды |
+| `POST` | `/api/automations/reviews/promocodes/delete` | Удалить промокод |
+| `POST` | `/api/automations/reviews/promocodes/deleteBulk` | Массовое удаление |
+| `POST` | `/api/automations/reviews/promocodes/clear` | Очистить все |
+| `POST` | `/api/automations/reviews/promocodes/update` | Обновить описание |
+| `POST` | `/api/automations/reviews/promocodes/retry` | Повторить отправку |
+| `POST` | `/api/automations/reviews/promocodes/retryAll` | Повторить все ошибки |
+
+**Журнал доставки:**
+| Метод | Путь | Описание |
+|-------|------|----------|
+| `POST` | `/api/automations/reviews/delivery/get` | Список логов доставки |
+| `POST` | `/api/automations/reviews/delivery/clear` | Очистить логи |
+
+**Чёрный список:**
+| Метод | Путь | Описание |
+|-------|------|----------|
+| `POST` | `/api/automations/reviews/blacklist/get` | Список забаненных |
+| `POST` | `/api/automations/reviews/blacklist/add` | Добавить в ЧС |
+| `POST` | `/api/automations/reviews/blacklist/delete` | Убрать из ЧС |
+
+## 🎨 Изображение-доказательство розыгрыша
+
+При включённом `use_proof_image` генерируется изображение с:
+- Номером победителя
+- Именем и аватаром победителя
+- Общим количеством участников
+- Мини-аватарками участников (до 25 шт)
+- Названием группы и конкурса
+- Датой и временем розыгрыша
+
+Генератор: `utils/random_proof_image.py` → `create_random_proof_image()`
 
 ## 📝 Пример использования
 
 ### 1. Настроить конкурс
 
 ```json
-POST /api/automations/{project_id}/settings
+POST /api/automations/reviews/saveSettings
 
 {
-  "is_active": true,
-  "keywords": "отзыв",
-  "start_date": "2026-01-01T00:00:00Z",
-  "finish_condition": "mixed",
-  "target_count": 50,
-  "finish_day_of_week": 5,
-  "finish_time": "18:00",
-  "auto_blacklist": true,
-  "auto_blacklist_duration": 30,
-  "template_comment": "✅ Вы участник #{number}! Розыгрыш в пятницу в 18:00"
+  "projectId": "173525155",
+  "isActive": true,
+  "keywords": "#отзыв@testagencymvp",
+  "startDate": "2026-01-01",
+  "finishCondition": "mixed",
+  "targetCount": 10,
+  "finishDayOfWeek": 5,
+  "finishTime": "18:00",
+  "autoBlacklist": true,
+  "autoBlacklistDuration": 30,
+  "templateComment": "✅ Вы участник #{number}! Розыгрыш в пятницу в 18:00",
+  "templateWinnerPost": "🎉 Поздравляем победителя!\n\n{winners_list}\n\nСпасибо всем за участие!",
+  "templateDm": "Поздравляем! Вы выиграли в конкурсе отзывов.\nВаш приз: {description}\nВаш промокод: {promo_code}",
+  "templateErrorComment": "{user_name}, поздравляем с победой! Напишите нам в сообщения сообщества, чтобы забрать приз!",
+  "winnerPostImages": [],
+  "useProofImage": true,
+  "attachAdditionalMedia": false
 }
 ```
 
-### 2. Собрать и обработать участников
+### 2. Добавить промокоды
 
 ```json
-POST /api/automations/{project_id}/collect
-// Response: { "added": 15 }
+POST /api/automations/reviews/promocodes/add
 
-POST /api/automations/{project_id}/process
-// Response: { "processed": 15, "errors": 0 }
+{
+  "projectId": "173525155",
+  "codes": [
+    {"code": "PRIZE-001", "description": "Скидка 500₽"},
+    {"code": "PRIZE-002", "description": "Скидка 500₽"}
+  ]
+}
 ```
 
-### 3. Завершить конкурс
+### 3. Ручной сбор участников
 
 ```json
-POST /api/automations/{project_id}/finalize
-// Response: { "winner": { "vk_id": 123456, "name": "Иван" } }
+POST /api/automations/reviews/collectPosts
+{"projectId": "173525155"}
+
+// Response: {"success": true}
+```
+
+### 4. Ручная нумерация
+
+```json
+POST /api/automations/reviews/processEntries
+{"projectId": "173525155"}
+
+// Response: {"success": true}
+```
+
+### 5. Ручное завершение
+
+```json
+POST /api/automations/reviews/finalize
+{"projectId": "173525155"}
+
+// Response: {"success": true, "winner_name": "Иван Петров", "post_link": "https://vk.com/wall-123_456"}
 ```
 
 ## ⚠️ Важные моменты
 
 1. **Один конкурс на проект** — `project_id` уникален в таблице
 2. **Комментарии от сообщества** — требуется `communityToken` в настройках проекта
-3. **Права на сообщения** — для отправки ЛС победителю нужен доступ к messages
-4. **Проверка чёрного списка** — участники в бане не добавляются
+3. **Определение автора** — используется `post_author_data.author` (требует админский токен)
+4. **Права на сообщения** — для отправки ЛС победителю нужен доступ к messages
+5. **Проверка чёрного списка** — участники в бане не добавляются и не выигрывают
+6. **Автоматический цикл** — триггерится Post Tracker через системный пост `contest_winner`
 
 ## 🔗 Связанные компоненты
 
 - **Global Variables**: подстановка переменных в шаблоны
 - **VK Service**: комментарии, сообщения, посты
 - **SystemListPost**: кеш постов для поиска
-- **Scheduler**: автоматическое завершение по расписанию
+- **Post Tracker**: автоматический запуск розыгрыша
+- **random_proof_image**: генерация изображения-доказательства
+- **administered_groups**: поиск админского токена
 
 ---
 
-*Последнее обновление: 23 января 2026*
+*Последнее обновление: 26 января 2026*

@@ -3,16 +3,9 @@ from sqlalchemy.orm import Session
 
 import schemas
 import services.system_post_service as system_post_service
-from database import SessionLocal
+from database import get_db
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 # Изменено: эндпоинт теперь POST /deleteSystemPost и принимает payload
 @router.post("/deleteSystemPost", response_model=schemas.GenericSuccess)

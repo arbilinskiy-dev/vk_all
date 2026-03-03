@@ -1,254 +1,23 @@
+import React, { useState, useRef } from 'react';
+import { useColumnResize } from '../hooks/useColumnResize';
+import { CustomSelect } from './CustomSelect';
+import { maskToken } from '../utils/projectTableUtils';
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { Project } from '../../../shared/types';
-import { AccordionSectionKey } from '../../projects/components/modals/ProjectSettingsModal';
-
-export interface ColumnDefinition {
-    key: string;
-    label: string;
-}
-
-interface ProjectTableProps {
-    projects: Project[];
-    editedProjects: Record<string, Project>;
-    onProjectChange: (projectId: string, field: keyof Project, value: any) => void;
-    uniqueTeams: string[];
-    columns: ColumnDefinition[];
-    visibleColumns: Record<string, boolean>;
-    onOpenSettings: (project: Project, section?: AccordionSectionKey) => void; // New prop
-}
-
-const maskToken = (token: string | undefined | null): string => {
-    if (!token || token.length < 12) {
-        return '••••••••••••';
-    }
-    return `${token.substring(0, 7)}****${token.substring(token.length - 4)}`;
-};
-
-const CustomSelect: React.FC<{
-    value: string | null;
-    options: string[];
-    onChange: (value: string | null) => void;
-}> = ({ value, options, onChange }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
-    const wrapperRef = useRef<HTMLDivElement>(null);
-    const dropdownRef = useRef<HTMLDivElement>(null);
-    const [isCreating, setIsCreating] = useState(false);
-    const [newTeamName, setNewTeamName] = useState('');
-
-    const updatePosition = useCallback(() => {
-        if (wrapperRef.current) {
-            const rect = wrapperRef.current.getBoundingClientRect();
-            setPosition({
-                top: rect.bottom,
-                left: rect.left,
-                width: rect.width,
-            });
-        }
-    }, []);
-
-    const toggleDropdown = useCallback(() => {
-        if (!isOpen) {
-            updatePosition();
-        }
-        setIsOpen(prev => !prev);
-    }, [isOpen, updatePosition]);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (isOpen && wrapperRef.current && !wrapperRef.current.contains(event.target as Node) && dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                setIsOpen(false);
-                setIsCreating(false);
-                setNewTeamName('');
-            }
-        };
-
-        const handleScrollOrResize = () => {
-            if (isOpen) {
-                updatePosition();
-            }
-        };
-
-        document.addEventListener('mousedown', handleClickOutside);
-        window.addEventListener('scroll', handleScrollOrResize, true);
-        window.addEventListener('resize', handleScrollOrResize);
-
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-            window.removeEventListener('scroll', handleScrollOrResize, true);
-            window.removeEventListener('resize', handleScrollOrResize);
-        };
-    }, [isOpen, updatePosition]);
-
-    const handleSelect = (option: string | null) => {
-        onChange(option);
-        setIsOpen(false);
-    };
-
-    const handleAddNewTeam = () => {
-        const trimmedName = newTeamName.trim();
-        if (trimmedName && !options.includes(trimmedName)) {
-            onChange(trimmedName);
-        }
-        setNewTeamName('');
-        setIsCreating(false);
-        setIsOpen(false);
-    };
-
-    return (
-        <div className="relative" ref={wrapperRef}>
-            <button
-                type="button"
-                onClick={toggleDropdown}
-                className="w-full p-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white flex justify-between items-center"
-            >
-                <span className="truncate">{value || 'Без команды'}</span>
-                <svg className="fill-current h-4 w-4 flex-shrink-0 ml-1 text-gray-700" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
-            </button>
-            {isOpen && createPortal(
-                <div 
-                    ref={dropdownRef}
-                    className="fixed z-[100] mt-1 bg-white rounded-md shadow-lg border border-gray-200 animate-fade-in-up"
-                    style={{ 
-                        top: `${position.top}px`, 
-                        left: `${position.left}px`, 
-                        width: `${position.width}px`
-                    }}
-                >
-                    {isCreating ? (
-                        <div className="p-2 flex items-center gap-1.5">
-                            <input
-                                type="text"
-                                placeholder="Название команды..."
-                                value={newTeamName}
-                                onChange={(e) => setNewTeamName(e.target.value)}
-                                className="flex-grow border rounded px-2 py-1 text-sm border-gray-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                                autoFocus
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        handleAddNewTeam();
-                                    } else if (e.key === 'Escape') {
-                                        setIsCreating(false);
-                                        setNewTeamName('');
-                                    }
-                                }}
-                            />
-                            <button
-                                onClick={handleAddNewTeam}
-                                title="Сохранить"
-                                className="p-1.5 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors"
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                            </button>
-                            <button
-                                onClick={() => { setIsCreating(false); setNewTeamName(''); }}
-                                title="Отмена"
-                                className="p-1.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors"
-                            >
-                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="max-h-60 overflow-y-auto custom-scrollbar">
-                            <button
-                                onClick={() => setIsCreating(true)}
-                                className="flex items-center gap-2 w-full text-left px-3 py-2 text-sm text-indigo-600 hover:bg-indigo-50 hover:text-indigo-800 transition-colors"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                                <span>Создать</span>
-                            </button>
-                            <div className="border-t border-gray-100 my-1"></div>
-                            <button
-                                onClick={() => handleSelect(null)}
-                                className={`block w-full text-left px-3 py-2 text-sm transition-colors ${!value ? 'bg-indigo-100 text-indigo-900' : 'text-gray-700 hover:bg-indigo-50 hover:text-indigo-900'}`}
-                            >
-                                Без команды
-                            </button>
-                            {options.map(option => (
-                                <button
-                                    key={option}
-                                    onClick={() => handleSelect(option)}
-                                    className={`block w-full text-left px-3 py-2 text-sm transition-colors ${value === option ? 'bg-indigo-100 text-indigo-900' : 'text-gray-700 hover:bg-indigo-50 hover:text-indigo-900'}`}
-                                >
-                                    {option}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>, 
-                document.body
-            )}
-        </div>
-    );
-};
-
+// Реэкспорт типов для обратной совместимости
+export type { ColumnDefinition, ProjectTableProps } from '../types';
+import type { ProjectTableProps } from '../types';
 
 export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, editedProjects, onProjectChange, uniqueTeams, columns, visibleColumns, onOpenSettings }) => {
     const tableRef = useRef<HTMLTableElement>(null);
-    const [columnWidths, setColumnWidths] = useState<Record<string, number>>({});
-    const [isInitialized, setIsInitialized] = useState(false);
-
-    const activeColumnKeyRef = useRef<string | null>(null);
-    const startXRef = useRef(0);
-    const startWidthRef = useRef(0);
-    
     const [editingTokenId, setEditingTokenId] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (tableRef.current && !isInitialized && projects.length > 0) {
-            const thElements = Array.from(tableRef.current.querySelectorAll<HTMLTableCellElement>('thead th'));
-            const initialWidths: Record<string, number> = {};
-            // FIX: Explicitly type 'th' as HTMLTableCellElement to access its properties.
-            thElements.forEach((th: HTMLTableCellElement) => {
-                const key = th.getAttribute('data-key');
-                if (key) {
-                    initialWidths[key] = th.clientWidth + 16;
-                }
-            });
-            setColumnWidths(initialWidths);
-            setIsInitialized(true);
-        }
-    }, [isInitialized, projects.length, visibleColumns]); // Re-init on visibility change
+    const { state: { columnWidths, isInitialized }, actions: { handleMouseDown } } = useColumnResize({
+        tableRef: tableRef as React.RefObject<HTMLTableElement>,
+        projectsCount: projects.length,
+        visibleColumns,
+    });
 
-    const handleMouseDown = useCallback((key: string, e: React.MouseEvent) => {
-        activeColumnKeyRef.current = key;
-        startXRef.current = e.clientX;
-        startWidthRef.current = columnWidths[key];
-        document.body.style.cursor = 'col-resize';
-        e.preventDefault();
-    }, [columnWidths]);
-
-    const handleMouseMove = useCallback((e: MouseEvent) => {
-        if (activeColumnKeyRef.current === null) return;
-        
-        const deltaX = e.clientX - startXRef.current;
-        const newWidth = startWidthRef.current + deltaX;
-
-        setColumnWidths(prevWidths => ({
-            ...prevWidths,
-            [activeColumnKeyRef.current!]: Math.max(newWidth, 80),
-        }));
-    }, []);
-
-    const handleMouseUp = useCallback(() => {
-        activeColumnKeyRef.current = null;
-        document.body.style.cursor = '';
-    }, []);
-
-    useEffect(() => {
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        
-        return () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-        };
-    }, [handleMouseMove, handleMouseUp]);
-
-
+    // Ресайзер колонки
     const Resizer = ({ columnKey }: { columnKey: string }) => (
         <div
             className="absolute top-0 right-0 h-full w-2 cursor-col-resize select-none"
@@ -319,11 +88,11 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, editedProj
                                             className={`${inputClasses} w-full`}
                                         />
                                     </td>}
-                                    {visibleColumns.team && <td className="px-4 py-2">
+                                    {visibleColumns.teams && <td className="px-4 py-2">
                                          <CustomSelect
-                                            value={currentData.team || null}
+                                            value={currentData.teams && currentData.teams.length > 0 ? currentData.teams : (currentData.team ? [currentData.team] : [])}
                                             options={uniqueTeams}
-                                            onChange={(value) => onProjectChange(project.id, 'team', value)}
+                                            onChange={(value) => onProjectChange(project.id, 'teams', value)}
                                         />
                                     </td>}
                                     {visibleColumns.disabled && <td className="px-4 py-2">
@@ -331,9 +100,9 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, editedProj
                                             <button
                                                 type="button"
                                                 onClick={() => onProjectChange(project.id, 'disabled', !currentData.disabled)}
-                                                className={`relative inline-flex items-center h-6 rounded-full w-11 cursor-pointer transition-colors ${!currentData.disabled ? 'bg-indigo-600' : 'bg-gray-300'}`}
+                                                className={`relative inline-flex items-center h-6 w-11 shrink-0 p-0 border-0 rounded-full cursor-pointer transition-colors focus:outline-none focus:ring-4 focus:ring-indigo-100 ${!currentData.disabled ? 'bg-indigo-600' : 'bg-gray-300'}`}
                                             >
-                                                <span className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${!currentData.disabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                <span className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform shadow-sm ${!currentData.disabled ? 'translate-x-6' : 'translate-x-1'}`} />
                                             </button>
                                         </div>
                                     </td>}
@@ -342,9 +111,9 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, editedProj
                                             <button
                                                 type="button"
                                                 onClick={() => onProjectChange(project.id, 'archived', !currentData.archived)}
-                                                className={`relative inline-flex items-center h-6 rounded-full w-11 cursor-pointer transition-colors ${currentData.archived ? 'bg-red-600' : 'bg-gray-300'}`}
+                                                className={`relative inline-flex items-center h-6 w-11 shrink-0 p-0 border-0 rounded-full cursor-pointer transition-colors focus:outline-none focus:ring-4 focus:ring-indigo-100 ${currentData.archived ? 'bg-indigo-600' : 'bg-gray-300'}`}
                                             >
-                                                <span className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform ${currentData.archived ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                <span className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform shadow-sm ${currentData.archived ? 'translate-x-6' : 'translate-x-1'}`} />
                                             </button>
                                         </div>
                                     </td>}
@@ -393,7 +162,7 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, editedProj
                                                     : 'Рекомендуется: Дополнительные токены ускоряют загрузку данных (подписчики, диалоги) и помогают избегать лимитов VK API.'}
                                             >
                                                 {currentData.additional_community_tokens?.length 
-                                                    ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{currentData.additional_community_tokens.length} шт.</span> 
+                                                    ? <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">{currentData.additional_community_tokens.length} шт.</span> 
                                                     : (
                                                         <div className="flex items-center justify-center gap-1 text-amber-500">
                                                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">

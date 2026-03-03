@@ -4,16 +4,9 @@ from typing import List
 
 from schemas import Tag, ProjectIdPayload, CreateTagPayload, UpdateTagPayload, GenericSuccess
 import services.tag_service as tag_service
-from database import SessionLocal
+from database import get_db
 
 router = APIRouter()
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 @router.post("/getForProject", response_model=List[Tag])
 def get_tags_for_project(payload: ProjectIdPayload, db: Session = Depends(get_db)):

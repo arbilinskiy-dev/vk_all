@@ -1,0 +1,101 @@
+# VK Test Auth (Тестовая VK авторизация)
+
+## Обзор
+
+Модуль `vk_test_auth` предоставляет эндпоинты для тестирования VK OAuth авторизации. Используется для отладки интеграции с VK ID и получения токенов доступа.
+
+---
+
+## Архитектура
+
+```
+routers/vk_test_auth.py  # API эндпоинты для тестирования VK OAuth
+```
+
+---
+
+## Конфигурация приложений
+
+Поддерживаются два VK-приложения:
+
+| Параметр | App 1 (Original) | App 2 (New) |
+|----------|------------------|-------------|
+| `VK_APP_ID` | 54423358 | 54422343 |
+| `VK_CLIENT_SECRET` | `wQ0A...` | `TJW7...` |
+
+---
+
+## API эндпоинты
+
+### `POST /api/vk-test/exchange-token`
+Обмен authorization code на access token.
+
+**Request (`VKExchangeRequest`):**
+```json
+{
+  "code": "authorization-code-от-vk",
+  "device_id": "device-uuid",
+  "code_verifier": "pkce-verifier",
+  "redirect_uri": "https://your-domain.com",
+  "app_id": 54423358
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "vk1.a.xxx...",
+  "user_id": 123456789,
+  "scope": "wall,photos,groups",
+  "expires_in": 86400
+}
+```
+
+**Процесс:**
+1. Получает `code` от VK OAuth
+2. Обменивает на `access_token` через `id.vk.com/oauth2/auth`
+3. Поддерживает PKCE (`code_verifier`)
+4. Возвращает токен и метаданные
+
+---
+
+### Логирование
+
+Все запросы к VK логируются с маскированием секретов:
+```
+🔄 VK Test (App 54423358): Exchanging code abc12...
+    Verifier: xyz98...
+    RedirectURI: https://example.com
+📡 Sending POST request to VK: https://id.vk.com/oauth2/auth with body: {..., client_secret: '***'}
+✅ Token received! User ID: 123456789
+🔍 Token Scopes: wall,photos,groups
+```
+
+---
+
+## Типичные ошибки
+
+| Ошибка | Причина | Решение |
+|--------|---------|---------|
+| `invalid_grant` | Code уже использован или истёк | Получить новый code |
+| `invalid_client` | Неверный client_secret | Проверить конфигурацию app_id |
+| `redirect_uri_mismatch` | redirect_uri не совпадает с настройками VK App | Синхронизировать URI |
+
+---
+
+## Связь с фронтендом
+
+Фронтенд-модуль `features/test-auth/VkTestPage.tsx` использует этот роутер для тестирования OAuth-флоу.
+
+---
+
+## ⚠️ Важно
+
+**Это тестовый эндпоинт!** Не используйте в production. Для боевой авторизации используйте `/api/auth/` роутер.
+
+---
+
+## См. также
+
+- [Authentication](../auth/01_Authentication.md.txt) — боевая авторизация
+- [VK Callback](../posts/04_VK_Callback.md.txt) — обработка VK событий

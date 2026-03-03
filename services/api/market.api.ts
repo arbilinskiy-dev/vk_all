@@ -103,6 +103,16 @@ export const createMarketAlbum = async (projectId: string, title: string): Promi
     return callApi('market/createAlbum', { projectId, title });
 };
 
+// Редактирование названия подборки товаров
+export const editMarketAlbum = async (projectId: string, albumId: number, title: string): Promise<MarketAlbum> => {
+    return callApi('market/editAlbum', { projectId, albumId, title });
+};
+
+// Удаление подборки товаров
+export const deleteMarketAlbum = async (projectId: string, albumId: number): Promise<{ success: boolean }> => {
+    return callApi('market/deleteAlbum', { projectId, albumId });
+};
+
 export const createMarketItem = async (projectId: string, itemData: any, file?: File, photoUrl?: string, useDefaultImage?: boolean): Promise<MarketItem> => {
     const formData = new FormData();
     formData.append('projectId', projectId);
