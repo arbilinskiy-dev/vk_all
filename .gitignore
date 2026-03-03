@@ -38,3 +38,31 @@ backend_python/__pycache__/
 ngrok.exe
 
 *.bat
+
+# ═══════════════════════════════════════════════════════
+# Архив — файлы, не относящиеся к основной системе
+# (тесты, диагностика, черновики, артефакты, мини-проекты)
+# ═══════════════════════════════════════════════════════
+_archive/
+
+# Секретные данные (не должны попадать в репозиторий)
+communities_tokens.json
+vk_api_methods_tokens.json
+vk_group_token_methods.json
+.env.production
+.env.local
+.env.*.local
+backend_python/vm_deploy/.env*
+backend_python/migrate_keys.py
+backend_python/test_decrypt*.py
+backend_python/test_verify_old_key.py
+backend_python/debug_tokens.py
+
+# Бэкапы БД
+*.db.backup_*
+
+# Артефакты и случайные файлы
+driver.cab
+logs_sync.json
+logs_sync.txt
+metadata.json

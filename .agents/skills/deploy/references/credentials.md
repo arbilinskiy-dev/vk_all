@@ -1,18 +1,21 @@
 # Credentials — Реквизиты проекта
 
+> **ВНИМАНИЕ:** Реальные секреты хранятся ТОЛЬКО в .env файлах локально.
+> Этот файл содержит только структуру без реальных значений.
+
 ## Yandex Cloud
 
 ```
-FOLDER_ID:           b1g1qicqnhgh8tthu3up
-REGISTRY_ID:         crpq5n1men523nvih5j4
-SERVICE_ACCOUNT_ID:  ajevmi0k5m5lb1t7h2fj
+FOLDER_ID:           <из .env>
+REGISTRY_ID:         <из .env>
+SERVICE_ACCOUNT_ID:  <из .env>
 ```
 
 ## Контейнеры
 
 ```
-CONTAINER_NAME_PROD:    (определить при первом деплое на прод)
-CONTAINER_NAME_PREPROD: vk-planner-backend-preprod (устарел, теперь VM)
+CONTAINER_NAME_PROD:    <определить при первом деплое на прод>
+CONTAINER_NAME_PREPROD: vk-planner-backend-preprod
 IMAGE_NAME:             vk-planner-backend
 ```
 
@@ -20,13 +23,10 @@ IMAGE_NAME:             vk-planner-backend
 
 ```
 VM_NAME:             vkplaner-backend
-VM_ID:               fhmf2vlcu2013ed30ui2
-VM_IP:               93.77.184.105
+VM_IP:               <из .env>
 VM_USER:             yc-user
 SSH_KEY:             %USERPROFILE%\.ssh\id_ed25519
 DOMAIN:              api.dosmmit.ru
-OS:                  Ubuntu 24.04 LTS
-vCPU / RAM / Disk:   2 / 4 ГБ / 20 ГБ SSD
 ```
 
 ## S3 бакеты (фронтенд)
@@ -39,41 +39,40 @@ BUCKET_PREPROD:      vk-content-planner-frontend-preprod
 ## URLs
 
 ```
-BACKEND_PROD_URL:    https://bba15i6uulg2j0uk90sm.containers.yandexcloud.net
+BACKEND_PROD_URL:    <из .env>
 BACKEND_PREPROD_URL: https://api.dosmmit.ru
-FRONTEND_PROD_URL:   https://vk-content-planner-frontend.website.yandexcloud.net
-FRONTEND_PREPROD_URL:https://vk-content-planner-frontend-preprod.website.yandexcloud.net
+FRONTEND_PROD_URL:   <из S3>
+FRONTEND_PREPROD_URL:<из S3>
 ```
 
 ## База данных (PostgreSQL Yandex Cloud)
 
 ```
-DATABASE_URL: postgresql://user1:asd232asd232@c-c9qgkb8mi31to563td6n.rw.mdb.yandexcloud.net:6432/db1
+DATABASE_URL: <из .env>
 ```
 
 ## Авторизация
 
 ```
-ADMIN_USERNAME: admin
-ADMIN_PASSWORD: admin
+ADMIN_USERNAME: <из .env>
+ADMIN_PASSWORD: <из .env>
 ```
 
 ## Переменные окружения контейнера
 
 Эти переменные **ОБЯЗАТЕЛЬНЫ** при каждом создании ревизии контейнера.
-Без них контейнер не подключится к БД и VK API.
 
 ```
-VK_USER_TOKEN:       vk1.a.MepRLhKDuFBN9Nzggi2iPturCVl1QdXuwAVlHGKeL0WVjLWart-cXKQwPavxJU8QMYOO34qSoMBQi0IglOP0hXIGe7BTxMvFb-PaxQgkXDtyI3barOwHH5DHAkqS5mZq7WDilWo8gAN1HZTCGvUFQo-krGv0m3NlYpd10I3lz94hdlpUSnEAlNciaSmX6AUTSwMAqBn-uKslwMScvGsZ0Q
-GEMINI_API_KEY:      AIzaSyBzC7zVoOaGXEt1Rql62sx4l2l2huanxGk
-ENCRYPTION_KEY:      uvdbj3CxWuPL3DfPbItfioOeG6ToOLfdwdlPQv6AqlE=
-ENCRYPTION_KEY_NEW:  (пустая строка)
-REDIS_HOST:          rc1b-fu5ptri1qmla03fa.mdb.yandexcloud.net
+VK_USER_TOKEN:       <из .env>
+GEMINI_API_KEY:      <из .env>
+ENCRYPTION_KEY:      <из .env>
+ENCRYPTION_KEY_NEW:  <из .env>
+REDIS_HOST:          <из .env>
 REDIS_PORT:          6379
-GEMINI_PROXY_URL:    http://eHWaRc:cX0J3J@186.179.62.43:9483
-ADMIN_USERNAME:      admin
-ADMIN_PASSWORD:      admin
-DATABASE_URL:        postgresql://user1:asd232asd232@c-c9qgkb8mi31to563td6n.rw.mdb.yandexcloud.net:6432/db1
+GEMINI_PROXY_URL:    <из .env>
+ADMIN_USERNAME:      <из .env>
+ADMIN_PASSWORD:      <из .env>
+DATABASE_URL:        <из .env>
 ```
 
 ## Пути на локальной машине
