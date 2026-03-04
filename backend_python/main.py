@@ -84,7 +84,7 @@ import services.scheduler_service as scheduler_service
 # Старый импорт трекера убираем из использования в startup, но оставляем импорт если он нужен где-то еще
 import services.post_tracker_service as post_tracker_service
 
-from routers import projects, posts, ai, media, notes, management, tags, system_posts, auth, auth_logs, users, ai_presets, global_variables, market, market_ai, lists, system_accounts, project_context, ai_tokens, automations, automations_ai, automations_general, stories_automation, vk_test_auth, vk_callback, contest_v2, bulk_edit, sandbox, batch, messages, messages_stats, message_subscriptions, message_templates, active_sessions, promo_lists
+from routers import projects, posts, ai, media, notes, management, tags, system_posts, auth, auth_logs, users, ai_presets, global_variables, market, market_ai, lists, system_accounts, project_context, ai_tokens, automations, automations_ai, automations_general, stories_automation, vk_test_auth, vk_callback, contest_v2, bulk_edit, sandbox, batch, messages, messages_stats, message_subscriptions, message_templates, active_sessions, promo_lists, dialog_labels, user_activity, roles
 
 # Версия бэкенда - обновляй при каждом деплое!
 BACKEND_VERSION = "v1.0.51_bulk_ai_fix"
@@ -486,6 +486,8 @@ async def vk_callback_legacy(request: Request, db: Session = Depends(get_db)):
 app.include_router(auth.router, prefix="/api", tags=["Authentication"])
 app.include_router(auth_logs.router, prefix="/api", tags=["Auth Logs"])
 app.include_router(active_sessions.router, prefix="/api", tags=["Active Sessions"])
+app.include_router(user_activity.router, prefix="/api", tags=["User Activity"])
+app.include_router(roles.router, prefix="/api", tags=["User Roles"])
 app.include_router(users.router, prefix="/api", tags=["User Management"])
 app.include_router(projects.router, prefix="/api", tags=["Projects"])
 app.include_router(posts.router, prefix="/api", tags=["Posts & Schedule"])
@@ -515,5 +517,6 @@ app.include_router(messages_stats.router, prefix="/api", tags=["Messages Stats"]
 app.include_router(message_subscriptions.router, prefix="/api", tags=["Message Subscriptions"])
 app.include_router(message_templates.router, prefix="/api/message-templates", tags=["Message Templates"])
 app.include_router(promo_lists.router, prefix="/api/promo-lists", tags=["Promo Lists"])
+app.include_router(dialog_labels.router, prefix="/api", tags=["Dialog Labels"])
 app.include_router(vk_test_auth.router)
 app.include_router(sandbox.router)

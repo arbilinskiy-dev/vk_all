@@ -46,6 +46,8 @@ export const MessageStatsChart: React.FC<MessageStatsChartProps> = ({ data, visi
                 nowMSK={state.nowMSK}
                 granularity={state.granularity}
                 setGranularity={actions.setGranularity}
+                isDownsampled={state.isDownsampled}
+                autoGranularity={state.autoGranularity}
             />
 
             {/* SVG-график */}

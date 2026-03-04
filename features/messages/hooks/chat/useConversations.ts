@@ -5,7 +5,7 @@
  * Маппер-функции  → conversationsMappers.ts
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, SetStateAction } from 'react';
 import { SystemListSubscriber } from '../../../../shared/types';
 import { getSubscribers } from '../../../../services/api/lists.api';
 import { getUnreadCounts, getLastMessages, getConversationsInit, toggleDialogImportant, VkMessageItem } from '../../../../services/api/messages.api';
@@ -15,6 +15,7 @@ import { msgLog, msgWarn, msgGroup, msgGroupEnd, fmtProject, fmtUser, fmtCount }
 // --- Вынесенные модули ---
 import { UseConversationsParams, UseConversationsResult, PAGE_SIZE } from './conversationsTypes';
 import { mapSubscriberToConversation } from './conversationsMappers';
+import { getCachedConversations, setCachedConversations } from './conversationsCache';
 
 // Реэкспорт типов для обратной совместимости
 export type { UseConversationsParams, UseConversationsResult };
@@ -28,6 +29,9 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [totalCount, setTotalCount] = useState(0);
+    /** Общее кол-во непрочитанных диалогов (стабильное, не зависит от фильтра).
+     *  Обновляется при: fetchData, updateUnreadCount (SSE), resetAllUnreadCounts. */
+    const [totalUnreadCount, setTotalUnreadCount] = useState(0);
     const [page, setPage] = useState(1);
     /** Словарь непрочитанных: vk_user_id → count */
     const [unreadCountsMap, setUnreadCountsMap] = useState<Record<number, number>>({});
@@ -35,6 +39,8 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
     const [lastMessagesMap, setLastMessagesMap] = useState<Record<number, VkMessageItem>>({});
     /** Словарь пометок «Важное»: vk_user_id → true */
     const [importantMap, setImportantMap] = useState<Record<number, boolean>>({});
+    /** Словарь меток диалогов: vk_user_id → [label_id, ...] */
+    const [dialogLabelsMap, setDialogLabelsMap] = useState<Record<number, string[]>>({});
 
     /** Ref: для какого проекта загружены текущие подписчики (защита от stale-данных при переключении) */
     const loadedProjectRef = useRef<string | null>(null);
@@ -42,6 +48,116 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
     const prevProjectRef = useRef<string | null>(null);
     /** Ref: поколение запроса (защита от race condition при быстром переключении) */
     const fetchGenerationRef = useRef(0);
+    /** Ref: синхронная копия unreadCountsMap — для updateUnreadCount без side-effects в updater
+     *  (вынесен из setUnreadCountsMap чтобы избежать двойного подсчёта в React StrictMode) */
+    const unreadCountsMapRef = useRef<Record<number, number>>({});
+    /** Ref-копии для сохранения в кеш при переключении проекта (useEffect не должен зависеть от state) */
+    const lastMessagesMapRef = useRef<Record<number, VkMessageItem>>({});
+    const importantMapRef = useRef<Record<number, boolean>>({});
+    const dialogLabelsMapRef = useRef<Record<number, string[]>>({});
+    /** Ref-копии для сохранения в кеш (subscribers / totalCount / totalUnreadCount / filterUnread) */
+    const subscribersRef = useRef<SystemListSubscriber[]>([]);
+    const totalCountRef = useRef(0);
+    const totalUnreadCountRef = useRef(0);
+    const filterUnreadRef = useRef(filterUnread);
+
+    // Кэш порядка сортировки — стабилизирует позиции при обновлении только данных (mark-read, превью)
+    // Полная пересортировка только при изменении subscribers (загрузка, loadMore, SSE новый пользователь)
+    // или при явном запросе через requestResort()
+    const cachedSortOrderRef = useRef<Map<string, number>>(new Map());
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // Render-time cache swap — устраняет промежуточный пустой рендер при смене проекта.
+    // React позволяет вызывать setState во время рендера если это условно и не зациклится.
+    // https://react.dev/reference/react/useState#storing-information-from-previous-renders
+    // ═══════════════════════════════════════════════════════════════════════════
+    const [renderProjectId, setRenderProjectId] = useState<string | null>(null);
+    if (projectId !== renderProjectId) {
+        setRenderProjectId(projectId);
+        filterUnreadRef.current = filterUnread;
+
+        // Сохраняем уходящий проект в кеш
+        const departingProject = loadedProjectRef.current;
+        if (departingProject && subscribersRef.current.length > 0) {
+            setCachedConversations(departingProject, {
+                subscribers: subscribersRef.current,
+                totalCount: totalCountRef.current,
+                totalUnreadCount: totalUnreadCountRef.current,
+                unreadCountsMap: unreadCountsMapRef.current,
+                lastMessagesMap: lastMessagesMapRef.current,
+                importantMap: importantMapRef.current,
+                dialogLabelsMap: dialogLabelsMapRef.current,
+                filterUnread: filterUnreadRef.current,
+            });
+        }
+
+        if (projectId) {
+            const cached = getCachedConversations(projectId);
+            if (cached) {
+                // КЕШ HIT → мгновенное восстановление (React перезапустит рендер с новым state)
+                msgLog('CONVERSATIONS', `📂 [render-time] Смена проекта → ${fmtProject(projectId)}. Восстановление из кеша.`);
+                setSubscribers(cached.subscribers);
+                subscribersRef.current = cached.subscribers;
+                setTotalCount(cached.totalCount);
+                totalCountRef.current = cached.totalCount;
+                setTotalUnreadCount(cached.totalUnreadCount);
+                totalUnreadCountRef.current = cached.totalUnreadCount;
+                setUnreadCountsMap(cached.unreadCountsMap);
+                unreadCountsMapRef.current = cached.unreadCountsMap;
+                setLastMessagesMap(cached.lastMessagesMap);
+                lastMessagesMapRef.current = cached.lastMessagesMap;
+                setImportantMap(cached.importantMap);
+                importantMapRef.current = cached.importantMap;
+                setDialogLabelsMap(cached.dialogLabelsMap);
+                dialogLabelsMapRef.current = cached.dialogLabelsMap;
+                loadedProjectRef.current = projectId;
+                setPage(1);
+                cachedSortOrderRef.current = new Map();
+            } else {
+                // КЕШ MISS → очищаем state (скелетоны покажет effectiveIsLoading)
+                msgLog('CONVERSATIONS', `📂 [render-time] Смена проекта → ${fmtProject(projectId)}. Нет кеша — очистка.`);
+                setSubscribers([]);
+                subscribersRef.current = [];
+                setTotalCount(0);
+                totalCountRef.current = 0;
+                setTotalUnreadCount(0);
+                totalUnreadCountRef.current = 0;
+                setUnreadCountsMap({});
+                unreadCountsMapRef.current = {};
+                setLastMessagesMap({});
+                lastMessagesMapRef.current = {};
+                setImportantMap({});
+                importantMapRef.current = {};
+                setDialogLabelsMap({});
+                dialogLabelsMapRef.current = {};
+                loadedProjectRef.current = null;
+                setPage(1);
+                cachedSortOrderRef.current = new Map();
+            }
+        } else {
+            // Проект сброшен → полная очистка
+            msgLog('CONVERSATIONS', '📂 [render-time] Проект сброшен (null). Очистка.');
+            setSubscribers([]);
+            subscribersRef.current = [];
+            setTotalCount(0);
+            totalCountRef.current = 0;
+            setTotalUnreadCount(0);
+            totalUnreadCountRef.current = 0;
+            setUnreadCountsMap({});
+            unreadCountsMapRef.current = {};
+            setLastMessagesMap({});
+            lastMessagesMapRef.current = {};
+            setImportantMap({});
+            importantMapRef.current = {};
+            setDialogLabelsMap({});
+            dialogLabelsMapRef.current = {};
+            loadedProjectRef.current = null;
+            prevProjectRef.current = null;
+            setPage(1);
+            setError(null);
+            cachedSortOrderRef.current = new Map();
+        }
+    }
 
     /**
      * Хелпер: стандартный вызов getSubscribers с текущими параметрами
@@ -62,7 +178,12 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
 
         const generation = ++fetchGenerationRef.current;
         msgLog('CONVERSATIONS', `fetchData: ${fmtProject(projectId)}, page=${pageNum}, append=${append}, filter=${filterUnread}, gen=${generation}`);
-        setIsLoading(true);
+        // isLoading=true только если нет кешированных данных (нечего показать пользователю).
+        // Если кеш есть — данные уже на экране, обновление идёт фоново.
+        const hasCachedData = loadedProjectRef.current === projectId && subscribers.length > 0;
+        if (!hasCachedData) {
+            setIsLoading(true);
+        }
         setError(null);
 
         try {
@@ -83,9 +204,12 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
                     const existingIds = new Set(prev.map(s => s.vk_user_id));
                     const newItems = response.items.filter(s => !existingIds.has(s.vk_user_id));
                     msgLog('CONVERSATIONS', `fetchData append: дедупликация — ${response.items.length - newItems.length} дублей убрано, добавлено ${newItems.length}`);
-                    return [...prev, ...newItems];
+                    const merged = [...prev, ...newItems];
+                    subscribersRef.current = merged;
+                    return merged;
                 });
                 setTotalCount(response.total_count);
+                totalCountRef.current = response.total_count;
 
                 // Загружаем last messages только для НОВЫХ пользователей
                 if (response.items.length > 0) {
@@ -97,7 +221,11 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
                             for (const [key, value] of Object.entries(res.messages)) {
                                 newMap[Number(key)] = value;
                             }
-                            setLastMessagesMap(prev => ({ ...prev, ...newMap }));
+                            setLastMessagesMap(prev => {
+                                const merged = { ...prev, ...newMap };
+                                lastMessagesMapRef.current = merged;
+                                return merged;
+                            });
                         }
                     }).catch(() => {});
                 }
@@ -145,16 +273,55 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
                     }
                 }
 
+                // Парсим dialog labels (метки/ярлыки)
+                const newDialogLabelsMap: Record<number, string[]> = {};
+                if (result.dialog_labels) {
+                    for (const [key, value] of Object.entries(result.dialog_labels)) {
+                        if (Array.isArray(value) && value.length > 0) {
+                            newDialogLabelsMap[Number(key)] = value;
+                        }
+                    }
+                }
+
                 // Батч: все обновления состояния за один render
                 setSubscribers(mergedItems);
+                subscribersRef.current = mergedItems;
                 setTotalCount(mainTotal);
+                totalCountRef.current = mainTotal;
                 setUnreadCountsMap(unreadMap);
+                unreadCountsMapRef.current = unreadMap;
                 setLastMessagesMap(newLastMsgsMap);
+                lastMessagesMapRef.current = newLastMsgsMap;
                 setImportantMap(newImportantMap);
+                importantMapRef.current = newImportantMap;
+                setDialogLabelsMap(newDialogLabelsMap);
+                dialogLabelsMapRef.current = newDialogLabelsMap;
                 loadedProjectRef.current = projectId;
                 const pageWithUnread = mergedItems.filter(s => (unreadMap[s.vk_user_id] || 0) > 0).length;
                 const totalWithUnread = Object.keys(unreadMap).filter(k => unreadMap[Number(k)] > 0).length;
+                // Стабильный счётчик непрочитанных: для фильтра unread total_count = кол-во непрочитанных,
+                // для all — считаем из unread_counts (бэкенд отдаёт непрочитанных первыми)
+                if (filterUnread === 'unread') {
+                    const val = Math.max(mainTotal, totalWithUnread);
+                    setTotalUnreadCount(val);
+                    totalUnreadCountRef.current = val;
+                } else {
+                    setTotalUnreadCount(totalWithUnread);
+                    totalUnreadCountRef.current = totalWithUnread;
+                }
                 msgLog('CONVERSATIONS', `fetchData: батч завершён, ${mergedItems.length} подписчиков, ${pageWithUnread} с непрочитанными на странице (${totalWithUnread} всего в проекте)`);
+
+                // Сохраняем в кеш для мгновенного переключения обратно
+                setCachedConversations(projectId, {
+                    subscribers: mergedItems,
+                    totalCount: mainTotal,
+                    totalUnreadCount: filterUnread === 'unread' ? Math.max(mainTotal, totalWithUnread) : totalWithUnread,
+                    unreadCountsMap: unreadMap,
+                    lastMessagesMap: newLastMsgsMap,
+                    importantMap: newImportantMap,
+                    dialogLabelsMap: newDialogLabelsMap,
+                    filterUnread,
+                });
             }
         } catch (err) {
             if (fetchGenerationRef.current !== generation) return;
@@ -169,41 +336,28 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
         }
     }, [projectId, filterUnread, callGetSubscribers]);
 
-    // Загрузка при смене проекта ИЛИ фильтра
-    // Различаем: смена проекта → полный сброс, смена фильтра → перезагрузка без сброса
+    // Загрузка при смене проекта ИЛИ фильтра.
+    // Состояние (кеш restore/clear) уже обработано в render-time блоке выше.
+    // useEffect только запускает fetchData для загрузки/обновления данных с сервера.
     useEffect(() => {
+        filterUnreadRef.current = filterUnread;
+
         if (projectId) {
             const isProjectChange = projectId !== prevProjectRef.current;
             prevProjectRef.current = projectId;
 
             if (isProjectChange) {
-                // Смена проекта — полный сброс данных
-                msgLog('CONVERSATIONS', `📂 Смена проекта → ${fmtProject(projectId)}. Сброс состояния и загрузка.`);
-                setPage(1);
-                setSubscribers([]);
-                setUnreadCountsMap({});
-                setLastMessagesMap({});
-                setImportantMap({});
-                cachedSortOrderRef.current = new Map();
-                // loadedProjectRef обновится в fetchData после получения данных
+                // Фоновое обновление (кеш восстановлен в render-time) или первая загрузка
+                msgLog('CONVERSATIONS', `📂 [useEffect] Смена проекта → ${fmtProject(projectId)}. Запуск fetchData.`);
+                fetchData(1, false);
             } else {
                 // Смена фильтра (или реконнект) — перезагрузка БЕЗ сброса данных
-                // Старые данные видны пока грузятся новые — нет мигания пустого списка
                 msgLog('CONVERSATIONS', `🔄 Смена фильтра → ${filterUnread}. Перезагрузка без сброса.`);
                 setPage(1);
+                fetchData(1, false);
             }
-            fetchData(1, false);
         } else {
-            msgLog('CONVERSATIONS', '📂 Проект сброшен (null). Очистка.');
-            setSubscribers([]);
-            setTotalCount(0);
-            setPage(1);
-            setError(null);
-            setUnreadCountsMap({});
-            setLastMessagesMap({});
-            setImportantMap({});
-            cachedSortOrderRef.current = new Map();
-            loadedProjectRef.current = null;
+            // Проект null — state уже очищен в render-time
             prevProjectRef.current = null;
         }
     }, [projectId, fetchData]);
@@ -211,16 +365,36 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
     /**
      * Обновить количество непрочитанных для конкретного пользователя.
      * Вызывается из SSE-обработчиков (new_message / message_read).
+     *
+     * ВАЖНО: setTotalUnreadCount вынесен НАРУЖУ из updater setUnreadCountsMap,
+     * чтобы избежать двойного подсчёта в React StrictMode (StrictMode вызывает updater дважды,
+     * и side-effect внутри него тоже дублируется → бейдж показывал 12 вместо 6).
+     * Синхронная копия unreadCountsMapRef позволяет корректно определить переход 0↔>0.
      */
     const updateUnreadCount = useCallback((vkUserId: number, count: number) => {
-        setUnreadCountsMap(prev => {
-            if (prev[vkUserId] === count) {
-                msgLog('CONVERSATIONS', `updateUnreadCount: ${fmtUser(vkUserId)} = ${fmtCount(count)} (без изменений)`);
-                return prev;
-            }
-            msgLog('CONVERSATIONS', `updateUnreadCount: ${fmtUser(vkUserId)} ${fmtCount(prev[vkUserId] || 0)} → ${fmtCount(count)}`);
-            return { ...prev, [vkUserId]: count };
-        });
+        // Читаем текущее значение из синхронного ref (не из state, который может быть stale в батче)
+        const oldCount = unreadCountsMapRef.current[vkUserId] || 0;
+        if (oldCount === count) {
+            msgLog('CONVERSATIONS', `updateUnreadCount: ${fmtUser(vkUserId)} = ${fmtCount(count)} (без изменений)`);
+            return;
+        }
+
+        msgLog('CONVERSATIONS', `updateUnreadCount: ${fmtUser(vkUserId)} ${fmtCount(oldCount)} → ${fmtCount(count)}`);
+
+        // Синхронно обновляем ref (для следующего вызова в том же батче SSE-событий)
+        unreadCountsMapRef.current = { ...unreadCountsMapRef.current, [vkUserId]: count };
+
+        // Обновляем React state
+        setUnreadCountsMap(prev => ({ ...prev, [vkUserId]: count }));
+
+        // Обновляем стабильный totalUnreadCount: отслеживаем переходы 0↔>0
+        if (oldCount === 0 && count > 0) {
+            totalUnreadCountRef.current = totalUnreadCountRef.current + 1;
+            setTotalUnreadCount(t => t + 1);
+        } else if (oldCount > 0 && count === 0) {
+            totalUnreadCountRef.current = Math.max(0, totalUnreadCountRef.current - 1);
+            setTotalUnreadCount(t => Math.max(0, t - 1));
+        }
     }, []);
 
     /**
@@ -229,6 +403,7 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
      */
     const updateLastMessage = useCallback((vkUserId: number, message: VkMessageItem) => {
         msgLog('CONVERSATIONS', `updateLastMessage: ${fmtUser(vkUserId)}, msg_id=${message.id}, text="${(message.text || '').slice(0, 40)}"`);
+        lastMessagesMapRef.current = { ...lastMessagesMapRef.current, [vkUserId]: message };
         setLastMessagesMap(prev => ({ ...prev, [vkUserId]: message }));
     }, []);
 
@@ -239,6 +414,9 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
     const resetAllUnreadCounts = useCallback(() => {
         msgLog('CONVERSATIONS', '🧹 resetAllUnreadCounts: сброс ВСЕХ счётчиков непрочитанных на 0');
         setUnreadCountsMap({});
+        unreadCountsMapRef.current = {};
+        setTotalUnreadCount(0);
+        totalUnreadCountRef.current = 0;
     }, []);
 
     /**
@@ -248,12 +426,14 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
     const toggleImportant = useCallback(async (vkUserId: number, isImportant: boolean) => {
         if (!projectId) return;
         // Оптимистичное обновление
+        importantMapRef.current = { ...importantMapRef.current, [vkUserId]: isImportant };
         setImportantMap(prev => ({ ...prev, [vkUserId]: isImportant }));
         try {
             await toggleDialogImportant(projectId, vkUserId, isImportant);
             msgLog('CONVERSATIONS', `⭐ toggleImportant: ${fmtUser(vkUserId)} → ${isImportant}`);
         } catch (err) {
             // Откат при ошибке
+            importantMapRef.current = { ...importantMapRef.current, [vkUserId]: !isImportant };
             setImportantMap(prev => ({ ...prev, [vkUserId]: !isImportant }));
             msgWarn('CONVERSATIONS', `Ошибка toggleImportant ${fmtUser(vkUserId)}`, err);
         }
@@ -297,9 +477,12 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
             };
 
             // Вставляем в начало списка (новый диалог появляется сверху)
-            return [newSub, ...prev];
+            const updated = [newSub, ...prev];
+            subscribersRef.current = updated;
+            return updated;
         });
         // Увеличиваем totalCount
+        totalCountRef.current = totalCountRef.current + 1;
         setTotalCount(prev => prev + 1);
     }, []);
 
@@ -315,13 +498,10 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
     const refresh = useCallback(() => {
         setPage(1);
         setSubscribers([]);
+        subscribersRef.current = [];
         fetchData(1, false);
     }, [fetchData]);
 
-    // Кэш порядка сортировки — стабилизирует позиции при обновлении только данных (mark-read, превью)
-    // Полная пересортировка только при изменении subscribers (загрузка, loadMore, SSE новый пользователь)
-    // или при явном запросе через requestResort()
-    const cachedSortOrderRef = useRef<Map<string, number>>(new Map());
     const prevSubscribersRef = useRef<SystemListSubscriber[]>([]);
     const [sortVersion, setSortVersion] = useState(0);
     const prevSortVersionRef = useRef(0);
@@ -341,7 +521,7 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
         if (!projectId) return [];
         // Защита от stale-данных: не показываем подписчиков старого проекта в новом
         if (projectId !== loadedProjectRef.current) return [];
-        const mapped = subscribers.map(sub => mapSubscriberToConversation(sub, projectId, channel, unreadCountsMap, lastMessagesMap, importantMap));
+        const mapped = subscribers.map(sub => mapSubscriberToConversation(sub, projectId, channel, unreadCountsMap, lastMessagesMap, importantMap, dialogLabelsMap));
         const unreadTotal = mapped.filter(c => c.unreadCount > 0).length;
         msgLog('CONVERSATIONS', `🔄 useMemo conversations: ${mapped.length} диалогов, из них с непрочитанными: ${unreadTotal}, ${fmtProject(projectId)}`);
 
@@ -394,7 +574,7 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
         }
 
         return mapped;
-    }, [subscribers, projectId, channel, unreadCountsMap, lastMessagesMap, importantMap, sortVersion]);
+    }, [subscribers, projectId, channel, unreadCountsMap, lastMessagesMap, importantMap, dialogLabelsMap, sortVersion]);
 
     // Есть ли ещё данные для подгрузки
     const hasMore = subscribers.length < totalCount;
@@ -404,11 +584,31 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
     // не дожидаясь useEffect → fetchData → setIsLoading(true)
     const effectiveIsLoading = isLoading || (!!projectId && projectId !== loadedProjectRef.current);
 
+    // Защита от stale totalUnreadCount при смене проекта:
+    // аналогично conversations (который возвращает [] когда projectId !== loadedProjectRef),
+    // возвращаем 0, пока проект не загружен — иначе бейдж мерцает со старым значением
+    const effectiveTotalUnreadCount = (!!projectId && projectId !== loadedProjectRef.current) ? 0 : totalUnreadCount;
+
+    // Обёртка над setDialogLabelsMap — синхронизирует ref для корректного кеширования
+    const setDialogLabelsMapWrapped = useCallback((action: SetStateAction<Record<number, string[]>>) => {
+        if (typeof action === 'function') {
+            setDialogLabelsMap(prev => {
+                const next = action(prev);
+                dialogLabelsMapRef.current = next;
+                return next;
+            });
+        } else {
+            dialogLabelsMapRef.current = action;
+            setDialogLabelsMap(action);
+        }
+    }, []);
+
     return {
         conversations,
         isLoading: effectiveIsLoading,
         error,
         totalCount,
+        totalUnreadCount: effectiveTotalUnreadCount,
         page,
         loadMore,
         hasMore,
@@ -419,5 +619,7 @@ export const useConversations = ({ projectId, channel, filterUnread = 'all' }: U
         resetAllUnreadCounts,
         requestResort,
         toggleImportant,
+        dialogLabelsMap,
+        setDialogLabelsMap: setDialogLabelsMapWrapped,
     };
 };

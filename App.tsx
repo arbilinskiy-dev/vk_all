@@ -10,6 +10,7 @@ import { GlobalAiErrorModal } from './shared/components/modals/GlobalAiErrorModa
 import { ConfirmationModal } from './shared/components/modals/ConfirmationModal';
 import { ConversationsSidebar } from './features/messages/components/conversations/ConversationsSidebar';
 import { useConversations } from './features/messages/hooks/chat/useConversations';
+import { useDialogLabels } from './features/messages/hooks/useDialogLabels';
 import { useTypingState } from './features/messages/hooks/chat/useTypingState';
 import { useUnreadDialogCounts } from './features/messages/hooks/useUnreadDialogCounts';
 import { useGlobalUnreadSSE } from './features/messages/hooks/useGlobalUnreadSSE';
@@ -77,6 +78,7 @@ const App: React.FC = () => {
         isLoading: isConversationsLoading,
         error: conversationsError,
         totalCount: conversationsTotalCount,
+        totalUnreadCount: conversationsTotalUnreadCount,
         hasMore: conversationsHasMore,
         loadMore: loadMoreConversations,
         refresh: refreshConversations,
@@ -86,11 +88,68 @@ const App: React.FC = () => {
         resetAllUnreadCounts,
         requestResort,
         toggleImportant,
+        dialogLabelsMap: conversationDialogLabelsMap,
+        setDialogLabelsMap: setConversationDialogLabelsMap,
     } = useConversations({
         projectId: activeModule === 'am' ? activeProjectId : null,
         channel: messagesChannel,
         filterUnread: conversationFilterUnread,
     });
+
+    // Метки (ярлыки) диалогов — CRUD + назначение
+    const dialogLabelsProjectId = activeModule === 'am' ? activeProjectId : null;
+    const {
+        labels: dialogLabels,
+        isLoading: isDialogLabelsLoading,
+        createLabel: createDialogLabel,
+        editLabel: editDialogLabel,
+        removeLabel: removeDialogLabel,
+        assignLabel: assignDialogLabel,
+        unassignLabel: unassignDialogLabel,
+        dialogLabelsMap,
+        setDialogLabelsFromInit,
+    } = useDialogLabels({ projectId: dialogLabelsProjectId });
+
+    /** Фильтр по метке: null = не фильтруем, label_id = фильтруем */
+    const [activeFilterLabelId, setActiveFilterLabelId] = useState<string | null>(null);
+
+    // Сброс фильтра по метке при смене проекта
+    const prevFilterProjectRef = React.useRef(activeProjectId);
+    if (prevFilterProjectRef.current !== activeProjectId) {
+        prevFilterProjectRef.current = activeProjectId;
+        if (activeFilterLabelId) setActiveFilterLabelId(null);
+    }
+
+    // Обёртки assign/unassign: обновляют И useDialogLabels (counts), И useConversations (labelIds)
+    const handleAssignLabel = useCallback(async (vkUserId: number, labelId: string) => {
+        setConversationDialogLabelsMap(prev => {
+            const current = prev[vkUserId] || [];
+            if (current.includes(labelId)) return prev;
+            return { ...prev, [vkUserId]: [...current, labelId] };
+        });
+        await assignDialogLabel(vkUserId, labelId);
+    }, [assignDialogLabel, setConversationDialogLabelsMap]);
+
+    const handleUnassignLabel = useCallback(async (vkUserId: number, labelId: string) => {
+        setConversationDialogLabelsMap(prev => {
+            const current = prev[vkUserId] || [];
+            return { ...prev, [vkUserId]: current.filter(id => id !== labelId) };
+        });
+        await unassignDialogLabel(vkUserId, labelId);
+    }, [unassignDialogLabel, setConversationDialogLabelsMap]);
+
+    // Обёртка удаления метки: убираем из всех диалогов + удаляем
+    const handleRemoveLabel = useCallback(async (labelId: string) => {
+        setConversationDialogLabelsMap(prev => {
+            const next = { ...prev };
+            for (const uid of Object.keys(next)) {
+                next[Number(uid)] = next[Number(uid)].filter(id => id !== labelId);
+                if (next[Number(uid)].length === 0) delete next[Number(uid)];
+            }
+            return next;
+        });
+        await removeDialogLabel(labelId);
+    }, [removeDialogLabel, setConversationDialogLabelsMap]);
 
     // Typing + Dialog Focus: состояние печати пользователей и фокуса менеджеров
     const {
@@ -288,6 +347,7 @@ const App: React.FC = () => {
                     isLoading={isConversationsLoading}
                     error={conversationsError}
                     totalCount={conversationsTotalCount}
+                    totalUnreadCount={conversationsTotalUnreadCount}
                     hasMore={conversationsHasMore}
                     onLoadMore={loadMoreConversations}
                     onRefresh={refreshConversations}
@@ -311,6 +371,13 @@ const App: React.FC = () => {
                             msgWarn('MARK_READ', `Ошибка mark-all-read ${fmtProject(activeProjectId)}`, err);
                         }
                     }}
+                    dialogLabels={dialogLabels}
+                    isDialogLabelsLoading={isDialogLabelsLoading}
+                    activeFilterLabelId={activeFilterLabelId}
+                    onFilterByLabel={setActiveFilterLabelId}
+                    onCreateLabel={createDialogLabel}
+                    onEditLabel={editDialogLabel}
+                    onRemoveLabel={handleRemoveLabel}
                 />
             )}
 
@@ -355,6 +422,9 @@ const App: React.FC = () => {
                     onProjectUnreadUpdate={updateUnreadDialogCount}
                     requestResort={requestResort}
                     toggleImportant={toggleImportant}
+                    dialogLabels={dialogLabels}
+                    onAssignLabel={handleAssignLabel}
+                    onUnassignLabel={handleUnassignLabel}
                 />
             </main>
             

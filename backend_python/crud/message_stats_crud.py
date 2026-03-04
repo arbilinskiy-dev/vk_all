@@ -22,10 +22,10 @@ from crud.message_stats.read import (
 )
 
 # === СИНХРОНИЗАЦИЯ ===
-from crud.message_stats.sync import sync_from_callback_logs
+from crud.message_stats.sync import sync_from_callback_logs, sync_from_callback_logs_with_progress
 
 # === СВЕРКА (Reconciliation) ===
-from crud.message_stats.reconcile import reconcile_from_vk
+from crud.message_stats.reconcile import reconcile_from_vk, reconcile_from_vk_streaming
 
 __all__ = [
     # Запись
@@ -40,6 +40,8 @@ __all__ = [
     "get_admin_dialogs",
     # Синхронизация
     "sync_from_callback_logs",
+    "sync_from_callback_logs_with_progress",
     # Сверка
     "reconcile_from_vk",
+    "reconcile_from_vk_streaming",
 ]

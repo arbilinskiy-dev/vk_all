@@ -4,7 +4,6 @@ import uuid
 
 import models
 import schemas
-from services.session_auth_service import hash_password
 
 def get_user_by_username(db: Session, username: str) -> models.User:
     """Находит пользователя по его логину."""
@@ -17,7 +16,7 @@ def get_all_users(db: Session) -> List[models.User]:
 def update_users(db: Session, users_data: List[schemas.User]):
     """
     Массово обновляет, создает и удаляет пользователей на основе предоставленного списка.
-    Новые пароли хешируются через bcrypt.
+    Пароли хранятся в открытом виде для отображения админу.
     """
     all_current_user_ids = {str(u.id) for u in db.query(models.User.id).all()}
     all_incoming_user_ids = {u.id for u in users_data if not u.id.startswith('new-')}
@@ -36,7 +35,7 @@ def update_users(db: Session, users_data: List[schemas.User]):
                     id=str(uuid.uuid4()),
                     full_name=user_data.full_name,
                     username=user_data.username,
-                    password=hash_password(user_data.password)  # Хешируем пароль
+                    password=user_data.password  # Сохраняем пароль как есть
                 )
                 db.add(new_db_user)
         else:
@@ -47,6 +46,6 @@ def update_users(db: Session, users_data: List[schemas.User]):
                 db_user.username = user_data.username
                 # Обновляем пароль, только если он был явно предоставлен
                 if user_data.password:
-                    db_user.password = hash_password(user_data.password)  # Хешируем пароль
+                    db_user.password = user_data.password  # Сохраняем пароль как есть
     
     db.commit()

@@ -34,7 +34,8 @@ export const useStoriesDashboard = (projectId?: string) => {
         customStartDate?: string,
         customEndDate?: string
     ) => {
-        if (!projectId) return;
+        const pid = currentProjectIdRef.current;
+        if (!pid) return;
 
         // Запоминаем последние параметры для refreshDashboard
         lastParamsRef.current = { periodType, filterType, customStartDate, customEndDate };
@@ -42,14 +43,14 @@ export const useStoriesDashboard = (projectId?: string) => {
         setIsLoadingDashboard(true);
         try {
             const stats = await callApi<ServerDashboardStats>('getStoriesDashboardStats', {
-                projectId,
+                projectId: pid,
                 periodType,
                 filterType,
                 customStartDate: customStartDate || undefined,
                 customEndDate: customEndDate || undefined,
             });
 
-            if (currentProjectIdRef.current !== projectId) return;
+            if (currentProjectIdRef.current !== pid) return;
 
             setDashboardStats(stats);
         } catch (error) {
@@ -57,7 +58,7 @@ export const useStoriesDashboard = (projectId?: string) => {
         } finally {
             setIsLoadingDashboard(false);
         }
-    }, [projectId]);
+    }, []); // Стабильная ссылка — projectId читается из ref
 
     /** Перезапрос дашборда с текущими фильтрами (после обновления статистики) */
     const refreshDashboard = useCallback(() => {

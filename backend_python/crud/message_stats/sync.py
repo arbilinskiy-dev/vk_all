@@ -1,87 +1,126 @@
 """
 СИНХРОНИЗАЦИЯ: заполнение статистики из существующих callback-логов.
-Разовая операция — вызывается вручную через POST /messages/stats/sync-from-logs.
+Вызывается через POST /messages/stats/sync-from-logs как фоновая задача.
+
+Оптимизирована для больших объёмов (20-30к+ логов):
+- Стримовое чтение из БД (yield_per) — не загружает все логи в память
+- Bulk pre-fetch существующих записей — один запрос вместо N SELECT'ов
+- Батч-коммиты каждые BATCH_SIZE записей
+- Прогресс через task_monitor
 """
 
 import json
 import time
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Callable
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from models_library.message_stats import MessageStatsHourly, MessageStatsUser
 
 logger = logging.getLogger("crud.message_stats")
 
+# Размер чанка для стримового чтения из БД
+READ_CHUNK_SIZE = 1000
+
+# Батч-коммит: после каждых N агрегатов — коммит
+UPSERT_BATCH_SIZE = 500
+
 
 def sync_from_callback_logs(db: Session) -> Dict[str, Any]:
     """
+    Обёртка для обратной совместимости — синхронный вариант без прогресса.
+    """
+    result = {"synced": 0, "skipped": 0, "errors": 0, "details": ""}
+    for event in sync_from_callback_logs_with_progress(db):
+        if event.get("type") in ("complete", "error"):
+            result = event.get("result", result)
+    return result
+
+
+def sync_from_callback_logs_with_progress(
+    db: Session,
+    on_progress: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Any:
+    """
     Синхронизирует таблицы статистики из существующих VkCallbackLog.
+    Генератор, который yield-ит события прогресса.
     
-    Читает логи с type='message_new' и 'message_reply', парсит payload,
-    извлекает project_id (через group_id → Project), vk_user_id, timestamp,
-    и записывает в обе таблицы статистики.
-    
-    Подход: предварительная агрегация → UPSERT с MAX.
-    НЕ удаляет данные — только актуализирует. Живые данные от record_message
-    сохраняются: берём max(существующее, из_логов) для счётчиков,
-    union для unique_users, min для first_message_at, max для last_message_at.
+    Оптимизации:
+    1. yield_per(READ_CHUNK_SIZE) — стримовое чтение, не загружает все логи в ORM
+    2. Предварительная загрузка маппинга group_id → project_id (один запрос)
+    3. Пре-агрегация в Python-словарях (без обращения к БД)
+    4. Bulk pre-fetch существующих hourly/user записей (2 запроса вместо N)
+    5. Батч-коммиты каждые UPSERT_BATCH_SIZE записей
     
     Идемпотентна: повторный вызов не меняет данные (max от одинаковых = то же).
     
-    Возвращает: { synced: int, skipped: int, errors: int, details: str }
+    Типы событий:
+    - {"type": "start", "total_logs": N}
+    - {"type": "reading", "processed": N, "total": N}
+    - {"type": "upserting", "processed": N, "total": N, "phase": "hourly"|"user"}
+    - {"type": "complete", "result": {...}}
+    - {"type": "error", "result": {...}}
     """
     from models_library.logs import VkCallbackLog
     from models_library.projects import Project
     
-    # 1. Считываем все message_new/message_reply логи одним запросом
-    logs = db.query(VkCallbackLog).filter(
+    # 1. Считаем общее количество логов (быстрый COUNT, без загрузки данных)
+    total_logs = db.query(func.count(VkCallbackLog.id)).filter(
         VkCallbackLog.type.in_(["message_new", "message_reply"])
-    ).order_by(VkCallbackLog.timestamp.asc()).all()
+    ).scalar() or 0
     
-    if not logs:
-        return {"synced": 0, "skipped": 0, "errors": 0, "details": "Нет callback-логов для синхронизации"}
+    if total_logs == 0:
+        result = {"synced": 0, "skipped": 0, "errors": 0, "details": "Нет callback-логов для синхронизации"}
+        yield {"type": "complete", "result": result}
+        return
     
-    # 2. Собираем все уникальные group_id и маппим на project_id одним запросом (без N+1)
-    group_ids = list(set(log.group_id for log in logs if log.group_id))
-    group_id_strs = [str(gid) for gid in group_ids]
+    yield {"type": "start", "total_logs": total_logs}
     
-    projects_rows = db.query(Project).filter(
-        Project.vkProjectId.in_(group_id_strs)
-    ).all()
-    
-    # group_id (int) → project.id (str)
+    # 2. Загрузка маппинга group_id → project_id (одним запросом)
+    projects_rows = db.query(Project.id, Project.vkProjectId).all()
     group_to_project: Dict[int, str] = {}
-    for p in projects_rows:
+    for pid, vk_id in projects_rows:
         try:
-            gid = int(p.vkProjectId)
-            group_to_project[gid] = str(p.id)
+            gid = int(vk_id)
+            group_to_project[gid] = str(pid)
         except (ValueError, TypeError):
             pass
     
-    logger.info(f"SYNC FROM LOGS: найдено {len(logs)} логов, {len(group_to_project)} проектов по group_id")
+    logger.info(f"SYNC FROM LOGS: {total_logs} логов, {len(group_to_project)} проектов")
     
-    # 3. ПРЕ-АГРЕГАЦИЯ в Python-словарях (без обращения к БД)
-    #    hourly_agg[row_id] = { project_id, hour_slot, incoming, outgoing, users_set }
-    #    user_agg[row_id]   = { project_id, vk_user_id, incoming, outgoing, first_msg, last_msg }
+    # 3. ПРЕ-АГРЕГАЦИЯ: стримовое чтение логов через yield_per
     hourly_agg: Dict[str, Dict[str, Any]] = {}
     user_agg: Dict[str, Dict[str, Any]] = {}
     
     synced = 0
     skipped = 0
     errors = 0
+    processed = 0
     
-    for log in logs:
+    # yield_per читает из БД порциями по READ_CHUNK_SIZE, не создавая все ORM-объекты разом
+    logs_query = db.query(
+        VkCallbackLog.id,
+        VkCallbackLog.group_id,
+        VkCallbackLog.payload,
+        VkCallbackLog.timestamp,
+        VkCallbackLog.type,
+    ).filter(
+        VkCallbackLog.type.in_(["message_new", "message_reply"])
+    ).order_by(VkCallbackLog.timestamp.asc()).yield_per(READ_CHUNK_SIZE)
+    
+    for log_id, group_id, payload_str, timestamp, log_type in logs_query:
+        processed += 1
         try:
             # Определяем project_id
-            project_id = group_to_project.get(log.group_id)
+            project_id = group_to_project.get(group_id)
             if not project_id:
                 skipped += 1
                 continue
             
             # Парсим payload
-            payload = json.loads(log.payload) if log.payload else None
+            payload = json.loads(payload_str) if payload_str else None
             if not payload:
                 skipped += 1
                 continue
@@ -100,9 +139,9 @@ def sync_from_callback_logs(db: Session) -> Dict[str, Any]:
             peer_id = message.get("peer_id", 0)
             msg_date = message.get("date", 0)
             
-            if not msg_date and log.timestamp:
+            if not msg_date and timestamp:
                 # Фоллбэк на timestamp лога
-                msg_date = int(log.timestamp.timestamp())
+                msg_date = int(timestamp.timestamp())
             
             if not from_id and not peer_id:
                 skipped += 1
@@ -181,17 +220,63 @@ def sync_from_callback_logs(db: Session) -> Dict[str, Any]:
             
         except Exception as e:
             errors += 1
-            logger.warning(f"SYNC FROM LOGS: ошибка обработки лога id={log.id}: {e}")
+            logger.warning(f"SYNC FROM LOGS: ошибка обработки лога id={log_id}: {e}")
+        
+        # Прогресс чтения каждые READ_CHUNK_SIZE записей
+        if processed % READ_CHUNK_SIZE == 0:
+            yield {
+                "type": "reading",
+                "processed": processed,
+                "total": total_logs,
+            }
     
-    # 4. UPSERT с MAX — не теряем live-данные от record_message
+    # Финальное событие чтения
+    yield {"type": "reading", "processed": processed, "total": total_logs}
+    
+    logger.info(
+        f"SYNC FROM LOGS: агрегация завершена — "
+        f"{synced} обработано, {skipped} пропущено, {errors} ошибок. "
+        f"Hourly-слотов: {len(hourly_agg)}, юзеров: {len(user_agg)}"
+    )
+    
+    # 4. BULK PRE-FETCH существующих записей (2 запроса вместо N)
+    #    Загружаем все hourly и user записи, которые уже есть в БД
+    hourly_keys = list(hourly_agg.keys())
+    existing_hourly: Dict[str, MessageStatsHourly] = {}
+    # Батчированный pre-fetch (SQLite/PG имеют лимит на IN-clause, берём по 500)
+    for i in range(0, len(hourly_keys), 500):
+        batch_keys = hourly_keys[i:i+500]
+        rows = db.query(MessageStatsHourly).filter(
+            MessageStatsHourly.id.in_(batch_keys)
+        ).all()
+        for row in rows:
+            existing_hourly[row.id] = row
+    
+    user_keys = list(user_agg.keys())
+    existing_users: Dict[str, MessageStatsUser] = {}
+    for i in range(0, len(user_keys), 500):
+        batch_keys = user_keys[i:i+500]
+        rows = db.query(MessageStatsUser).filter(
+            MessageStatsUser.id.in_(batch_keys)
+        ).all()
+        for row in rows:
+            existing_users[row.id] = row
+    
+    logger.info(
+        f"SYNC FROM LOGS: pre-fetch — "
+        f"{len(existing_hourly)}/{len(hourly_keys)} hourly, "
+        f"{len(existing_users)}/{len(user_keys)} user записей уже есть"
+    )
+    
+    # 5. UPSERT hourly с батч-коммитами
     now = time.time()
+    upsert_count = 0
+    total_upserts = len(hourly_agg) + len(user_agg)
     
     for row_id, h in hourly_agg.items():
-        users_list = list(h["users_set"])
-        text_users_list = list(h["text_users_set"])
-        payload_users_list = list(h["payload_users_set"])
-        outgoing_users_list = list(h["outgoing_users_set"])
-        existing = db.query(MessageStatsHourly).filter(MessageStatsHourly.id == row_id).first()
+        upsert_count += 1
+        existing = existing_hourly.get(row_id)
+        
         if existing:
             # MAX: берём наибольшее из текущего и посчитанного из логов
             existing.incoming_count = max(existing.incoming_count or 0, h["incoming"])
@@ -233,6 +318,10 @@ def sync_from_callback_logs(db: Session) -> Dict[str, Any]:
             existing.unique_dialogs_count = max(existing.unique_dialogs_count or 0, len(h["users_set"]))
             existing.updated_at = now
         else:
+            users_list = list(h["users_set"])
+            text_users_list = list(h["text_users_set"])
+            payload_users_list = list(h["payload_users_set"])
+            outgoing_users_list = list(h["outgoing_users_set"])
             db.add(MessageStatsHourly(
                 id=row_id,
                 project_id=h["project_id"],
@@ -252,9 +341,26 @@ def sync_from_callback_logs(db: Session) -> Dict[str, Any]:
                 created_at=now,
                 updated_at=now,
             ))
+        
+        # Батч-коммит
+        if upsert_count % UPSERT_BATCH_SIZE == 0:
+            try:
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.error(f"SYNC FROM LOGS: ошибка батч-коммита hourly: {e}")
+            yield {
+                "type": "upserting",
+                "processed": upsert_count,
+                "total": total_upserts,
+                "phase": "hourly",
+            }
     
+    # 6. UPSERT user с батч-коммитами
     for row_id, u in user_agg.items():
-        existing = db.query(MessageStatsUser).filter(MessageStatsUser.id == row_id).first()
+        upsert_count += 1
+        existing = existing_users.get(row_id)
+        
         if existing:
             # MAX для счётчиков, MIN для first, MAX для last
             existing.incoming_count = max(existing.incoming_count or 0, u["incoming"])
@@ -271,20 +377,37 @@ def sync_from_callback_logs(db: Session) -> Dict[str, Any]:
                 first_message_at=u["first_msg"],
                 last_message_at=u["last_msg"],
             ))
+        
+        # Батч-коммит
+        if upsert_count % UPSERT_BATCH_SIZE == 0:
+            try:
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.error(f"SYNC FROM LOGS: ошибка батч-коммита user: {e}")
+            yield {
+                "type": "upserting",
+                "processed": upsert_count,
+                "total": total_upserts,
+                "phase": "user",
+            }
     
-    # 5. Один commit
+    # 7. Финальный коммит оставшихся изменений
     try:
         db.commit()
     except Exception as e:
         db.rollback()
         logger.error(f"SYNC FROM LOGS: ошибка commit: {e}")
-        return {"synced": 0, "skipped": skipped, "errors": errors + synced, "details": f"Ошибка сохранения: {e}"}
+        result = {"synced": 0, "skipped": skipped, "errors": errors + synced, "details": f"Ошибка сохранения: {e}"}
+        yield {"type": "error", "result": result}
+        return
     
     details = (
-        f"Обработано {len(logs)} логов: {synced} синхронизировано, "
+        f"Обработано {total_logs} логов: {synced} синхронизировано, "
         f"{skipped} пропущено, {errors} ошибок. "
         f"Часовых слотов: {len(hourly_agg)}, пользователей: {len(user_agg)}"
     )
     logger.info(f"SYNC FROM LOGS: {details}")
     
-    return {"synced": synced, "skipped": skipped, "errors": errors, "details": details}
+    result = {"synced": synced, "skipped": skipped, "errors": errors, "details": details}
+    yield {"type": "complete", "result": result}

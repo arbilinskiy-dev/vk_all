@@ -33,6 +33,13 @@ from services.sandbox.video_generation_test import (
     check_video_operation,
     get_video_models,
 )
+from services.sandbox.email_sender_test import (
+    test_smtp_connection,
+    send_single_email,
+    send_mass_email,
+    parse_csv_contractors,
+    get_smtp_info,
+)
 
 router = APIRouter(prefix="/api/sandbox", tags=["Sandbox"])
 
@@ -451,3 +458,172 @@ def _proxy_video(api_key: str, video_uri: str, proxy_url: Optional[str] = None):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка загрузки видео: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# ТЕСТ 7: Массовая отправка email с вложениями (Яндекс SMTP)
+# Отправка документов контрагентам — каждому свой файл
+# ═══════════════════════════════════════════════════════════════
+
+class Test7ConnectionRequest(BaseModel):
+    """Тело запроса для проверки подключения SMTP."""
+    login: str
+    app_password: str
+    use_ssl: bool = True
+
+
+class Test7SendRequest(BaseModel):
+    """Тело запроса для отправки одного письма."""
+    login: str
+    app_password: str
+    to_emails: list[str]
+    subject: str
+    body_html: str
+    use_ssl: bool = True
+
+
+class Test7MassRequest(BaseModel):
+    """Тело запроса для массовой отправки."""
+    login: str
+    app_password: str
+    csv_content: str
+    body_template: str
+    delay_seconds: int = 7
+    use_ssl: bool = True
+
+
+class Test7ParseCsvRequest(BaseModel):
+    """Тело запроса для парсинга CSV."""
+    csv_content: str
+
+
+@router.get("/test7/info")
+async def test7_smtp_info():
+    """Информация о SMTP настройках и лимитах Яндекса."""
+    return get_smtp_info()
+
+
+@router.post("/test7/test-connection")
+async def test7_test_connection(body: Test7ConnectionRequest):
+    """Проверяет подключение к SMTP-серверу Яндекса."""
+    if not body.login.strip():
+        raise HTTPException(status_code=400, detail="Логин не указан")
+    if not body.app_password.strip():
+        raise HTTPException(status_code=400, detail="Пароль приложения не указан")
+
+    try:
+        result = test_smtp_connection(
+            login=body.login.strip(),
+            app_password=body.app_password.strip(),
+            use_ssl=body.use_ssl,
+        )
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/test7/send")
+async def test7_send_email(
+    login: str = Form(...),
+    app_password: str = Form(...),
+    to_emails: str = Form(...),
+    subject: str = Form(...),
+    body_html: str = Form(...),
+    use_ssl: bool = Form(True),
+    attachment: Optional[UploadFile] = File(None),
+):
+    """
+    Отправляет одно письмо с опциональным вложением.
+    to_emails — через запятую: "a@mail.ru,b@mail.ru"
+    """
+    if not login.strip():
+        raise HTTPException(status_code=400, detail="Логин не указан")
+    if not app_password.strip():
+        raise HTTPException(status_code=400, detail="Пароль приложения не указан")
+    if not to_emails.strip():
+        raise HTTPException(status_code=400, detail="Адресаты не указаны")
+
+    emails = [e.strip() for e in to_emails.split(",") if e.strip()]
+    if not emails:
+        raise HTTPException(status_code=400, detail="Некорректные email-адреса")
+
+    # Читаем вложение если есть
+    attachment_data = None
+    attachment_filename = None
+    if attachment and attachment.filename:
+        attachment_data = await attachment.read()
+        attachment_filename = attachment.filename
+
+    try:
+        result = send_single_email(
+            login=login.strip(),
+            app_password=app_password.strip(),
+            to_emails=emails,
+            subject=subject.strip(),
+            body_html=body_html,
+            attachment_data=attachment_data,
+            attachment_filename=attachment_filename,
+            use_ssl=use_ssl,
+        )
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/test7/parse-csv")
+async def test7_parse_csv(body: Test7ParseCsvRequest):
+    """Парсит CSV и возвращает список контрагентов для предпросмотра."""
+    if not body.csv_content.strip():
+        raise HTTPException(status_code=400, detail="CSV пустой")
+
+    return parse_csv_contractors(body.csv_content.strip())
+
+
+@router.post("/test7/mass-send")
+async def test7_mass_send(
+    login: str = Form(...),
+    app_password: str = Form(...),
+    csv_content: str = Form(...),
+    body_template: str = Form(...),
+    delay_seconds: int = Form(7),
+    use_ssl: bool = Form(True),
+    attachment: Optional[UploadFile] = File(None),
+):
+    """
+    Массовая отправка писем контрагентам из CSV.
+    Каждому контрагенту — своё письмо на все его email-адреса.
+    Вложение — один файл для всех (или без вложения).
+    """
+    if not login.strip():
+        raise HTTPException(status_code=400, detail="Логин не указан")
+    if not app_password.strip():
+        raise HTTPException(status_code=400, detail="Пароль приложения не указан")
+
+    # Парсим CSV
+    parsed = parse_csv_contractors(csv_content.strip())
+    if not parsed["success"]:
+        raise HTTPException(status_code=400, detail=f"Ошибка CSV: {parsed['errors']}")
+    if not parsed["contractors"]:
+        raise HTTPException(status_code=400, detail="CSV не содержит контрагентов")
+
+    # Читаем вложение
+    attachment_data = None
+    attachment_filename = None
+    if attachment and attachment.filename:
+        attachment_data = await attachment.read()
+        attachment_filename = attachment.filename
+
+    try:
+        result = send_mass_email(
+            login=login.strip(),
+            app_password=app_password.strip(),
+            contractors=parsed["contractors"],
+            body_template=body_template,
+            attachment_data=attachment_data,
+            attachment_filename=attachment_filename,
+            delay_seconds=delay_seconds,
+            use_ssl=use_ssl,
+        )
+        return result
+    except Exception as e:
+        return {"success": False, "error": str(e)}

@@ -91,6 +91,9 @@ export function useMessageHistory({
     const sentMessageIdsRef = useRef<Set<string>>(new Set());
     /** Флаг: были ли когда-либо загружены сообщения (для определения первой загрузки при forceRefresh) */
     const hadMessagesRef = useRef(false);
+    /** Счётчик запросов — защита от race condition при смене фильтра/параметров.
+     *  Каждый loadInitial/loadAll получает свой requestId, устаревшие ответы игнорируются. */
+    const requestIdRef = useRef(0);
 
     // =========================================================================
     // СИНХРОННЫЙ СБРОС при смене параметров (React-паттерн: adjust state during render)
@@ -127,6 +130,8 @@ export function useMessageHistory({
         currentUserIdRef.current = userId;
         sentMessageIdsRef.current.clear();
         hadMessagesRef.current = false;
+        // Инвалидация текущих in-flight запросов — устаревшие ответы будут отброшены
+        requestIdRef.current++;
         // При смене диалога — сбрасываем ключ фильтра тоже
         setTrackedFilterKey(filterKey);
     }
@@ -147,6 +152,8 @@ export function useMessageHistory({
         // НЕ сбрасываем: isFullyLoaded, source, lastRawVkItem, messageStats
         // — фильтр просто переключает вид, base-данные сохраняются
         loadingRef.current = false;
+        // Инвалидация текущих in-flight запросов — устаревшие ответы будут отброшены
+        requestIdRef.current++;
     }
 
     /**
@@ -175,6 +182,8 @@ export function useMessageHistory({
         loadingRef.current = true;
         currentUserIdRef.current = userId;
         sentMessageIdsRef.current.clear();
+        // Запоминаем ID этого запроса для защиты от race condition
+        const myRequestId = requestIdRef.current;
 
         console.log(
             '%c[MSG-HISTORY] loadInitial: START',
@@ -205,8 +214,20 @@ export function useMessageHistory({
                 direction || undefined, searchText || undefined,
             );
             
+            // Защита от race condition: если за время запроса сменился пользователь или фильтр
             if (currentUserIdRef.current !== userId) {
                 msgWarn('HISTORY', `loadInitial: userId изменился в процессе загрузки (race condition). Ожидали ${userId}, текущий ${currentUserIdRef.current}`);
+                msgGroupEnd('HISTORY');
+                return;
+            }
+            // Защита от race condition: если за время запроса сменился фильтр/параметры
+            if (myRequestId !== requestIdRef.current) {
+                console.log(
+                    '%c[MSG-HISTORY] loadInitial: STALE RESPONSE (фильтр изменился во время запроса) — отбрасываем',
+                    'color:#f90;font-weight:bold',
+                    { myRequestId, currentRequestId: requestIdRef.current, direction, userId }
+                );
+                msgWarn('HISTORY', `loadInitial: устаревший ответ (requestId ${myRequestId} ≠ ${requestIdRef.current}), отбрасываем`);
                 msgGroupEnd('HISTORY');
                 return;
             }
@@ -324,14 +345,20 @@ export function useMessageHistory({
 
         setIsLoadingAll(true);
         setError(null);
+        // Запоминаем ID этого запроса для защиты от race condition
+        const myRequestId = requestIdRef.current;
 
         try {
             const result = await loadAllMessages(projectId, userId);
             
             if (currentUserIdRef.current !== userId) return;
+            // Защита от race condition: если за время загрузки сменился фильтр/параметры
+            if (myRequestId !== requestIdRef.current) {
+                console.log('%c[MSG-HISTORY] loadAll: STALE RESPONSE — отбрасываем', 'color:#f90;font-weight:bold');
+                return;
+            }
 
             // После загрузки всех — перечитываем первую страницу (теперь из кэша)
-            // Но нужно загрузить всё — делаем запрос с большим лимитом
             setIsFullyLoaded(true);
             setTotalCount(result.total_count);
 
@@ -343,6 +370,11 @@ export function useMessageHistory({
             );
             
             if (currentUserIdRef.current !== userId) return;
+            // Повторная проверка — за время второго запроса тоже мог смениться фильтр
+            if (myRequestId !== requestIdRef.current) {
+                console.log('%c[MSG-HISTORY] loadAll: STALE RESPONSE (2nd fetch) — отбрасываем', 'color:#f90;font-weight:bold');
+                return;
+            }
 
             const mapped = autoMarkReadByIncoming(
                 data.items

@@ -108,6 +108,17 @@ def get_history(
         direction=direction, search_text=search_text,
     )
     
+    # Диагностика: если фильтр активен, но результатов нет — логируем подробно
+    if has_filters and total_in_cache == 0:
+        meta_diag = messages_crud.get_cache_meta(db, project_id, user_id)
+        logger.warning(
+            f"MESSAGES FILTER BUG DIAG: фильтр вернул 0 результатов! "
+            f"direction={direction}, search_text={search_text}, offset={offset}, "
+            f"project={project_id}, user={user_id}, "
+            f"meta.cached_count={meta_diag.cached_count if meta_diag else 'NO META'}, "
+            f"meta.is_fully_loaded={meta_diag.is_fully_loaded if meta_diag else 'NO META'}"
+        )
+    
     meta = messages_crud.get_cache_meta(db, project_id, user_id)
     
     # count: при фильтрации — отфильтрованное количество (для корректной пагинации),

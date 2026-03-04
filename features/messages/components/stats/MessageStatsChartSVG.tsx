@@ -1,9 +1,13 @@
 /**
  * SVG-тело графика MessageStatsChart.
- * Сетка, area+линии, hover-зоны, min/max метки, оверлейные линии, ось X.
+ * Сетка, area+линии, единая hover-зона, min/max метки, оверлейные линии, ось X.
+ *
+ * ОПТИМИЗАЦИЯ: вместо отдельного <rect> на каждую точку —
+ * один прозрачный <rect> на всю область + бинарный поиск ближайшей точки.
+ * Это сокращает кол-во DOM-элементов с N×3..5 до ~N+10.
  */
 
-import React from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { METRIC_COLORS, BADGE_LINE_COLORS } from './messageStatsChartConstants';
 import { ChartOverlayMetric, MetricKey, NormalizedPoint } from './messageStatsChartTypes';
 
@@ -40,8 +44,58 @@ export const MessageStatsChartSVG: React.FC<MessageStatsChartSVGProps> = ({
     setTooltip,
     getCoords,
 }) => {
+    const svgRef = useRef<SVGSVGElement>(null);
+
+    // Массив X-координат точек (кэшируем, чтобы не считать при каждом mousemove)
+    const pointXCoords = useMemo(() => {
+        return normalized.map((_, i) => getCoords(0, i).x);
+    }, [normalized, getCoords, width]);
+
+    // Бинарный поиск ближайшей точки по X-координате
+    const findNearestIndex = useCallback((mouseX: number): number => {
+        if (pointXCoords.length === 0) return -1;
+        if (pointXCoords.length === 1) return 0;
+
+        let lo = 0;
+        let hi = pointXCoords.length - 1;
+        while (lo < hi) {
+            const mid = (lo + hi) >> 1;
+            if (pointXCoords[mid] < mouseX) lo = mid + 1;
+            else hi = mid;
+        }
+        // Проверяем ближайшую из lo и lo-1
+        if (lo > 0 && Math.abs(pointXCoords[lo - 1] - mouseX) < Math.abs(pointXCoords[lo] - mouseX)) {
+            return lo - 1;
+        }
+        return lo;
+    }, [pointXCoords]);
+
+    // Единый onMouseMove: вычисляем SVG-координату → ближайший индекс → тултип
+    const handleMouseMove = useCallback((e: React.MouseEvent<SVGRectElement>) => {
+        const svg = svgRef.current;
+        if (!svg || normalized.length === 0) return;
+
+        const rect = svg.getBoundingClientRect();
+        // Конвертируем экранную координату в SVG viewBox координату
+        const scaleX = width / rect.width;
+        const svgX = (e.clientX - rect.left) * scaleX;
+
+        const idx = findNearestIndex(svgX);
+        if (idx >= 0 && idx < normalized.length) {
+            setTooltip({ x: e.clientX, y: e.clientY, point: normalized[idx] });
+        }
+    }, [normalized, width, findNearestIndex, setTooltip]);
+
+    const handleMouseLeave = useCallback(() => setTooltip(null), [setTooltip]);
+
+    // Индекс hovered точки (для подсветки)
+    const hoveredIdx = useMemo(() => {
+        if (!tooltip) return -1;
+        return normalized.findIndex(p => p.slot === tooltip.point.slot);
+    }, [tooltip, normalized]);
+
     return (
-        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
+        <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible">
 
             {/* ── Линии сетки (пунктирные, как в Chart.tsx) ── */}
             {gridLines.map((gl, i) => (
@@ -96,75 +150,53 @@ export const MessageStatsChartSVG: React.FC<MessageStatsChartSVGProps> = ({
                 );
             })}
 
-            {/* ── Hover-зоны + точки (интерактивные, как в Chart.tsx) ── */}
-            {normalized.map((pt, index) => {
-                const { x: ptX } = getCoords(0, index);
+            {/* ── Единая hover-зона (один <rect> вместо тысяч) ── */}
+            <rect
+                x={0}
+                y={0}
+                width={width}
+                height={height}
+                fill="transparent"
+                cursor="pointer"
+                onMouseMove={handleMouseMove}
+                onMouseLeave={handleMouseLeave}
+            />
 
-                // Расчёт зоны наведения — непрерывная от края до края
-                let hitX: number, hitW: number;
-                if (normalized.length === 1) {
-                    hitX = 0;
-                    hitW = width;
-                } else {
-                    const prevX = index > 0 ? getCoords(0, index - 1).x : ptX;
-                    const nextX = index < normalized.length - 1 ? getCoords(0, index + 1).x : ptX;
-                    const leftBound = index === 0 ? 0 : ptX - (ptX - prevX) / 2;
-                    const rightBound = index === normalized.length - 1 ? width : ptX + (nextX - ptX) / 2;
-                    hitX = leftBound;
-                    hitW = rightBound - leftBound;
-                }
-
-                const isHovered = tooltip?.point.slot === pt.slot;
-
+            {/* ── Вертикальная линия + точки при наведении ── */}
+            {hoveredIdx >= 0 && (() => {
+                const pt = normalized[hoveredIdx];
+                const { x: ptX } = getCoords(0, hoveredIdx);
                 return (
-                    <g key={pt.slot + index}>
-                        {/* Невидимая зона наведения (вся высота SVG) */}
-                        <rect
-                            x={hitX}
-                            y={0}
-                            width={hitW}
-                            height={height}
-                            fill="transparent"
-                            cursor="pointer"
-                            onMouseMove={(e) => setTooltip({ x: e.clientX, y: e.clientY, point: pt })}
-                            onMouseLeave={() => setTooltip(null)}
+                    <g className="pointer-events-none">
+                        {/* Вертикальная линия-подсказка */}
+                        <line
+                            x1={ptX}
+                            y1={paddingY}
+                            x2={ptX}
+                            y2={height - paddingY}
+                            stroke="#d1d5db"
+                            strokeWidth="1"
+                            strokeDasharray="4"
                         />
-
-                        {/* Вертикальная линия-подсказка при наведении */}
-                        {isHovered && (
-                            <line
-                                x1={ptX}
-                                y1={paddingY}
-                                x2={ptX}
-                                y2={height - paddingY}
-                                stroke="#d1d5db"
-                                strokeWidth="1"
-                                strokeDasharray="4"
-                                className="pointer-events-none"
-                            />
-                        )}
-
                         {/* Точки для каждой метрики */}
                         {activeMetrics.map(key => {
                             const val = pt[key];
-                            if (val === 0 && !isHovered) return null;
-                            const { y: ptY } = getCoords(val, index);
+                            const { y: ptY } = getCoords(val, hoveredIdx);
                             return (
                                 <circle
                                     key={key}
                                     cx={ptX}
                                     cy={ptY}
-                                    r={isHovered ? 5 : 2.5}
+                                    r={5}
                                     fill="white"
                                     stroke={METRIC_COLORS[key].stroke}
-                                    strokeWidth={isHovered ? 2.5 : 1.5}
-                                    className="transition-all duration-150 pointer-events-none"
+                                    strokeWidth={2.5}
                                 />
                             );
                         })}
                     </g>
                 );
-            })}
+            })()}
 
             {/* ── Min/Max метки (постоянные, по паттерну Chart.tsx) ── */}
             {activeMetrics.map(key => {

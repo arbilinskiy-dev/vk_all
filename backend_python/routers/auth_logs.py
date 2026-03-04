@@ -52,6 +52,16 @@ def get_auth_logs(
     )
     
     import json
+    import models
+    
+    # Подтягиваем ФИО пользователей из таблицы users
+    user_ids = list(set(log.user_id for log in logs if log.user_id))
+    users_map = {}
+    if user_ids:
+        users = db.query(models.User.id, models.User.full_name).filter(
+            models.User.id.in_(user_ids)
+        ).all()
+        users_map = {u.id: u.full_name for u in users}
     
     return {
         "logs": [
@@ -60,6 +70,7 @@ def get_auth_logs(
                 "user_id": log.user_id,
                 "user_type": log.user_type,
                 "username": log.username,
+                "full_name": users_map.get(log.user_id) or None,
                 "event_type": log.event_type,
                 "ip_address": log.ip_address,
                 "user_agent": log.user_agent,
@@ -81,9 +92,29 @@ def get_log_users(
 ):
     """
     Возвращает список уникальных пользователей из логов (для фильтра на фронте).
+    Обогащает ФИО из таблицы users.
     Только для администраторов.
     """
-    return auth_log_crud.get_unique_users_from_logs(db)
+    import models
+    log_users = auth_log_crud.get_unique_users_from_logs(db)
+    
+    # Подтягиваем ФИО
+    user_ids = [u["user_id"] for u in log_users if u.get("user_id")]
+    users_map = {}
+    if user_ids:
+        users = db.query(models.User.id, models.User.full_name).filter(
+            models.User.id.in_(user_ids)
+        ).all()
+        users_map = {u.id: u.full_name for u in users}
+    
+    for u in log_users:
+        full_name = users_map.get(u["user_id"])
+        if full_name:
+            u["display_name"] = f"{u['username']} ({full_name})"
+        else:
+            u["display_name"] = u["username"]
+    
+    return log_users
 
 
 @router.post("/clear")

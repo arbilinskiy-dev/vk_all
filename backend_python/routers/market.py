@@ -8,6 +8,8 @@ import schemas
 import services.market_service as market_service
 from database import get_db
 from config import settings
+from services.auth_middleware import get_current_user, CurrentUser
+from services.action_tracker import track
 
 router = APIRouter()
 
@@ -37,19 +39,29 @@ def refresh_categories(db: Session = Depends(get_db)):
     return {"success": True}
 
 @router.post("/createAlbum", response_model=schemas.MarketAlbum)
-def create_album(payload: schemas.CreateAlbumPayload, db: Session = Depends(get_db)):
+def create_album(payload: schemas.CreateAlbumPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Создает новую подборку товаров."""
-    return market_service.create_market_album(db, payload.projectId, payload.title, settings.vk_user_token)
+    result = market_service.create_market_album(db, payload.projectId, payload.title, settings.vk_user_token)
+    track(db, current_user, "market_create_album", "market",
+          entity_type="album", project_id=payload.projectId)
+    return result
 
 @router.post("/editAlbum", response_model=schemas.MarketAlbum)
-def edit_album(payload: schemas.EditMarketAlbumPayload, db: Session = Depends(get_db)):
+def edit_album(payload: schemas.EditMarketAlbumPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Редактирует название подборки товаров."""
-    return market_service.edit_market_album(db, payload.projectId, payload.albumId, payload.title, settings.vk_user_token)
+    result = market_service.edit_market_album(db, payload.projectId, payload.albumId, payload.title, settings.vk_user_token)
+    track(db, current_user, "market_edit_album", "market",
+          entity_type="album", entity_id=str(payload.albumId),
+          project_id=payload.projectId)
+    return result
 
 @router.post("/deleteAlbum", response_model=schemas.GenericSuccess)
-def delete_album(payload: schemas.DeleteMarketAlbumPayload, db: Session = Depends(get_db)):
+def delete_album(payload: schemas.DeleteMarketAlbumPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Удаляет подборку товаров."""
     market_service.delete_market_album(db, payload.projectId, payload.albumId, settings.vk_user_token)
+    track(db, current_user, "market_delete_album", "market",
+          entity_type="album", entity_id=str(payload.albumId),
+          project_id=payload.projectId)
     return {"success": True}
 
 @router.post("/createItem", response_model=schemas.MarketItem)
@@ -59,7 +71,8 @@ def create_item(
     file: Optional[UploadFile] = File(None),
     photoUrl: Optional[str] = Form(None),
     useDefaultImage: bool = Form(False),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """Создает один товар, опционально с файлом изображения или ссылкой."""
     print(f"\nROUTER [createItem]: Входящие данные:")
@@ -74,18 +87,27 @@ def create_item(
     except Exception as e:
         print(f"  > PARSE ERROR: {e}")
         raise HTTPException(status_code=422, detail=f"Invalid JSON format for itemData: {e}")
-    return market_service.create_market_item(db, projectId, item_pydantic, settings.vk_user_token, file, photoUrl, useDefaultImage)
+    result = market_service.create_market_item(db, projectId, item_pydantic, settings.vk_user_token, file, photoUrl, useDefaultImage)
+    track(db, current_user, "market_create_item", "market",
+          entity_type="market_item", project_id=projectId)
+    return result
 
 @router.post("/createItems", response_model=schemas.GenericSuccess)
-def create_items(payload: schemas.CreateMarketItemsPayload, db: Session = Depends(get_db)):
+def create_items(payload: schemas.CreateMarketItemsPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Массово создает несколько товаров (без изображений)."""
     market_service.create_market_items(db, payload.projectId, payload.items, settings.vk_user_token)
+    track(db, current_user, "market_create_items", "market",
+          entity_type="market_item", project_id=payload.projectId,
+          metadata={"count": len(payload.items)})
     return {"success": True}
 
 @router.post("/deleteItems", response_model=schemas.GenericSuccess)
-def delete_items(payload: schemas.DeleteMarketItemsPayload, db: Session = Depends(get_db)):
+def delete_items(payload: schemas.DeleteMarketItemsPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Массово удаляет один или несколько товаров."""
     market_service.delete_market_items(db, payload.projectId, payload.itemIds, settings.vk_user_token)
+    track(db, current_user, "market_delete_items", "market",
+          entity_type="market_item", project_id=payload.projectId,
+          metadata={"count": len(payload.itemIds)})
     return {"success": True}
 
 
@@ -95,7 +117,8 @@ def update_item(
     itemData: str = Form(...),
     file: Optional[UploadFile] = File(None),
     photoUrl: Optional[str] = Form(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """
     Обновляет один товар.
@@ -106,7 +129,7 @@ def update_item(
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Invalid JSON format for itemData: {e}")
         
-    return market_service.update_market_item(
+    result = market_service.update_market_item(
         db, 
         projectId, 
         item_pydantic, 
@@ -114,12 +137,18 @@ def update_item(
         file, 
         photoUrl
     )
+    track(db, current_user, "market_update_item", "market",
+          entity_type="market_item", project_id=projectId)
+    return result
 
 
 @router.post("/updateItems", response_model=schemas.GenericSuccess)
-def update_items(payload: schemas.UpdateMarketItemsPayload, db: Session = Depends(get_db)):
+def update_items(payload: schemas.UpdateMarketItemsPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Массово обновляет несколько товаров."""
     market_service.update_market_items(db, payload.projectId, payload.items, settings.vk_user_token)
+    track(db, current_user, "market_update_items", "market",
+          entity_type="market_item", project_id=payload.projectId,
+          metadata={"count": len(payload.items)})
     return {"success": True}
 
 @router.post("/uploadPhoto", response_model=schemas.MarketItem)
@@ -127,7 +156,12 @@ def upload_photo(
     file: UploadFile = File(...), 
     projectId: str = Form(...), 
     itemId: int = Form(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user)
 ):
     """Загружает новое главное фото для товара."""
-    return market_service.upload_market_item_photo(db, projectId, itemId, file, settings.vk_user_token)
+    result = market_service.upload_market_item_photo(db, projectId, itemId, file, settings.vk_user_token)
+    track(db, current_user, "market_upload_photo", "market",
+          entity_type="market_item", entity_id=str(itemId),
+          project_id=projectId)
+    return result

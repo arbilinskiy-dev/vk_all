@@ -1,7 +1,9 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { Project } from '../../../../shared/types';
 import { Conversation } from '../../types';
+import { DialogLabel } from '../../../../services/api/dialog_labels.api';
 import { ConversationItem } from './ConversationItem';
+import { DialogLabelsBar } from './DialogLabelsBar';
 import { MailingOnboarding } from './MailingOnboarding';
 import { ConversationItemSkeleton } from './ConversationItemSkeleton';
 import { useMailingCollection } from '../../hooks/mailing/useMailingCollection';
@@ -27,6 +29,8 @@ interface ConversationsSidebarProps {
     error?: string | null;
     /** Общее количество пользователей в рассылке */
     totalCount?: number;
+    /** Стабильное кол-во непрочитанных диалогов (не зависит от фильтра) */
+    totalUnreadCount?: number;
     /** Есть ли ещё данные для подгрузки */
     hasMore?: boolean;
     /** Колбэк подгрузки следующей страницы */
@@ -47,6 +51,21 @@ interface ConversationsSidebarProps {
     onFilterUnreadChange?: (value: 'all' | 'unread' | 'important') => void;
     /** Колбэк «Прочитать все» — пометить все диалоги прочитанными */
     onMarkAllRead?: () => Promise<void>;
+    // --- Метки (ярлыки) диалогов ---
+    /** Все метки проекта */
+    dialogLabels?: DialogLabel[];
+    /** Загружаются ли метки */
+    isDialogLabelsLoading?: boolean;
+    /** Активный фильтр по метке: null = не фильтруем */
+    activeFilterLabelId?: string | null;
+    /** Колбэк: фильтр по метке */
+    onFilterByLabel?: (labelId: string | null) => void;
+    /** Колбэк: создать метку */
+    onCreateLabel?: (name: string, color?: string) => Promise<DialogLabel | null>;
+    /** Колбэк: редактировать метку */
+    onEditLabel?: (labelId: string, data: { name?: string; color?: string }) => Promise<void>;
+    /** Колбэк: удалить метку */
+    onRemoveLabel?: (labelId: string) => Promise<void>;
 }
 
 /**
@@ -62,6 +81,7 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
     isLoading = false,
     error = null,
     totalCount = 0,
+    totalUnreadCount = 0,
     hasMore = false,
     onLoadMore,
     onRefresh,
@@ -72,6 +92,13 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
     filterUnread = 'all',
     onFilterUnreadChange,
     onMarkAllRead,
+    dialogLabels = [],
+    isDialogLabelsLoading = false,
+    activeFilterLabelId = null,
+    onFilterByLabel,
+    onCreateLabel,
+    onEditLabel,
+    onRemoveLabel,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showMarkAllReadConfirm, setShowMarkAllReadConfirm] = useState(false);
@@ -92,10 +119,9 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
     const isBlocked = activeProject && onOpenIntegrations && BLOCKING_STATES.has(mailingCollection.readiness);
 
     // Подсчёт общего числа непрочитанных диалогов
-    const unreadDialogsCount = useMemo(
-        () => conversations.filter(c => c.unreadCount > 0).length,
-        [conversations]
-    );
+    // Используем стабильный totalUnreadCount из хука — не зависит от текущего фильтра,
+    // не мерцает при переключении фильтров (в отличие от totalCount, семантика которого разная для all/unread)
+    const unreadDialogsCount = totalUnreadCount;
 
     // Лог рендера сайдбара
     msgLog('SIDEBAR', `📝 ConversationsSidebar render: диалогов=${conversations.length}, непрочитанных=${unreadDialogsCount}, фильтр=${filterUnread}, активный=${activeConversationId || 'null'}, isLoading=${isLoading}`);
@@ -112,13 +138,20 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
         }
     }, [onMarkAllRead]);
 
-    // Фильтрация диалогов: поиск по имени + фильтр непрочитанных
+    // Фильтрация диалогов: поиск по имени + фильтр непрочитанных + фильтр по метке
     const filteredConversations = useMemo(() => {
         let result = conversations;
 
         // Фильтр по непрочитанным
         if (filterUnread === 'unread') {
             result = result.filter(c => c.unreadCount > 0);
+        }
+
+        // Фильтр по метке
+        if (activeFilterLabelId) {
+            result = result.filter(c =>
+                c.labelIds && c.labelIds.includes(activeFilterLabelId)
+            );
         }
 
         // Поиск по имени
@@ -130,7 +163,7 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
         }
 
         return result;
-    }, [conversations, searchQuery, filterUnread]);
+    }, [conversations, searchQuery, filterUnread, activeFilterLabelId]);
 
     // После рендера помечаем все текущие диалоги как «уже показанные»
     // (useEffect выполняется после paint → ID добавляются после первого отображения,
@@ -225,10 +258,10 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
                             <button
                                 onClick={onRefresh}
                                 disabled={isLoading}
-                                className="w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
+                                className="p-2 flex items-center justify-center rounded-full text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-50"
                                 title="Обновить список"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                 </svg>
                             </button>
@@ -241,7 +274,7 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
                                     mailingCollection.startCollection();
                                 }}
                                 disabled={mailingCollection.readiness === 'collecting'}
-                                className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${
+                                className={`p-2 flex items-center justify-center rounded-full transition-colors ${
                                     mailingCollection.readiness === 'collecting'
                                         ? 'text-indigo-500 bg-indigo-50 cursor-wait'
                                         : 'text-gray-400 hover:text-indigo-600 hover:bg-indigo-50'
@@ -253,9 +286,9 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
                                 }
                             >
                                 {mailingCollection.readiness === 'collecting' ? (
-                                    <div className="loader h-3.5 w-3.5 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+                                    <div className="loader h-4 w-4 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
                                 ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                     </svg>
                                 )}
@@ -323,28 +356,28 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
                     {/* Все */}
                     <button
                         onClick={() => onFilterUnreadChange('all')}
-                        className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${
+                        className={`p-2 flex items-center justify-center rounded-full transition-colors ${
                             filterUnread === 'all'
                                 ? 'text-indigo-600 bg-indigo-50'
                                 : 'text-gray-400 hover:text-indigo-600 hover:bg-gray-50'
                         }`}
                         title="Все диалоги"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                         </svg>
                     </button>
                     {/* Непрочитанные */}
                     <button
                         onClick={() => onFilterUnreadChange('unread')}
-                        className={`relative w-6 h-6 flex items-center justify-center rounded transition-colors ${
+                        className={`relative p-2 flex items-center justify-center rounded-full transition-colors ${
                             filterUnread === 'unread'
                                 ? 'text-indigo-600 bg-indigo-50'
                                 : 'text-gray-400 hover:text-indigo-600 hover:bg-gray-50'
                         }`}
                         title="Непрочитанные"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                         </svg>
                         {/* Бейдж с количеством непрочитанных */}
@@ -357,14 +390,14 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
                     {/* Важные */}
                     <button
                         onClick={() => onFilterUnreadChange('important')}
-                        className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${
+                        className={`p-2 flex items-center justify-center rounded-full transition-colors ${
                             filterUnread === 'important'
                                 ? 'text-amber-500 bg-amber-50'
                                 : 'text-gray-400 hover:text-amber-500 hover:bg-amber-50'
                         }`}
                         title="Важные"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill={filterUnread === 'important' ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill={filterUnread === 'important' ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                         </svg>
                     </button>
@@ -372,15 +405,28 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
                     {onMarkAllRead && (
                         <button
                             onClick={() => setShowMarkAllReadConfirm(true)}
-                            className="ml-auto w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
+                            className="ml-auto p-2 flex items-center justify-center rounded-full text-gray-400 hover:text-green-600 hover:bg-green-50 transition-colors"
                             title="Пометить все диалоги как прочитанные"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                             </svg>
                         </button>
                     )}
                 </div>
+            )}
+
+            {/* Метки (ярлыки) диалогов */}
+            {onFilterByLabel && onCreateLabel && onEditLabel && onRemoveLabel && (
+                <DialogLabelsBar
+                    labels={dialogLabels}
+                    isLoading={isDialogLabelsLoading}
+                    activeFilterLabelId={activeFilterLabelId}
+                    onFilterByLabel={onFilterByLabel}
+                    onCreateLabel={onCreateLabel}
+                    onEditLabel={onEditLabel}
+                    onRemoveLabel={onRemoveLabel}
+                />
             )}
 
             {/* Список диалогов */}
@@ -414,6 +460,7 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
                                         isTyping={typingUsers?.has(Number(conv.user.id)) ?? false}
                                         focusedManagers={dialogFocuses?.get(Number(conv.user.id)) || []}
                                         skipAnimation={shownConvIdsRef.current.has(conv.id)}
+                                        dialogLabels={dialogLabels}
                                     />
                                 );
                             }

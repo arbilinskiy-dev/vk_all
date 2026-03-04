@@ -213,7 +213,12 @@ export async function fetchMessageStatsUsers(
     return res.json();
 }
 
-/** Ответ синхронизации из callback-логов */
+/** Ответ запуска синхронизации из callback-логов (фоновая задача) */
+export interface SyncFromLogsStartResponse {
+    taskId: string;
+}
+
+/** Ответ синхронизации из callback-логов (обратная совместимость) */
 export interface SyncFromLogsResponse {
     success: boolean;
     synced: number;
@@ -222,8 +227,24 @@ export interface SyncFromLogsResponse {
     details: string;
 }
 
-/** Синхронизировать статистику из существующих callback-логов */
-export async function syncMessageStatsFromLogs(): Promise<SyncFromLogsResponse> {
+/** Прогресс синхронизации из callback-логов */
+export interface SyncFromLogsProgress {
+    taskId: string;
+    status: 'pending' | 'fetching' | 'processing' | 'done' | 'error';
+    loaded?: number;
+    total?: number;
+    message?: string;
+    error?: string;
+    sub_loaded?: number;
+    sub_total?: number;
+    sub_message?: string;
+}
+
+/**
+ * Запускает фоновую синхронизацию статистики из callback-логов.
+ * Возвращает taskId для отслеживания прогресса.
+ */
+export async function syncMessageStatsFromLogs(): Promise<SyncFromLogsStartResponse> {
     const res = await fetch(`${API_BASE_URL}/messages/stats/sync-from-logs`, {
         method: 'POST',
     });
@@ -231,13 +252,24 @@ export async function syncMessageStatsFromLogs(): Promise<SyncFromLogsResponse> 
     return res.json();
 }
 
+/**
+ * Получает статус фоновой задачи синхронизации.
+ * Использует общий эндпоинт getTaskStatus.
+ */
+export async function getSyncFromLogsStatus(taskId: string): Promise<SyncFromLogsProgress> {
+    const res = await fetch(`${API_BASE_URL}/lists/system/getTaskStatus/${taskId}`, {
+        cache: 'no-store',
+    });
+    if (!res.ok) throw new Error(`Ошибка получения статуса: ${res.status}`);
+    return res.json();
+}
+
 // =============================================================================
-// Сверка с VK API (Reconciliation)
+// Сверка с VK API (Reconciliation) — SSE-стриминг
 // =============================================================================
 
-/** Ответ сверки с VK */
-export interface ReconcileResponse {
-    success: boolean;
+/** Итоговые stats сверки */
+export interface ReconcileStats {
     projects_total: number;
     projects_processed: number;
     projects_skipped: number;
@@ -249,19 +281,95 @@ export interface ReconcileResponse {
     details: string;
 }
 
-/** Сверить статистику с реальными данными VK API */
+/** Старый интерфейс для обратной совместимости */
+export interface ReconcileResponse extends ReconcileStats {
+    success: boolean;
+}
+
+/** Событие SSE-стрима сверки */
+export type ReconcileEvent =
+    | { type: 'start'; total_dialogs: number; total_projects: number }
+    | { type: 'progress'; processed: number; total: number; current_project: string; stats: ReconcileStats }
+    | { type: 'complete'; stats: ReconcileStats }
+    | { type: 'error'; message: string; stats: ReconcileStats };
+
+/** Колбэк для событий прогресса сверки */
+export type ReconcileProgressCallback = (event: ReconcileEvent) => void;
+
+/**
+ * Сверить статистику с реальными данными VK API (SSE-стриминг).
+ * Читает поток событий и вызывает onProgress для каждого события.
+ * Возвращает финальный ReconcileResponse.
+ */
 export async function reconcileMessageStats(params?: {
     dateFrom?: string;
     dateTo?: string;
+    onProgress?: ReconcileProgressCallback;
 }): Promise<ReconcileResponse> {
     const searchParams = new URLSearchParams();
     if (params?.dateFrom) searchParams.set('date_from', params.dateFrom);
     if (params?.dateTo) searchParams.set('date_to', params.dateTo);
     const qs = searchParams.toString();
     const url = `${API_BASE_URL}/messages/stats/reconcile${qs ? `?${qs}` : ''}`;
+
     const res = await fetch(url, { method: 'POST' });
     if (!res.ok) throw new Error(`Ошибка сверки: ${res.status}`);
-    return res.json();
+
+    // Читаем SSE-поток
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('Сервер не вернул поток данных');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalStats: ReconcileStats | null = null;
+    let errorMessage: string | null = null;
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Парсим SSE-события из буфера (формат: "data: {...}\n\n")
+            const lines = buffer.split('\n\n');
+            buffer = lines.pop() || ''; // Последний (возможно неполный) фрагмент остаётся в буфере
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith('data: ')) continue;
+
+                try {
+                    const event: ReconcileEvent = JSON.parse(trimmed.slice(6));
+                    params?.onProgress?.(event);
+
+                    if (event.type === 'complete') {
+                        finalStats = event.stats;
+                    } else if (event.type === 'error') {
+                        errorMessage = event.message;
+                        finalStats = event.stats;
+                    }
+                } catch {
+                    // Пропускаем битые JSON-строки
+                }
+            }
+        }
+    } finally {
+        reader.releaseLock();
+    }
+
+    if (errorMessage && !finalStats?.details) {
+        throw new Error(errorMessage);
+    }
+
+    return {
+        success: !errorMessage,
+        ...(finalStats || {
+            projects_total: 0, projects_processed: 0, projects_skipped: 0,
+            users_total: 0, users_processed: 0, users_errors: 0,
+            hourly_corrections: 0, user_corrections: 0, details: 'Нет данных.',
+        }),
+    };
 }
 
 // =============================================================================

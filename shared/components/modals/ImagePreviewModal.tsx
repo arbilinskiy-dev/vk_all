@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Photo, PhotoAttachment } from '../../types';
 
@@ -11,15 +11,24 @@ interface ImagePreviewModalProps {
 }
 
 export const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({ image, onClose, children }) => {
+    // Закрытие по Escape
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+    }, [onClose]);
+
     // Используем React Portal, чтобы рендерить модальное окно в document.body.
     // Это гарантирует, что оно будет поверх всех других элементов.
     return createPortal(
         <div 
-            className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[100]" 
+            className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[9999] cursor-zoom-out animate-fade-in" 
             onClick={(e) => { e.stopPropagation(); onClose(); }}
         >
-            <div className="relative max-w-4xl max-h-4/5 p-4" onClick={e => e.stopPropagation()}>
-                <img src={image.url} alt="Preview" className="max-w-full max-h-[85vh] object-contain rounded-lg"/>
+            <div className="relative max-w-4xl max-h-4/5 p-4 animate-fade-in-up" onClick={e => e.stopPropagation()}>
+                <img src={image.url} alt="Preview" className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg cursor-default"/>
                 <button 
                     onClick={onClose} 
                     className="absolute -top-2 -right-2 bg-gray-800 bg-opacity-75 text-white rounded-full p-2 hover:bg-black transition-colors focus:outline-none focus:ring-2 focus:ring-white"

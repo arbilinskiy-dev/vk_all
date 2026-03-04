@@ -15,6 +15,10 @@ interface MessageStatsChartHeaderProps {
     nowMSK: string;
     granularity: ChartGranularity;
     setGranularity: (g: ChartGranularity) => void;
+    /** Данные были автоматически агрегированы (downsampled) */
+    isDownsampled?: boolean;
+    /** Гранулярность, выбранная автоматически (для индикации) */
+    autoGranularity?: ChartGranularity;
 }
 
 export const MessageStatsChartHeader: React.FC<MessageStatsChartHeaderProps> = ({
@@ -25,6 +29,8 @@ export const MessageStatsChartHeader: React.FC<MessageStatsChartHeaderProps> = (
     nowMSK,
     granularity,
     setGranularity,
+    isDownsampled,
+    autoGranularity,
 }) => {
     return (
         <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
@@ -68,8 +74,27 @@ export const MessageStatsChartHeader: React.FC<MessageStatsChartHeaderProps> = (
                 )}
             </div>
 
-            {/* Правая часть: время MSK + гранулярность */}
+            {/* Правая часть: время MSK + гранулярность + индикатор агрегации */}
             <div className="flex items-center gap-3">
+                {/* Индикатор агрегации данных (downsampling) */}
+                {isDownsampled && (
+                    <span
+                        className="text-[10px] text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200"
+                        title="Для улучшения производительности соседние точки сгруппированы"
+                    >
+                        данные агрегированы
+                    </span>
+                )}
+
+                {/* Индикатор авто-переключения гранулярности */}
+                {autoGranularity === 'days' && granularity === 'days' && (
+                    <span
+                        className="text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-200"
+                        title="Автоматически переключено на отображение по дням из-за большого объёма данных"
+                    >
+                        авто: по дням
+                    </span>
+                )}
                 {/* Индикатор серверного времени — SVG вместо эмоджи (пункт 7 дизайн-системы) */}
                 <span className="text-[10px] text-gray-400 font-mono tabular-nums inline-flex items-center gap-1" title="Серверное время (Москва, UTC+3)">
                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

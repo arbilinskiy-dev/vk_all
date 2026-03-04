@@ -200,6 +200,8 @@ export interface ConversationsInitResponse {
     last_messages: Record<string, VkMessageItem>;
     /** Словарь важных диалогов: vk_user_id (строка) → true */
     important_dialogs?: Record<string, boolean>;
+    /** Словарь меток диалогов: vk_user_id (строка) → [label_id, ...] */
+    dialog_labels?: Record<string, string[]>;
 }
 
 /**

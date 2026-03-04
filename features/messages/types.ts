@@ -103,6 +103,8 @@ export interface Conversation {
     projectId: string;
     /** Диалог помечен как «Важный» (звёздочка) */
     isImportant?: boolean;
+    /** ID меток (ярлыков), назначенных диалогу */
+    labelIds?: string[];
 }
 
 /** Фильтр поиска по сообщениям */

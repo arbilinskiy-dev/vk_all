@@ -36,7 +36,7 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({ photos, currentInd
 
     return createPortal(
         <div
-            className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center animate-fade-in"
+            className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center animate-fade-in cursor-zoom-out"
             onClick={onClose}
         >
             {/* Кнопка закрытия */}

@@ -199,11 +199,11 @@ def get_cached_messages(
         CachedMessage.vk_user_id == vk_user_id,
     ]
 
-    # Фильтр по направлению
+    # Фильтр по направлению (.is_ — безопасно для NULL и для разных СУБД)
     if direction == "incoming":
-        filters.append(CachedMessage.is_outgoing == False)
+        filters.append(CachedMessage.is_outgoing.is_(False))
     elif direction == "outgoing":
-        filters.append(CachedMessage.is_outgoing == True)
+        filters.append(CachedMessage.is_outgoing.is_(True))
 
     # Фильтр по тексту сообщения
     if search_text and search_text.strip():
@@ -338,7 +338,7 @@ def get_deleted_from_vk_count(db: Session, project_id: str, vk_user_id: int) -> 
         and_(
             CachedMessage.project_id == project_id,
             CachedMessage.vk_user_id == vk_user_id,
-            CachedMessage.is_deleted_from_vk == True,
+            CachedMessage.is_deleted_from_vk.is_(True),
         )
     ).count()
 
@@ -377,7 +377,7 @@ def get_last_message_dates(db: Session, project_id: str, vk_user_id: int) -> Dic
         and_(
             CachedMessage.project_id == project_id,
             CachedMessage.vk_user_id == vk_user_id,
-            CachedMessage.is_outgoing == False,
+            CachedMessage.is_outgoing.is_(False),
         )
     ).scalar()
     
@@ -386,7 +386,7 @@ def get_last_message_dates(db: Session, project_id: str, vk_user_id: int) -> Dic
         and_(
             CachedMessage.project_id == project_id,
             CachedMessage.vk_user_id == vk_user_id,
-            CachedMessage.is_outgoing == True,
+            CachedMessage.is_outgoing.is_(True),
         )
     ).scalar()
     
@@ -438,8 +438,8 @@ def _count_direction(
 
     row = db.query(
         sa_func.count().label("total"),
-        sa_func.sum(case((CachedMessage.is_outgoing == True, 1), else_=0)).label("outgoing"),
-        sa_func.sum(case((CachedMessage.is_outgoing == False, 1), else_=0)).label("incoming"),
+        sa_func.sum(case((CachedMessage.is_outgoing.is_(True), 1), else_=0)).label("outgoing"),
+        sa_func.sum(case((CachedMessage.is_outgoing.is_(False), 1), else_=0)).label("incoming"),
     ).filter(
         and_(
             CachedMessage.project_id == project_id,

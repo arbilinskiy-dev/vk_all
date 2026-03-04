@@ -554,3 +554,40 @@ React-консоль показывала ошибки: `Encountered two childre
 **Файл(ы):** `features/messages/components/promocodes/PromoCodesTable.tsx`
 
 ---
+
+### Блокировка кнопок шаблонов при исчерпании промокодов
+
+**Описание:**  
+Если шаблон содержит переменные промокодов (`{promo_<slug>_code}`, `{promo_<slug>_description}`), а в соответствующем списке промокодов не осталось свободных кодов (`free_count === 0`), кнопки «Вставить» и «Заменить» теперь блокируются. Над кнопками появляется красный баннер с перечислением пустых списков промокодов.
+
+**Реализация:**  
+- Загрузка `promoVariables` перенесена с ленивой (при открытии превью) на раннюю (при монтировании, если хоть один шаблон содержит `{promo_`).
+- Добавлена функция `getEmptyPromoLists(templateText)` — парсит текст шаблона регуляркой `/\{promo_([a-zA-Z0-9_]+)_(code|description)\}/g`, собирает уникальные slug-и, проверяет `free_count === 0` в загруженных promoVariables, возвращает массив имён пустых списков.
+- Кнопки «Вставить»/«Заменить» получают `disabled` + серый стиль (`opacity-50 cursor-not-allowed`) при наличии пустых списков.
+- Красный баннер (`bg-red-50 border-red-200 text-red-700`) с иконкой ⚠️ и текстом «Промокоды закончились в списках: ...» показывается над кнопками.
+
+**Файл(ы):** `features/messages/hooks/useTemplatesTabLogic.ts`, `features/messages/components/templates/TemplateCard.tsx`, `features/messages/components/templates/TemplatesTab.tsx`
+
+---
+
+### Декомпозиция TemplatesTab.tsx и TemplateInlineEditor.tsx (hub pattern)
+
+**Описание:**  
+Два монолитных файла шаблонов (TemplatesTab — 324 строки, TemplateInlineEditor — 290 строк) разложены на тонкие хабы + кастомные хуки + субкомпоненты по hub-паттерну. Хабы содержат только импорты, вызов хука и JSX-маршрутизацию. Вся бизнес-логика вынесена в хуки с паттерном `{ state, actions }`.
+
+**Реализация:**  
+- **TemplatesTab.tsx** (~100 строк) → хаб. Логика → `useTemplatesTabLogic.ts` (~175 строк). Карточка шаблона → `TemplateCard.tsx` (~140 строк).
+- **TemplateInlineEditor.tsx** (~95 строк) → хаб. Логика → `useTemplateEditorLogic.ts` (~130 строк). Панель переменных → `TemplateVariablesBar.tsx` (~110 строк). Секция превью → `TemplatePreviewSection.tsx` (~100 строк).
+- Внешний контракт (Props) обоих компонентов сохранён без изменений — потребители не затронуты.
+- Хуки экспортируют типы: `TabMode`, `TemplatesTabState`, `TemplatesTabActions`, `TemplateEditorState`, `TemplateEditorActions`, `TemplateEditorRefs`.
+
+**Файл(ы):**  
+- `features/messages/components/templates/TemplatesTab.tsx` (хаб)
+- `features/messages/hooks/useTemplatesTabLogic.ts` (хук)
+- `features/messages/components/templates/TemplateCard.tsx` (компонент)
+- `features/messages/components/templates/TemplateInlineEditor.tsx` (хаб)
+- `features/messages/hooks/useTemplateEditorLogic.ts` (хук)
+- `features/messages/components/templates/TemplateVariablesBar.tsx` (компонент)
+- `features/messages/components/templates/TemplatePreviewSection.tsx` (компонент)
+
+---

@@ -37,12 +37,23 @@ def get_active_sessions(
     
     now = datetime.utcnow()
     
+    # Подтягиваем ФИО пользователей из таблицы users
+    import models
+    user_ids = list(set(s.user_id for s in sessions if s.user_id))
+    users_map = {}
+    if user_ids:
+        users = db.query(models.User.id, models.User.full_name).filter(
+            models.User.id.in_(user_ids)
+        ).all()
+        users_map = {u.id: u.full_name for u in users}
+    
     return {
         "sessions": [
             {
                 "id": s.id,
                 "user_id": s.user_id,
                 "username": s.username,
+                "full_name": users_map.get(s.user_id) or None,
                 "role": s.role,
                 "user_type": s.user_type,
                 "ip_address": s.ip_address,

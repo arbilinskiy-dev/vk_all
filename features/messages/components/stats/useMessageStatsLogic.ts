@@ -14,6 +14,7 @@ import {
     fetchAdminStats,
     fetchAdminDialogs,
     syncMessageStatsFromLogs,
+    getSyncFromLogsStatus,
     reconcileMessageStats,
     MessageStatsGlobalSummary,
     MessageStatsProjectSummary,
@@ -21,6 +22,8 @@ import {
     MessageStatsUserItem,
     AdminStatsItem,
     AdminDialogItem,
+    ReconcileEvent,
+    SyncFromLogsProgress,
 } from '../../../../services/api/messages_stats.api';
 import {
     fetchSubscriptionsSummary,
@@ -60,13 +63,19 @@ export function useMessageStatsLogic(projects: Project[]) {
     const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
     const [usersDataMap, setUsersDataMap] = useState<Record<string, { users: MessageStatsUserItem[]; total: number; loading: boolean }>>({});
 
-    // Синхронизация
+    // Синхронизация из логов (фоновая задача с прогрессом)
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<string | null>(null);
+    const [syncProgress, setSyncProgress] = useState<SyncFromLogsProgress | null>(null);
 
     // Сверка с VK API
     const [isReconciling, setIsReconciling] = useState(false);
     const [reconcileResult, setReconcileResult] = useState<string | null>(null);
+    const [reconcileProgress, setReconcileProgress] = useState<{
+        processed: number;
+        total: number;
+        percent: number;
+    } | null>(null);
 
     // Администраторы
     const [adminStats, setAdminStats] = useState<AdminStatsItem[]>([]);
@@ -195,34 +204,82 @@ export function useMessageStatsLogic(projects: Project[]) {
         }
     }, [selectedProjectId]);
 
-    /** Синхронизация статистики из callback-логов */
+    /** Синхронизация статистики из callback-логов (фоновая задача с polling прогресса) */
     const handleSyncFromLogs = useCallback(async () => {
         setIsSyncing(true);
         setSyncResult(null);
+        setSyncProgress(null);
         try {
-            const res = await syncMessageStatsFromLogs();
-            setSyncResult(res.details);
+            // 1. Запускаем фоновую задачу
+            const { taskId } = await syncMessageStatsFromLogs();
+            if (!taskId) throw new Error('Не удалось запустить задачу');
+            
+            // 2. Polling прогресса каждые 1.5 сек
+            await new Promise<void>((resolve, reject) => {
+                const intervalId = setInterval(async () => {
+                    try {
+                        const status = await getSyncFromLogsStatus(taskId);
+                        setSyncProgress(status);
+                        
+                        if (status.status === 'done') {
+                            clearInterval(intervalId);
+                            setSyncResult(status.message || 'Синхронизация завершена');
+                            setSyncProgress(null);
+                            resolve();
+                        } else if (status.status === 'error') {
+                            clearInterval(intervalId);
+                            setSyncResult(`Ошибка: ${status.error || 'Неизвестная ошибка'}`);
+                            setSyncProgress(null);
+                            resolve();
+                        }
+                    } catch (e) {
+                        clearInterval(intervalId);
+                        reject(e);
+                    }
+                }, 1500);
+            });
+            
             await loadDashboard();
         } catch (e: any) {
             setSyncResult(`Ошибка: ${e.message}`);
+            setSyncProgress(null);
         } finally {
             setIsSyncing(false);
         }
     }, [loadDashboard]);
 
-    /** Сверка статистики с VK API (reconciliation) */
+    /** Сверка статистики с VK API (reconciliation) — SSE-стриминг с прогрессом */
     const handleReconcile = useCallback(async () => {
         setIsReconciling(true);
         setReconcileResult(null);
+        setReconcileProgress(null);
         try {
             const res = await reconcileMessageStats({
                 dateFrom: dateFrom || undefined,
                 dateTo: dateTo || undefined,
+                onProgress: (event: ReconcileEvent) => {
+                    if (event.type === 'start') {
+                        setReconcileProgress({
+                            processed: 0,
+                            total: event.total_dialogs,
+                            percent: 0,
+                        });
+                    } else if (event.type === 'progress') {
+                        const percent = event.total > 0 ? Math.round((event.processed / event.total) * 100) : 0;
+                        setReconcileProgress({
+                            processed: event.processed,
+                            total: event.total,
+                            percent,
+                        });
+                    }
+                },
             });
             setReconcileResult(res.details);
+            setReconcileProgress(null);
             await loadDashboard();
         } catch (e: any) {
             setReconcileResult(`Ошибка: ${e.message}`);
+            setReconcileProgress(null);
         } finally {
             setIsReconciling(false);
         }
@@ -477,8 +534,10 @@ export function useMessageStatsLogic(projects: Project[]) {
             usersDataMap,
             isSyncing,
             syncResult,
+            syncProgress,
             isReconciling,
             reconcileResult,
+            reconcileProgress,
             projectsMap,
             filteredProjectsStats,
             displayProjectsStats,

@@ -1,6 +1,8 @@
 # Роутер для массового редактирования постов
 
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, Query
+from services.auth_middleware import get_current_user, CurrentUser
+from services.action_tracker import track
 from sqlalchemy.orm import Session
 import json
 import uuid
@@ -93,6 +95,7 @@ def apply_bulk_edit(
     payload: schemas.BulkEditApplyRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
     use_async: bool = Query(True, description="Использовать асинхронную обработку с динамическими воркерами")
 ):
     """
@@ -167,6 +170,9 @@ def apply_bulk_edit(
     
     print(f"[BULK_EDIT_ROUTER] ✅ Задача создана и запущена в фоне: {task_id}", flush=True)
     print(f"{'='*60}\n", flush=True)
+    
+    track(db, current_user, "bulk_edit_apply", "posts",
+          metadata={"posts_count": len(payload.posts), "mode": mode, "task_id": task_id})
     
     return schemas.BulkEditApplyResponse(taskId=task_id)
 

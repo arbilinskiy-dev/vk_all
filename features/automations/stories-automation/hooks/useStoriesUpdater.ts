@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, useRef, type Dispatch, type SetStateAction } from 'react';
 import { callApi } from '../../../../shared/utils/apiClient';
 import { UnifiedStory } from '../types';
 
@@ -14,6 +14,14 @@ export const useStoriesUpdater = (
 ) => {
     const [updatingStatsId, setUpdatingStatsId] = useState<string | null>(null);
 
+    // Refs для стабильности колбэков (не пересоздаём функции при каждом рендере)
+    const projectIdRef = useRef(projectId);
+    projectIdRef.current = projectId;
+    const setStoriesRef = useRef(setStories);
+    setStoriesRef.current = setStories;
+    const onSuccessRef = useRef(onSuccess);
+    onSuccessRef.current = onSuccess;
+
     /** Генерация loadingId для индикации в UI */
     const getLoadingId = (prefix: string, mode: 'single' | 'last_n' | 'period', params: any = {}): string => {
         if (mode === 'single' && params.logId) return `${prefix}${params.logId}`;
@@ -24,8 +32,8 @@ export const useStoriesUpdater = (
     };
 
     /** Обновление статистики историй */
-    const handleUpdateStats = async (mode: 'single' | 'last_n' | 'period', params: any = {}) => {
-        if (!projectId) return;
+    const handleUpdateStats = useCallback(async (mode: 'single' | 'last_n' | 'period', params: any = {}) => {
+        if (!projectIdRef.current) return;
 
         setUpdatingStatsId(getLoadingId('', mode, params));
 
@@ -40,17 +48,22 @@ export const useStoriesUpdater = (
                     stats_updated_at: string;
                 }>;
             }>('updateStoriesStats', {
-                projectId,
+                projectId: projectIdRef.current,
                 mode,
                 ...params
             });
 
             if (res.status === 'ok') {
-                window.showAppToast?.(`Обновлено ${res.updated || 0} записей`, 'success');
+                // Информативный тост с деталями
+                const parts = [`Обновлено ${res.updated || 0} записей`];
+                if ((res as any).no_link) parts.push(`${(res as any).no_link} без ссылки`);
+                if ((res as any).failed) parts.push(`${(res as any).failed} ошибок VK`);
+                const hasWarnings = (res as any).no_link || (res as any).failed;
+                window.showAppToast?.(parts.join(', '), hasWarnings ? 'warning' : 'success');
 
                 // Локально обновляем только изменённые истории вместо перезагрузки всего списка
-                if (res.updated_stories && res.updated_stories.length > 0 && setStories) {
-                    setStories(prev => prev.map(story => {
+                if (res.updated_stories && res.updated_stories.length > 0 && setStoriesRef.current) {
+                    setStoriesRef.current(prev => prev.map(story => {
                         const updated = res.updated_stories?.find(
                             u => u.log_id === story.log_id || u.vk_story_id === story.vk_story_id
                         );
@@ -65,7 +78,7 @@ export const useStoriesUpdater = (
                     }));
                 }
                 // Перезагружаем дашборд с актуальными данными
-                onSuccess?.();
+                onSuccessRef.current?.();
             }
         } catch (error) {
             console.error(error);
@@ -73,11 +86,11 @@ export const useStoriesUpdater = (
         } finally {
             setUpdatingStatsId(null);
         }
-    };
+    }, []); // Стабильная ссылка — не пересоздаётся
 
     /** Обновление зрителей */
-    const handleUpdateViewers = async (mode: 'single' | 'last_n' | 'period', params: any = {}) => {
-        if (!projectId) return;
+    const handleUpdateViewers = useCallback(async (mode: 'single' | 'last_n' | 'period', params: any = {}) => {
+        if (!projectIdRef.current) return;
 
         setUpdatingStatsId(getLoadingId('viewers_', mode, params));
 
@@ -92,17 +105,21 @@ export const useStoriesUpdater = (
                     viewers_updated_at: string;
                 }>;
             }>('updateStoriesViewers', {
-                projectId,
+                projectId: projectIdRef.current,
                 mode,
                 ...params
             });
 
             if (res.status === 'ok') {
-                window.showAppToast?.(`Зрители обновлены: ${res.updated || 0} записей`, 'success');
+                const parts = [`Зрители обновлены: ${res.updated || 0} записей`];
+                if ((res as any).no_link) parts.push(`${(res as any).no_link} без ссылки`);
+                if ((res as any).failed) parts.push(`${(res as any).failed} ошибок VK`);
+                const hasWarnings = (res as any).no_link || (res as any).failed;
+                window.showAppToast?.(parts.join(', '), hasWarnings ? 'warning' : 'success');
 
                 // Локально обновляем только изменённые истории
-                if (res.updated_stories && res.updated_stories.length > 0 && setStories) {
-                    setStories(prev => prev.map(story => {
+                if (res.updated_stories && res.updated_stories.length > 0 && setStoriesRef.current) {
+                    setStoriesRef.current(prev => prev.map(story => {
                         const updated = res.updated_stories?.find(
                             u => u.log_id === story.log_id || u.vk_story_id === story.vk_story_id
                         );
@@ -117,7 +134,7 @@ export const useStoriesUpdater = (
                     }));
                 }
                 // Перезагружаем дашборд с актуальными данными
-                onSuccess?.();
+                onSuccessRef.current?.();
             }
         } catch (error) {
             console.error(error);
@@ -125,11 +142,11 @@ export const useStoriesUpdater = (
         } finally {
             setUpdatingStatsId(null);
         }
-    };
+    }, []); // Стабильная ссылка — не пересоздаётся
 
     /** Обновление всего (статистика + зрители) */
-    const handleUpdateAll = async (mode: 'single' | 'last_n' | 'period', params: any = {}) => {
-        if (!projectId) return;
+    const handleUpdateAll = useCallback(async (mode: 'single' | 'last_n' | 'period', params: any = {}) => {
+        if (!projectIdRef.current) return;
 
         setUpdatingStatsId(getLoadingId('all_', mode, params));
 
@@ -146,17 +163,21 @@ export const useStoriesUpdater = (
                     viewers_updated_at?: string;
                 }>;
             }>('updateStoriesAll', {
-                projectId,
+                projectId: projectIdRef.current,
                 mode,
                 ...params
             });
 
             if (res.status === 'ok') {
-                window.showAppToast?.(`Полное обновление: ${res.updated || 0} записей`, 'success');
+                const parts = [`Полное обновление: ${res.updated || 0} записей`];
+                if ((res as any).no_link) parts.push(`${(res as any).no_link} без ссылки`);
+                if ((res as any).failed) parts.push(`${(res as any).failed} ошибок VK`);
+                const hasWarnings = (res as any).no_link || (res as any).failed;
+                window.showAppToast?.(parts.join(', '), hasWarnings ? 'warning' : 'success');
 
                 // Локально обновляем только изменённые истории, затем рефрешим дашборд
-                if (res.updated_stories && res.updated_stories.length > 0 && setStories) {
-                    setStories(prev => prev.map(story => {
+                if (res.updated_stories && res.updated_stories.length > 0 && setStoriesRef.current) {
+                    setStoriesRef.current(prev => prev.map(story => {
                         const updated = res.updated_stories?.find(
                             u => u.log_id === story.log_id || u.vk_story_id === story.vk_story_id
                         );
@@ -173,7 +194,7 @@ export const useStoriesUpdater = (
                     }));
                 }
                 // Перезагружаем дашборд с актуальными данными
-                onSuccess?.();
+                onSuccessRef.current?.();
             }
         } catch (error) {
             console.error(error);
@@ -181,7 +202,7 @@ export const useStoriesUpdater = (
         } finally {
             setUpdatingStatsId(null);
         }
-    };
+    }, []); // Стабильная ссылка — не пересоздаётся
 
     return {
         updatingStatsId,

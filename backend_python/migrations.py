@@ -21,9 +21,11 @@ from db_migrations import (
     message_stats,
     message_templates,
     promo_lists,
+    dialog_labels,
     auth as auth_migration,
     cleanup_legacy_tables
 )
+from db_migrations import user_management
 
 def run_migrations(engine: Engine):
     """
@@ -52,7 +54,9 @@ def run_migrations(engine: Engine):
     message_stats.migrate(engine)
     message_templates.migrate(engine)
     promo_lists.migrate(engine)
+    dialog_labels.migrate(engine)
     auth_migration.migrate(engine)
+    user_management.migrate(engine)
 
     # ФИНАЛЬНЫЙ ШАГ: удаление старых таблиц (только после миграций данных)
     # ВНИМАНИЕ: cleanup теперь проверяет MIN_RATIO (≥50% данных) перед удалением

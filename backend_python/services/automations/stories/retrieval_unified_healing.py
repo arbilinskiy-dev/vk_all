@@ -52,7 +52,7 @@ def _recover_preview_from_log(log_obj) -> str | None:
 
 def _recover_preview_from_post(db: Session, log_obj, project_id: str, logs_to_update: list) -> str | None:
     """Восстанавливает превью из связанного поста (для автоматических историй)."""
-    if not log_obj.vk_post_id or log_obj.vk_post_id == 0:
+    if not log_obj.vk_post_id or log_obj.vk_post_id <= 0:
         return None
         
     preview = None

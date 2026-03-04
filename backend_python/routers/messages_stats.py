@@ -3,15 +3,18 @@
 Кросс-проектный дашборд мониторинга: общая сводка, графики, детализация по пользователям.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Optional
 import json
 import logging
+import uuid
 
-from database import get_db
+from database import get_db, get_background_session, SessionLocal
 from crud import message_stats_crud
 from models_library.projects import Project as ProjectModel
+from services import task_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -178,23 +181,97 @@ def get_project_users_stats(
 
 
 # =============================================================================
-# СИНХРОНИЗАЦИЯ ИЗ CALLBACK-ЛОГОВ
+# СИНХРОНИЗАЦИЯ ИЗ CALLBACK-ЛОГОВ (фоновая задача)
 # =============================================================================
 
-@router.post("/sync-from-logs")
-def sync_stats_from_callback_logs(db: Session = Depends(get_db)):
+def _sync_from_logs_task(task_id: str):
     """
-    Синхронизирует статистику из существующих VkCallbackLog.
+    Фоновая задача синхронизации из callback-логов.
+    Использует task_monitor для отслеживания прогресса.
+    """
+    db = get_background_session()
+    try:
+        task_monitor.update_task(task_id, "processing", message="Чтение callback-логов...")
+        
+        for event in message_stats_crud.sync_from_callback_logs_with_progress(db):
+            # Проверяем отмену задачи
+            if task_monitor.is_task_cancelled(task_id):
+                task_monitor.update_task(task_id, "error", error="Задача отменена пользователем")
+                task_monitor.clear_cancellation(task_id)
+                return
+            
+            event_type = event.get("type")
+            
+            if event_type == "start":
+                total_logs = event.get("total_logs", 0)
+                task_monitor.update_task(
+                    task_id, "processing",
+                    loaded=0, total=total_logs,
+                    message=f"Чтение {total_logs} логов..."
+                )
+            elif event_type == "reading":
+                processed = event.get("processed", 0)
+                total = event.get("total", 0)
+                task_monitor.update_task(
+                    task_id, "processing",
+                    loaded=processed, total=total,
+                    message=f"Чтение логов: {processed}/{total}"
+                )
+            elif event_type == "upserting":
+                processed = event.get("processed", 0)
+                total = event.get("total", 0)
+                phase = event.get("phase", "")
+                phase_name = "часовых слотов" if phase == "hourly" else "пользователей"
+                task_monitor.update_task(
+                    task_id, "processing",
+                    sub_loaded=processed, sub_total=total,
+                    sub_message=f"Сохранение {phase_name}: {processed}/{total}"
+                )
+            elif event_type == "complete":
+                result = event.get("result", {})
+                task_monitor.update_task(
+                    task_id, "done",
+                    loaded=result.get("synced", 0),
+                    total=result.get("synced", 0) + result.get("skipped", 0) + result.get("errors", 0),
+                    message=result.get("details", "Синхронизация завершена")
+                )
+            elif event_type == "error":
+                result = event.get("result", {})
+                task_monitor.update_task(
+                    task_id, "error",
+                    error=result.get("details", "Ошибка синхронизации")
+                )
+                
+    except Exception as e:
+        logger.error(f"SYNC FROM LOGS TASK: ошибка: {e}")
+        task_monitor.update_task(task_id, "error", error=f"Ошибка: {str(e)}")
+    finally:
+        SessionLocal.remove()
+
+
+@router.post("/sync-from-logs")
+def sync_stats_from_callback_logs(background_tasks: BackgroundTasks):
+    """
+    Запускает фоновую синхронизацию статистики из существующих VkCallbackLog.
     
+    Возвращает taskId для отслеживания прогресса через GET /lists/system/getTaskStatus/{taskId}.
     Парсит логи message_new/message_reply, извлекает project_id, user_id, timestamp
     и заполняет таблицы статистики. Идемпотентна — можно вызывать повторно.
-    Используется для первоначального заполнения статистики из уже накопленных логов.
     """
-    result = message_stats_crud.sync_from_callback_logs(db)
-    return {
-        "success": True,
-        **result,
-    }
+    PROJECT_ID_GLOBAL = "GLOBAL"
+    TASK_TYPE = "sync_from_logs"
+    
+    # Проверяем, не запущена ли уже
+    existing_task_id = task_monitor.get_active_task_id(PROJECT_ID_GLOBAL, TASK_TYPE)
+    if existing_task_id:
+        return {"taskId": existing_task_id}
+    
+    new_task_id = str(uuid.uuid4())
+    task_monitor.start_task(new_task_id, PROJECT_ID_GLOBAL, TASK_TYPE)
+    
+    background_tasks.add_task(_sync_from_logs_task, new_task_id)
+    
+    return {"taskId": new_task_id}
 
 
 # =============================================================================
@@ -210,22 +287,36 @@ def reconcile_stats_from_vk(
     """
     Сверяет статистику с реальными данными из VK API (messages.getHistory).
     
-    Для каждого проекта+пользователя запрашивает 200 последних сообщений,
-    считает реальные входящие/исходящие и корректирует через MAX()-подход.
+    Возвращает SSE-поток с событиями прогресса:
+    - start: начало сверки (total_dialogs, total_projects)
+    - progress: промежуточный прогресс (processed/total)
+    - complete: сверка завершена (финальные stats)
+    - error: ошибка сверки
+    
     Идемпотентна — повторный вызов не увеличивает счётчики.
     """
-    try:
-        result = message_stats_crud.reconcile_from_vk(db, date_from, date_to)
-        return {
-            "success": True,
-            **result,
-        }
-    except Exception as e:
-        logger.error(f"Ошибка сверки: {e}")
-        return {
-            "success": False,
-            "details": f"Ошибка сверки: {str(e)}",
-        }
+    def event_generator():
+        try:
+            for event in message_stats_crud.reconcile_from_vk_streaming(db, date_from, date_to):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"Ошибка сверки: {e}")
+            error_event = {
+                "type": "error",
+                "message": str(e),
+                "stats": {"details": f"Ошибка сверки: {str(e)}"},
+            }
+            yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Отключаем буферизацию nginx
+        },
+    )
 
 
 # =============================================================================

@@ -50,6 +50,13 @@ interface MessagesPageProps {
     requestResort?: () => void;
     /** Переключить пометку «Важное» для диалога */
     toggleImportant?: (vkUserId: number, isImportant: boolean) => Promise<void>;
+    // --- Метки (ярлыки) диалогов ---
+    /** Все метки проекта */
+    dialogLabels?: import('../../../services/api/dialog_labels.api').DialogLabel[];
+    /** Назначить метку диалогу */
+    onAssignLabel?: (vkUserId: number, labelId: string) => Promise<void>;
+    /** Снять метку с диалога */
+    onUnassignLabel?: (vkUserId: number, labelId: string) => Promise<void>;
 }
 
 export const MessagesPage: React.FC<MessagesPageProps> = ({
@@ -70,6 +77,9 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     onProjectUnreadUpdate,
     requestResort,
     toggleImportant,
+    dialogLabels = [],
+    onAssignLabel,
+    onUnassignLabel,
 }) => {
     const { state, actions } = useMessagesPageLogic({
         activeProject,
@@ -197,6 +207,16 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                         const newValue = !state.activeConversation!.isImportant;
                         toggleImportant?.(vkUserId, newValue);
                     }}
+                    dialogLabels={dialogLabels}
+                    assignedLabelIds={state.activeConversation.labelIds || []}
+                    onAssignLabel={onAssignLabel ? (labelId: string) => {
+                        const vkUserId = Number(state.activeConversation!.user.id);
+                        onAssignLabel(vkUserId, labelId);
+                    } : undefined}
+                    onUnassignLabel={onUnassignLabel ? (labelId: string) => {
+                        const vkUserId = Number(state.activeConversation!.user.id);
+                        onUnassignLabel(vkUserId, labelId);
+                    } : undefined}
                 />
             </div>
             {/* Правая рабочая область — информация о пользователе */}

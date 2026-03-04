@@ -60,6 +60,16 @@ class User(BaseModel):
     full_name: str
     username: str
     password: Optional[str] = None
+    role_id: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class UserResponse(BaseModel):
+    """Схема ответа — без пароля (хеш не должен уходить на фронтенд)."""
+    id: str
+    full_name: str
+    username: str
+    role_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

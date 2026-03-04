@@ -57,19 +57,23 @@ def batch_update_stats(
     # Собираем данные о историях
     stories_to_process = []
     group_id = None
+    no_link_count = 0  # Счётчик историй без story_link (не могут получить статистику)
     
     for log in active_logs:
         if not log.log:
+            no_link_count += 1
             continue
         try:
             data = json.loads(log.log)
             link = data.get('story_link')
             if not link:
+                no_link_count += 1
                 continue
             
             # Поддерживаем оба домена: vk.com и vk.ru
             parts = re.sub(r'https?://vk\.(?:com|ru)/story', '', link).split('_')
             if len(parts) != 2:
+                no_link_count += 1
                 continue
             
             owner_id = parts[0]
@@ -88,7 +92,7 @@ def batch_update_stats(
             continue
             
     if not stories_to_process:
-        return {"status": "ok", "updated": 0}
+        return {"status": "ok", "updated": 0, "no_link": no_link_count}
     
     # Определяем project_id
     if not project_id and logs:
@@ -200,12 +204,18 @@ def batch_update_stats(
     
     print(f"[Stats] ✓ Updated {updated_count}/{len(stories_to_process)} stories" + 
           (f", finalized {finalized_count}" if finalized_count else "") +
-          (f", skipped {skipped_count}" if skipped_count else ""))
+          (f", skipped {skipped_count}" if skipped_count else "") +
+          (f", no_link {no_link_count}" if no_link_count else ""))
+    
+    # Считаем кол-во ошибок VK API
+    failed_count = sum(1 for r in stats_results if not r.success)
     
     return {
         "status": "ok", 
         "updated": updated_count,
         "skipped": skipped_count,
         "finalized": finalized_count,
+        "no_link": no_link_count,
+        "failed": failed_count,
         "updated_stories": updated_stories  # Возвращаем обновлённые данные
     }

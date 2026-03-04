@@ -16,6 +16,7 @@ import { PhotosGrid } from './PhotosGrid';
 import { VideosList } from './VideosList';
 import { LinksList } from './LinksList';
 import { FilesList } from './FilesList';
+import { plural } from '../../../../shared/utils/plural';
 
 // =============================================================================
 // ТИПЫ
@@ -64,9 +65,9 @@ export const AttachmentsTab: React.FC<AttachmentsTabProps> = ({
 
             {/* Плашка «Загрузите всю историю» (если история загружена не полностью) */}
             {!isFullyLoaded && (
-                <div className="mx-3 mt-3 mb-1 p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="mx-3 mt-3 mb-1 p-2.5 bg-amber-50 border border-amber-200 rounded-lg animate-expand-down">
                     <p className="text-[11px] text-amber-700 leading-snug">
-                        Показаны вложения из <span className="font-semibold">{loadedMessagesCount}</span> загруженных сообщений.
+                        Показаны вложения из {plural(loadedMessagesCount, ['загруженного сообщения', 'загруженных сообщений', 'загруженных сообщений'])}.
                         Загрузите всю историю для полного списка.
                     </p>
                     <button
@@ -111,19 +112,21 @@ export const AttachmentsTab: React.FC<AttachmentsTabProps> = ({
                 </div>
             </div>
 
-            {/* Контент подкатегории */}
+            {/* Контент подкатегории — плавная смена через key + animate-fade-in-up */}
             <div className="flex-1 overflow-y-auto custom-scrollbar">
-                {activeSubTab === 'photos' && <PhotosGrid items={photos} onPreview={setPreviewImage} />}
-                {activeSubTab === 'videos' && <VideosList items={videos} />}
-                {activeSubTab === 'links' && <LinksList items={links} />}
-                {activeSubTab === 'files' && <FilesList items={files} />}
+                <div key={activeSubTab} className="opacity-0 animate-fade-in-up" style={{ animationDelay: '50ms' }}>
+                    {activeSubTab === 'photos' && <PhotosGrid items={photos} onPreview={setPreviewImage} />}
+                    {activeSubTab === 'videos' && <VideosList items={videos} />}
+                    {activeSubTab === 'links' && <LinksList items={links} />}
+                    {activeSubTab === 'files' && <FilesList items={files} />}
+                </div>
             </div>
 
             {/* Итого */}
             {totalCount > 0 && (
                 <div className="px-3 py-2 border-t border-gray-100 text-center">
                     <p className="text-[10px] text-gray-300">
-                        Всего вложений: {totalCount}
+                        Всего {plural(totalCount, ['вложение', 'вложения', 'вложений'])}
                         {isFullyLoaded && ' · вся история загружена'}
                     </p>
                 </div>

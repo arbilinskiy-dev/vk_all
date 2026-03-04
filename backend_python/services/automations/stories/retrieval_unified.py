@@ -100,7 +100,7 @@ def get_unified_stories(db: Session, project_id: str, refresh: bool = False, inc
         # Определяем статус активности истории
         is_active = _determine_activity_status(refresh, vk_story, log_obj, logs_to_update)
         
-        is_automated = log_obj is not None and (log_obj.vk_post_id is not None and log_obj.vk_post_id != 0)
+        is_automated = log_obj is not None and (log_obj.vk_post_id is not None and log_obj.vk_post_id > 0)
         
         # Извлекаем данные (дата, тип, превью, ссылка)
         date_ts, type_str, views, preview, link, video_url = _extract_story_data(

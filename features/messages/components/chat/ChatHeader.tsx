@@ -1,5 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ConversationUser, MessageSearchFilter, ChatDisplayFilters } from '../../types';
+import { DialogLabel } from '../../../../services/api/dialog_labels.api';
+import { DialogLabelsDropdown } from '../conversations/DialogLabelsDropdown';
 
 interface ChatHeaderProps {
     user: ConversationUser;
@@ -29,12 +31,21 @@ interface ChatHeaderProps {
     isImportant?: boolean;
     /** Колбэк переключения пометки «Важное» */
     onToggleImportant?: () => void;
+    // --- Метки диалога ---
+    /** Все метки проекта */
+    dialogLabels?: DialogLabel[];
+    /** ID меток, назначенных этому диалогу */
+    assignedLabelIds?: string[];
+    /** Назначить метку */
+    onAssignLabel?: (labelId: string) => void;
+    /** Снять метку */
+    onUnassignLabel?: (labelId: string) => void;
 }
 
 /**
  * Шапка чата — аватар пользователя, имя, статус онлайн.
  */
-export const ChatHeader: React.FC<ChatHeaderProps> = ({ user, searchQuery, searchFilter, onSearchChange, onFilterChange, displayFilters, onDisplayFiltersChange, vkDialogUrl, onRefresh, isLoading, onMarkAsUnread, canWrite, isImportant, onToggleImportant }) => {
+export const ChatHeader: React.FC<ChatHeaderProps> = ({ user, searchQuery, searchFilter, onSearchChange, onFilterChange, displayFilters, onDisplayFiltersChange, vkDialogUrl, onRefresh, isLoading, onMarkAsUnread, canWrite, isImportant, onToggleImportant, dialogLabels = [], assignedLabelIds = [], onAssignLabel, onUnassignLabel }) => {
     // Инициалы для аватара-заглушки
     const initials = `${user.firstName[0]}${user.lastName[0]}`;
     const [avatarLoaded, setAvatarLoaded] = useState(false);
@@ -43,6 +54,12 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ user, searchQuery, searc
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
+
+    // Метки, назначенные этому диалогу (для отображения чипов в шапке)
+    const assignedLabels = useMemo(() => {
+        if (!assignedLabelIds.length || !dialogLabels.length) return [];
+        return dialogLabels.filter(l => assignedLabelIds.includes(l.id));
+    }, [assignedLabelIds, dialogLabels]);
 
     // Есть ли активные фильтры отображения
     const hasActiveDisplayFilters = displayFilters.hideAttachments || displayFilters.hideKeyboard || displayFilters.hideBotMessages || searchFilter !== 'all';
@@ -128,8 +145,34 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({ user, searchQuery, searc
                 </div>
             )}
 
-            {/* Действия справа — звёздочка «Важное», кнопка поиска и меню */}
+            {/* Назначенные метки — чипы прямо в шапке (как badge «Можно писать») */}
+            {assignedLabels.length > 0 && (
+                <div className="flex items-center gap-1 flex-shrink-0">
+                    {assignedLabels.map(label => (
+                        <div
+                            key={label.id}
+                            className="flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap border"
+                            style={{ backgroundColor: `${label.color}18`, color: label.color, borderColor: `${label.color}40` }}
+                        >
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: label.color }} />
+                            {label.name}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* Действия справа */}
             <div className="ml-auto flex items-center gap-2">
+                {/* Кнопка «Метки» — dropdown с чекбоксами */}
+                {onAssignLabel && onUnassignLabel && (
+                    <DialogLabelsDropdown
+                        labels={dialogLabels}
+                        assignedLabelIds={assignedLabelIds}
+                        onAssign={onAssignLabel}
+                        onUnassign={onUnassignLabel}
+                        compact={true}
+                    />
+                )}
                 {/* Кнопка «Важное» — звёздочка */}
                 {onToggleImportant && (
                     <button

@@ -125,7 +125,27 @@ AI делает шаги 1-5 **полностью автономно**. Шаг 6
 
 AI делает **все шаги полностью автономно**.
 
-### Шаг 1: Сборка
+### Шаг 1: Обновить дату в разделе «Обновления»
+
+**Перед сборкой** проверить файлы релизов в `features/updates/data/`:
+
+1. Найти файл `releaseXData.ts`, у которого `date: 'хх.хх.хххх'` и `status: 'in-progress'`
+2. Заменить `'хх.хх.хххх'` на **текущую реальную дату** в формате `ДД.ММ.ГГГГ` (например, `'04.03.2026'`)
+3. Заменить `status: 'in-progress'` на `status: 'published'`
+
+> **Пример:** Если сегодня 04.03.2026, в файле `release9Data.ts`:
+> ```typescript
+> // БЫЛО:
+> date: 'хх.хх.хххх',
+> status: 'in-progress',
+> // СТАЛО:
+> date: '04.03.2026',
+> status: 'published',
+> ```
+
+> **Если таких файлов нет** (все релизы уже опубликованы) — пропустить этот шаг.
+
+### Шаг 2: Сборка
 
 ```cmd
 cd "c:\Users\nikita79882\Desktop\vk planer code\12.02.2026"
@@ -133,11 +153,11 @@ npm install
 npm run build
 ```
 
-### Шаг 2: Определить файлы
+### Шаг 3: Определить файлы
 
 Прочитать содержимое `dist/assets/` — найти точные имена JS и CSS файлов.
 
-### Шаг 3: Определить окружение
+### Шаг 4: Определить окружение
 
 | Фраза | Бакет |
 |---|---|
@@ -145,13 +165,13 @@ npm run build
 | «деплой фронта на предпрод», «обнови предпрод» | `vk-content-planner-frontend-preprod` |
 | «деплой фронта на прод» | `vk-content-planner-frontend` |
 
-### Шаг 4: Очистить бакет
+### Шаг 5: Очистить бакет
 
 ```cmd
 yc storage s3 rm "s3://BUCKET_NAME" --recursive
 ```
 
-### Шаг 5: Загрузить файлы
+### Шаг 6: Загрузить файлы
 
 ```cmd
 yc storage s3 cp "dist/index.html" "s3://BUCKET/index.html" --acl public-read --content-type "text/html; charset=utf-8"
@@ -161,7 +181,7 @@ yc storage s3 cp "dist/favicon.ico" "s3://BUCKET/favicon.ico" --acl public-read 
 yc storage s3 cp "dist/favicon.svg" "s3://BUCKET/favicon.svg" --acl public-read --content-type "image/svg+xml"
 ```
 
-### Шаг 6: Сообщить результат
+### Шаг 7: Сообщить результат
 
 ```
 ✅ Фронтенд задеплоен на ОКРУЖЕНИЕ.
@@ -175,7 +195,7 @@ URL: https://BUCKET.website.yandexcloud.net
 
 1. Выполнить **деплой бэкенда на VM** (шаги 1-5)
 2. Проверить `https://api.dosmmit.ru/api/version`
-3. Выполнить **деплой фронтенда** (шаги 1-6)
+3. Выполнить **деплой фронтенда** (шаги 1-7)
 
 ---
 
@@ -256,7 +276,7 @@ ssh -i "$env:USERPROFILE\.ssh\id_ed25519" -o StrictHostKeyChecking=no -o ServerA
 |---|---|---|
 | ⚡ Шаг 1 — Определить TAG | Чтение 2 bat-файлов + инкремент | «Прочитай backend_python/deploy_preprod.bat и vm_deploy/deploy_vm.bat. Найди set TAG=vXX. Увеличь на 1. Обнови в обоих файлах. Верни новый TAG» |
 | ⚡ Шаг 1 — Реквизиты | Чтение credentials.md | «Прочитай references/credentials.md. Верни JSON: VM_IP, VM_USER, SSH_KEY_PATH, DOMAIN, REGISTRY» |
-| Фронтенд Шаг 2 — Файлы dist/ | Список файлов после сборки | «Прочитай содержимое dist/assets/. Верни: JS_FILE=имя.js, CSS_FILE=имя.css» |
+| Фронтенд Шаг 3 — Файлы dist/ | Список файлов после сборки | «Прочитай содержимое dist/assets/. Верни: JS_FILE=имя.js, CSS_FILE=имя.css» |
 | При ошибке — Диагностика | Поиск решения в diagnostics.md | «Прочитай references/diagnostics.md. Ошибка: {текст}. Верни: 1) причина 2) команды для исправления 3) как проверить» |
 
 **⚡ ПАРАЛЛЕЛЬНО:** «Определить TAG» + «Реквизиты» — запускать одновременно (чтение из разных файлов, результаты не зависят друг от друга).

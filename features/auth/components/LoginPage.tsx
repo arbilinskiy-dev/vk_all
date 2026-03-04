@@ -12,7 +12,10 @@ type ApiEnvironment = 'production' | 'pre-production' | 'local';
 
 // Конфигурация VK приложения
 const VK_APP_ID = 54423358;
-const VK_REDIRECT_URI = 'https://3828ad0cd7bd.ngrok-free.app';
+
+// Динамический redirect URI — автоматически подстраивается под окружение
+// (prod, preprod, ngrok, localhost). Домен должен быть добавлен в настройках VK-приложения.
+const getVkRedirectUri = () => window.location.origin;
 
 // Генератор code_verifier для PKCE (для локального режима)
 const generateCodeVerifier = () => {
@@ -75,7 +78,7 @@ export const LoginPage: React.FC = () => {
                 // Инициализация конфигурации VK ID
                 VKID.Config.init({
                     app: VK_APP_ID,
-                    redirectUrl: VK_REDIRECT_URI,
+                    redirectUrl: getVkRedirectUri(),
                     responseMode: VKID.ConfigResponseMode.Callback,
                     source: VKID.ConfigSource.LOWCODE,
                     scope: 'notify friends photos audio video stories pages notes wall ads offline docs groups notifications stats email market',
@@ -224,7 +227,7 @@ export const LoginPage: React.FC = () => {
                                 code,
                                 device_id,
                                 code_verifier: vkVerifierRef.current,
-                                redirect_uri: VK_REDIRECT_URI
+                                redirect_uri: getVkRedirectUri()
                             })
                         });
                         
@@ -305,7 +308,7 @@ export const LoginPage: React.FC = () => {
                 // Инициализируем конфиг
                 VKID.Config.init({
                     app: VK_APP_ID,
-                    redirectUrl: VK_REDIRECT_URI,
+                    redirectUrl: getVkRedirectUri(),
                     responseMode: VKID.ConfigResponseMode.Callback,
                     scope: 'notify friends photos audio video stories pages notes wall ads offline docs groups notifications stats email market', // Максимальные права доступа
                     codeVerifier: codeVerifier

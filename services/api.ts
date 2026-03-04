@@ -33,3 +33,5 @@ export * from './api/bulk_edit.api';
 export * from './api/batch.api';
 export * from './api/messages.api';
 export * from './api/messages_stats.api';
+export * from './api/dialog_labels.api';
+export * from './api/user_activity.api';

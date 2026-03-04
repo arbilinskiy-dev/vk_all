@@ -331,13 +331,15 @@ def get_unread_dialogs_count(
 ) -> int:
     """
     Считает количество ДИАЛОГОВ с непрочитанными входящими сообщениями.
-    Один SQL-запрос: SELECT COUNT(DISTINCT vk_user_id) 
-    из CachedMessage WHERE входящие AND vk_message_id > last_read.
+    Только пользователи, состоящие в рассылке (ProjectDialog).
+    Один SQL-запрос с JOIN ProjectDialog + VkProfile.
     
     Используется для глобального SSE-стрима счётчиков в сайдбаре.
     """
     from sqlalchemy import func as sa_func, case, literal_column
     from sqlalchemy.orm import aliased
+    from models_library.dialogs_authors import ProjectDialog
+    from models_library.vk_profiles import VkProfile
 
     # Подзапрос: все уникальные vk_user_id с входящими сообщениями в проекте
     # Для каждого — макс message_id входящих
@@ -351,10 +353,18 @@ def get_unread_dialogs_count(
         )
     ).group_by(CachedMessage.vk_user_id).subquery()
 
+    # INNER JOIN с ProjectDialog+VkProfile — только пользователи в рассылке
     # LEFT JOIN с read statuses — считаем диалоги где max_msg_id > last_read (или нет записи)
-    from sqlalchemy import outerjoin, select
-
-    count = db.query(sa_func.count()).select_from(subq).outerjoin(
+    count = db.query(sa_func.count()).select_from(subq).join(
+        VkProfile,
+        VkProfile.vk_user_id == subq.c.vk_user_id,
+    ).join(
+        ProjectDialog,
+        and_(
+            ProjectDialog.vk_profile_id == VkProfile.id,
+            ProjectDialog.project_id == project_id,
+        )
+    ).outerjoin(
         MessageReadStatus,
         and_(
             MessageReadStatus.project_id == project_id,
@@ -374,11 +384,14 @@ def get_unread_dialogs_count_batch(
 ) -> Dict[str, int]:
     """
     Пакетный подсчёт количества ДИАЛОГОВ с непрочитанными для нескольких проектов.
+    Только пользователи, состоящие в рассылке (ProjectDialog).
     Один SQL-запрос вместо N — защита от N+1.
 
     Возвращает: {project_id: unread_dialogs_count, ...}
     """
     from sqlalchemy import func as sa_func
+    from models_library.dialogs_authors import ProjectDialog
+    from models_library.vk_profiles import VkProfile
 
     if not project_ids:
         return {}
@@ -398,10 +411,20 @@ def get_unread_dialogs_count_batch(
         CachedMessage.vk_user_id,
     ).subquery()
 
+    # INNER JOIN с ProjectDialog+VkProfile — только пользователи в рассылке
     # LEFT JOIN с read statuses → фильтруем непрочитанные → COUNT по project_id
     rows = db.query(
         subq.c.project_id,
         sa_func.count().label("unread_dialogs"),
+    ).join(
+        VkProfile,
+        VkProfile.vk_user_id == subq.c.vk_user_id,
+    ).join(
+        ProjectDialog,
+        and_(
+            ProjectDialog.vk_profile_id == VkProfile.id,
+            ProjectDialog.project_id == subq.c.project_id,
+        )
     ).outerjoin(
         MessageReadStatus,
         and_(

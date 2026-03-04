@@ -33,6 +33,10 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
         currentProjectIdRef.current = projectId;
     }
 
+    // Ref для stories.length — чтобы loadMoreStories не пересоздавался при каждом изменении stories
+    const storiesLengthRef = useRef(stories.length);
+    storiesLengthRef.current = stories.length;
+
     // Ref для отслеживания предыдущего projectId (для сброса данных в loadStories)
     const prevProjectIdRef = useRef<string | undefined>(undefined);
 
@@ -40,117 +44,99 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
     // 1. Сначала показываем данные из кэша (быстро)
     // 2. Проверяем свежесть
     // 3. Если устарели - фоново обновляем
-    const loadStories = async (forceRefresh: boolean = false) => {
-        if (!projectId) return;
-        const requestProjectId = projectId;
+    const loadStories = useCallback(async (forceRefresh: boolean = false) => {
+        const pid = currentProjectIdRef.current;
+        if (!pid) return;
         // Сбрасываем данные если проект изменился
-        if (prevProjectIdRef.current !== requestProjectId) {
+        if (prevProjectIdRef.current !== pid) {
             setStories([]);
             setTotalStories(0);
-            prevProjectIdRef.current = requestProjectId;
+            prevProjectIdRef.current = pid;
         }
         setIsLoadingStories(true);
         try {
-            // Шаг 1: Загружаем первую страницу из кэша
+            // Шаг 1: Загружаем все батчи кэша атомарно
             const cachedRes = await callApi<PaginatedStoriesResponse>('getCachedStories', {
-                projectId: requestProjectId,
+                projectId: pid,
                 limit: PAGE_SIZE,
                 offset: 0
             });
-            if (currentProjectIdRef.current !== requestProjectId) return;
+            if (currentProjectIdRef.current !== pid) return;
             if ((cachedRes as any).error) {
                 window.showAppToast?.((cachedRes as any).error, 'error');
                 setStories([]);
                 setTotalStories(0);
             } else {
-                setStories(cachedRes.items || []);
-                setTotalStories(cachedRes.total || 0);
-                // Фоновая догрузка остальных батчей из кэша
-                if (cachedRes.total > PAGE_SIZE) {
-                    await loadRemainingBatches(requestProjectId, cachedRes.total, cachedRes.items || [], false);
-                }
+                // Атомарная загрузка кэша: все батчи локально, потом один setStories
+                const cachedTotal = cachedRes.total || 0;
+                const allCachedItems = cachedTotal > PAGE_SIZE
+                    ? await loadAllBatchesLocal(
+                        'getCachedStories',
+                        pid,
+                        cachedTotal,
+                        cachedRes.items || [],
+                        () => currentProjectIdRef.current !== pid
+                    )
+                    : (cachedRes.items || []);
+                if (currentProjectIdRef.current !== pid) return;
+                // Кэш загружен — показываем данные и снимаем скелетон сразу
+                // (фоновое обновление идёт «тихо» без индикатора загрузки)
+                setStories(allCachedItems);
+                setTotalStories(cachedTotal);
+                setIsLoadingStories(false);
             }
             // Шаг 2: Проверяем свежесть данных
             if (!forceRefresh) {
-                const freshness = await callApi<{ is_stale: boolean }>('getStoriesFreshness', { projectId: requestProjectId });
-                if (currentProjectIdRef.current !== requestProjectId) return;
+                const freshness = await callApi<{ is_stale: boolean }>('getStoriesFreshness', { projectId: pid });
+                if (currentProjectIdRef.current !== pid) return;
                 if (!freshness.is_stale) return;
             }
-            // Шаг 3: Фоновое обновление (данные устарели или принудительное обновление)
+            // Шаг 3: Фоновое обновление — все батчи локально, один атомарный merge
             const refreshRes = await callApi<PaginatedStoriesResponse>('refreshStories', {
-                projectId: requestProjectId,
+                projectId: pid,
                 limit: PAGE_SIZE,
                 offset: 0
             });
-            if (currentProjectIdRef.current !== requestProjectId) return;
+            if (currentProjectIdRef.current !== pid) return;
             if (!(refreshRes as any).error && refreshRes.items) {
-                setStories(refreshRes.items);
-                setTotalStories(refreshRes.total || 0);
+                const refreshTotal = refreshRes.total || 0;
+                const allRefreshItems = refreshTotal > PAGE_SIZE
+                    ? await loadAllBatchesLocal(
+                        'refreshStories',
+                        pid,
+                        refreshTotal,
+                        refreshRes.items,
+                        () => currentProjectIdRef.current !== pid
+                    )
+                    : refreshRes.items;
+                if (currentProjectIdRef.current !== pid) return;
+                setStories(prev => mergeStories(prev, allRefreshItems));
+                setTotalStories(refreshTotal);
             }
         } catch (error: any) {
             const msg = error?.response?.data?.detail || 'Ошибка загрузки историй';
             window.showAppToast?.(msg, 'error');
-        } finally {
             setIsLoadingStories(false);
         }
-    };
+    }, []); // Стабильная ссылка — projectId читается из ref
+
     /**
-     * Фоновая догрузка оставшихся батчей из кэша/refresh.
-     * Последовательно загружает порции по PAGE_SIZE и аппендит к текущему списку.
+     * Загружает ВСЕ батчи в локальный массив (без обновления state).
+     * Накапливает данные и возвращает полный массив для атомарного setStories.
      */
-    const loadRemainingBatches = async (
+    const loadAllBatchesLocal = async (
+        endpoint: string,
         targetProjectId: string,
         total: number,
         firstBatchItems: UnifiedStory[],
-        isRefresh: boolean
-    ) => {
-        let loaded = firstBatchItems.length;
-        const endpoint = isRefresh ? 'refreshStories' : 'getCachedStories';
-
-        while (loaded < total) {
-            // Проверяем, не сменился ли проект
-            if (currentProjectIdRef.current !== targetProjectId) {
-                console.log(`[STORIES] Батч-загрузка отменена — проект сменился`);
-                return;
-            }
-
-            try {
-                const batchRes = await callApi<PaginatedStoriesResponse>(endpoint, {
-                    projectId: targetProjectId,
-                    limit: PAGE_SIZE,
-                    offset: loaded
-                });
-
-
-                if ((batchRes as any).error || !batchRes.items?.length) break;
-
-                // Аппендим новый батч к текущему списку
-                setStories(prev => [...prev, ...batchRes.items]);
-                loaded += batchRes.items.length;
-                console.log(`[STORIES] Батч загружен: +${batchRes.items.length}, всего ${loaded}/${total}`);
-
-                // Если получили меньше, чем запросили — больше нет данных
-                if (batchRes.items.length < PAGE_SIZE) break;
-            } catch (error) {
-                console.error(`[STORIES] Ошибка батч-загрузки (offset=${loaded}):`, error);
-                break;
-            }
-        }
-    };
-
-    // ...existing code...
-    const loadRemainingBatchesWithCancel = async (
-        targetProjectId: string,
-        total: number,
-        firstBatchItems: UnifiedStory[],
-        isRefresh: boolean,
         isCancelled: () => boolean
-    ) => {
+    ): Promise<UnifiedStory[]> => {
+        const allItems = [...firstBatchItems];
         let loaded = firstBatchItems.length;
-        const endpoint = isRefresh ? 'refreshStories' : 'getCachedStories';
+
         while (loaded < total) {
             if (isCancelled() || currentProjectIdRef.current !== targetProjectId) {
-                return;
+                return allItems; // возвращаем что успели загрузить
             }
             try {
                 const batchRes = await callApi<PaginatedStoriesResponse>(endpoint, {
@@ -159,17 +145,51 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
                     offset: loaded
                 });
                 if ((batchRes as any).error || !batchRes.items?.length) break;
-                setStories(prev => [...prev, ...batchRes.items]);
+                allItems.push(...batchRes.items);
                 loaded += batchRes.items.length;
                 if (batchRes.items.length < PAGE_SIZE) break;
-            } catch (error) {
+            } catch {
                 break;
             }
         }
+
+        return allItems;
     };
 
-    /** Мерж новых данных с текущими (сохраняет viewers/stats) */
+    /** Мерж новых данных с текущими (сохраняет viewers/stats).
+     *  Возвращает prev по ссылке, если данные не изменились — предотвращает лишний ре-рендер.
+     */
     const mergeStories = (prev: UnifiedStory[], newItems: UnifiedStory[]): UnifiedStory[] => {
+        // Быстрый путь: длина изменилась — точно новый массив
+        if (prev.length !== newItems.length) {
+            return buildMerged(prev, newItems);
+        }
+        // Если оба пустые — вернуть prev по ссылке
+        if (prev.length === 0) return prev;
+
+        const prevMap = new Map<string | number, UnifiedStory>(prev.map(s => [s.vk_story_id || s.log_id, s]));
+
+        // Проверяем, есть ли реальные изменения
+        const hasChanges = newItems.some(newStory => {
+            const key = newStory.vk_story_id || newStory.log_id;
+            const existing = prevMap.get(key);
+            if (!existing) return true; // новая история — есть изменение
+            // Сравниваем ключевые поля данных
+            return (
+                newStory.story_link !== existing.story_link ||
+                newStory.detailed_stats !== existing.detailed_stats ||
+                newStory.stats_updated_at !== existing.stats_updated_at ||
+                newStory.viewers !== existing.viewers ||
+                newStory.viewers_updated_at !== existing.viewers_updated_at
+            );
+        });
+
+        if (!hasChanges) return prev; // Ничего не изменилось — сохраняем ссылку
+        return buildMerged(prev, newItems);
+    };
+
+    /** Создаёт новый массив с мержем данных (вызывается только при реальных изменениях) */
+    const buildMerged = (prev: UnifiedStory[], newItems: UnifiedStory[]): UnifiedStory[] => {
         const prevMap = new Map<string | number, UnifiedStory>(prev.map(s => [s.vk_story_id || s.log_id, s]));
         return newItems.map((newStory: UnifiedStory) => {
             const key = newStory.vk_story_id || newStory.log_id;
@@ -188,13 +208,15 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
     };
 
     // Подгрузка следующей порции историй (infinite scroll)
+    // Стабильная ссылка — projectId и offset читаются из ref
     const loadMoreStories = useCallback(async () => {
-
-        const nextOffset = stories.length;
+        const pid = currentProjectIdRef.current;
+        const nextOffset = storiesLengthRef.current;
+        if (!pid) return;
         setIsLoadingMore(true);
         try {
             const res = await callApi<PaginatedStoriesResponse>('getCachedStories', {
-                projectId,
+                projectId: pid,
                 limit: PAGE_SIZE,
                 offset: nextOffset
             });
@@ -207,12 +229,12 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
         } finally {
             setIsLoadingMore(false);
         }
-    }, [projectId, stories.length, totalStories]);
+    }, []); // Стабильная ссылка — не пересоздаётся при изменении stories
 
     // Принудительное обновление (для кнопки "Обновить")
-    const forceRefreshStories = async () => {
+    const forceRefreshStories = useCallback(async () => {
         await loadStories(true);
-    };
+    }, [loadStories]);
 
     // Единственный useEffect для загрузки историй при смене tab/project
     // Используем флаг cancelled для отмены устаревших запросов
@@ -233,18 +255,26 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
                     window.showAppToast?.((cachedRes as any).error, 'error');
                     setStories([]);
                     setTotalStories(0);
+                    setIsLoadingStories(false);
                 } else {
-                    setStories(cachedRes.items || []);
-                    const total = cachedRes.total || 0;
-                    if (total > PAGE_SIZE && !cancelled) {
-                        await loadRemainingBatchesWithCancel(projectId, total, cachedRes.items || [], false, () => cancelled);
-                    }
+                    // Атомарная загрузка кэша: все батчи локально, потом один setStories
+                    const cachedTotal = cachedRes.total || 0;
+                    const allCachedItems = cachedTotal > PAGE_SIZE
+                        ? await loadAllBatchesLocal('getCachedStories', projectId, cachedTotal, cachedRes.items || [], () => cancelled)
+                        : (cachedRes.items || []);
+                    if (cancelled) return;
+                    // Кэш загружен — показываем данные и снимаем скелетон сразу
+                    // (фоновое обновление идёт «тихо» без индикатора загрузки)
+                    setStories(allCachedItems);
+                    setTotalStories(cachedTotal);
+                    setIsLoadingStories(false);
                 }
                 // Проверяем свежесть
                 const freshness = await callApi<{ is_stale: boolean }>('getStoriesFreshness', { projectId });
                 if (cancelled) return;
                 if (!freshness.is_stale) return;
-                // Фоновое обновление
+                // Фоновое обновление — загружаем ВСЕ батчи в локальный массив,
+                // затем делаем один атомарный merge (без мигания 82→10→87)
                 const refreshRes = await callApi<PaginatedStoriesResponse>('refreshStories', {
                     projectId,
                     limit: PAGE_SIZE,
@@ -252,20 +282,19 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
                 });
                 if (cancelled) return;
                 if (!(refreshRes as any).error && refreshRes.items) {
-                    // Мержим первый батч с текущими данными (сохраняем viewers/stats)
-                    setStories(prev => mergeStories(prev, refreshRes.items));
-                    setTotalStories(refreshRes.total || 0);
                     const refreshTotal = refreshRes.total || 0;
-                    if (refreshTotal > PAGE_SIZE && !cancelled) {
-                        await loadRemainingBatchesWithCancel(projectId, refreshTotal, refreshRes.items, true, () => cancelled);
-                    }
+                    // Накапливаем все батчи локально
+                    const allRefreshItems = refreshTotal > PAGE_SIZE
+                        ? await loadAllBatchesLocal('refreshStories', projectId, refreshTotal, refreshRes.items, () => cancelled)
+                        : refreshRes.items;
+                    if (cancelled) return;
+                    // Один атомарный merge — пользователь видит плавное обновление
+                    setStories(prev => mergeStories(prev, allRefreshItems));
+                    setTotalStories(refreshTotal);
                 }
             } catch (error: any) {
                 if (!cancelled) {
                     window.showAppToast?.('Ошибка загрузки историй', 'error');
-                }
-            } finally {
-                if (!cancelled) {
                     setIsLoadingStories(false);
                 }
             }

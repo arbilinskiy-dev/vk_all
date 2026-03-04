@@ -10,11 +10,12 @@
 ```
 main.py (startup)
   └── scheduler_service.start()
-        └── BackgroundScheduler (12 задач)
+        └── BackgroundScheduler (13 задач)
               ├── Группа 1: Оперативные (50с / 5м / 10м)
               ├── Группа 2: Ротация логов (24ч)
               ├── Группа 3: Обслуживание (2ч / 6ч)
-              └── Группа 4: Низкий приоритет (24ч)
+              ├── Группа 4: Низкий приоритет (24ч)
+              └── Группа 5: Обогащение данных (03:00 MSK)
 ```
 
 ### Redis Lock
@@ -59,6 +60,12 @@ main.py (startup)
 | `finalize_stories_logs` | `job_finalize_stories_logs` | **24 ч** | `finalize_stories_lock` (86000с) | Финализирует `stories_automation_logs` старше 48ч с `is_active=False`. Устанавливает `stats_finalized=True`, `viewers_finalized=True`. |
 | `cleanup_expired_blacklist` | `job_cleanup_expired_blacklist` | **24 ч** | `cleanup_blacklist_lock` (86000с) | Удаляет записи `review_contest_blacklist` с истёкшим `until_date`. |
 
+### Группа 5: Обогащение данных (фиксированное время)
+
+| ID в APScheduler | Функция | Расписание | Redis Lock | Описание |
+|---|---|---|---|---|
+| `enrich_stub_profiles` | `job_enrich_stub_profiles` | **CronTrigger 00:00 UTC (03:00 MSK)** | `vk_planner:profile_enrichment_lock` (3600с) | Обогащает VkProfile-заглушки (first_name IS NULL) данными из VK API `users.get`. Использует `VK_SERVICE_KEY` (сервисный ключ приложения). Батчи по 1000 user_ids, задержка 0.35с. Заполняет: first_name, last_name, sex, photo_url, domain, bdate, city, country, has_mobile, is_closed, deactivated, last_seen, platform. |
+
 ---
 
 ## 3. Зависимости (CRUD-функции)
@@ -73,6 +80,7 @@ main.py (startup)
 | Ротация callback_logs | inline в задаче | `db.query(VkCallbackLog).filter(timestamp < cutoff).delete()` |
 | Очистка сессий | `services/session_auth_service.py` | `cleanup_expired_sessions(db, timeout_minutes=20)` |
 | Верификация токенов | `services/vk_api/api_client.py` | `call_vk_api('users.get', ...)` |
+| Обогащение профилей | `services/profile_enrichment_service.py` | `enrich_stub_profiles()` → VK API `users.get` с `VK_SERVICE_KEY` |
 
 ---
 
@@ -83,8 +91,8 @@ main.py (startup)
 ```python
 # main.py → startup_event()
 scheduler_service.start()
-# → BackgroundScheduler запускает 12 задач
-# → Консоль: "✅ APScheduler started — 12 scheduled jobs registered."
+# → BackgroundScheduler запускает 13 задач
+# → Консоль: "✅ APScheduler started — 13 scheduled jobs registered."
 ```
 
 ### Остановка
@@ -155,4 +163,5 @@ docker logs <container_name> | grep "SCHEDULER"
 6ч      █              █              █      Очистка system_tasks
 24ч     █                                    Ротация логов (5 задач)
 24ч     █                                    Финализация + blacklist
+03MSK   █                                    Обогащение профилей
 ```

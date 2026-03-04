@@ -27,5 +27,9 @@ class Settings(BaseSettings):
     redis_host: Optional[str] = None
     redis_port: int = 6379
     redis_password: Optional[str] = None
+    
+    # Сервисный ключ VK-приложения — для фоновых задач (users.get без user token)
+    # Получить: https://vk.com/apps?act=manage → Настройки → Сервисный ключ доступа
+    vk_service_key: Optional[str] = None
 
 settings = Settings()

@@ -32,7 +32,8 @@ export const PhotosGrid: React.FC<PhotosGridProps> = ({ items, onPreview }) => {
                 return (
                     <div
                         key={key}
-                        className="aspect-square rounded-lg overflow-hidden bg-gray-100 relative group cursor-pointer"
+                        className="aspect-square rounded-lg overflow-hidden bg-gray-100 relative group cursor-pointer opacity-0 animate-fade-in-row"
+                        style={{ animationDelay: `${idx * 30}ms` }}
                         onClick={() => onPreview(item.url)}
                     >
                         {/* Скелетон пока фото грузится */}

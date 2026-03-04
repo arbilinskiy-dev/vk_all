@@ -11,6 +11,8 @@ import logging
 
 from database import get_db
 from services.vk_api.token_manager import call_vk_api_for_group
+from services.auth_middleware import get_current_user, CurrentUser
+from services.action_tracker import track
 
 # Сервисы
 from services.messages.vk_client import get_project_and_tokens
@@ -130,16 +132,21 @@ def load_all_messages_endpoint(
 def send_message_endpoint(
     body: SendMessageRequest,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Отправляет сообщение пользователю через VK API messages.send."""
     project, community_tokens, group_id_int = get_project_and_tokens(db, body.project_id)
-    return send_service.send_message(
+    result = send_service.send_message(
         db, body.project_id, body.user_id, body.message,
         community_tokens, group_id_int,
         sender_id=body.sender_id,
         sender_name=body.sender_name,
         attachment=body.attachment,
     )
+    track(db, current_user, "message_send", "messages",
+          entity_type="message", project_id=body.project_id,
+          metadata={"user_id": body.user_id})
+    return result
 
 
 # =============================================================================

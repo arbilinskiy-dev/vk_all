@@ -29,7 +29,7 @@ interface StoriesStatsViewProps {
     loadDashboardStats: (periodType?: string, filterType?: string, customStartDate?: string, customEndDate?: string) => void;
 }
 
-export const StoriesStatsView: React.FC<StoriesStatsViewProps> = ({
+const StoriesStatsViewInner: React.FC<StoriesStatsViewProps> = ({
     handleUpdateStats, handleUpdateViewers, handleUpdateAll, updatingStatsId,
     loadStories, isLoadingStories,
     stories,
@@ -74,3 +74,6 @@ export const StoriesStatsView: React.FC<StoriesStatsViewProps> = ({
         </div>
     );
 };
+
+// Мемоизация: предотвращаем лишние ре-рендеры промежуточного компонента
+export const StoriesStatsView = React.memo(StoriesStatsViewInner);

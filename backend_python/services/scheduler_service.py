@@ -1,6 +1,7 @@
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 import logging
 import time
 from datetime import datetime
@@ -368,6 +369,32 @@ def job_cleanup_expired_blacklist():
 
 
 # ===============================================================
+#         ОБОГАЩЕНИЕ ПРОФИЛЕЙ-ЗАГЛУШЕК (раз в сутки, 03:00 MSK)
+# ===============================================================
+
+def job_enrich_stub_profiles():
+    """
+    Обогащение VkProfile-заглушек данными из VK API.
+    Интервал: 1 раз в сутки в 03:00 MSK.
+    
+    Находит профили с first_name IS NULL (созданные callback-хендлерами),
+    вызывает VK API users.get через service key батчами по 1000,
+    заполняет имя, фото, город, пол и остальные поля.
+    """
+    try:
+        from services.profile_enrichment_service import enrich_stub_profiles
+        result = enrich_stub_profiles()
+        total = result.get('total_stubs', 0)
+        enriched = result.get('enriched', 0)
+        if total > 0:
+            print(f"SCHEDULER: Profile enrichment done — {enriched}/{total} profiles enriched.")
+        else:
+            print("SCHEDULER: Profile enrichment — no stubs found.")
+    except Exception as e:
+        print(f"SCHEDULER ERROR (Profile Enrichment): {e}")
+
+
+# ===============================================================
 #                        ЗАПУСК / ОСТАНОВКА
 # ===============================================================
 
@@ -478,8 +505,18 @@ def start():
         replace_existing=True
     )
 
+    # --- Группа 5: Обогащение данных (раз в сутки, фиксированное время) ---
+
+    # Обогащение профилей-заглушек (VkProfile без имени/фото) — 03:00 MSK (00:00 UTC)
+    scheduler.add_job(
+        job_enrich_stub_profiles,
+        CronTrigger(hour=0, minute=0, timezone='UTC'),  # 03:00 MSK = 00:00 UTC
+        id='enrich_stub_profiles',
+        replace_existing=True
+    )
+
     scheduler.start()
-    print("✅ APScheduler started — 12 scheduled jobs registered.")
+    print("✅ APScheduler started — 13 scheduled jobs registered.")
 
 def shutdown():
     """Корректное завершение планировщика."""

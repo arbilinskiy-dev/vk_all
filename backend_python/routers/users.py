@@ -10,7 +10,7 @@ router = APIRouter(prefix="/users", tags=["User Management"])
 
 @router.post("/getAll", response_model=List[schemas.User])
 def get_all_users(db: Session = Depends(get_db)):
-    """Возвращает полный список всех пользователей для страницы управления."""
+    """Возвращает полный список всех пользователей для страницы управления (с паролями)."""
     return user_service.get_all_users(db)
 
 @router.post("/updateAll", response_model=schemas.GenericSuccess)

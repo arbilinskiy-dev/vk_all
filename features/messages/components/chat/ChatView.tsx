@@ -3,6 +3,7 @@ import { Project } from '../../../../shared/types';
 import { ChatMessageData, ConversationUser, MessageSearchFilter, ChatDisplayFilters } from '../../types';
 import { ManagerFocusInfo } from '../../hooks/chat/useTypingState';
 import { ChatHeader } from './ChatHeader';
+import { DialogLabel } from '../../../../services/api/dialog_labels.api';
 import { ChatMessageList } from './ChatMessageList';
 import { ChatInput } from './ChatInput';
 
@@ -66,6 +67,15 @@ interface ChatViewProps {
     isImportant?: boolean;
     /** Колбэк переключения пометки «Важное» */
     onToggleImportant?: () => void;
+    // --- Метки диалога ---
+    /** Все метки проекта */
+    dialogLabels?: DialogLabel[];
+    /** ID меток, назначенных этому диалогу */
+    assignedLabelIds?: string[];
+    /** Назначить метку */
+    onAssignLabel?: (labelId: string) => void;
+    /** Снять метку */
+    onUnassignLabel?: (labelId: string) => void;
 }
 
 /**
@@ -101,6 +111,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
     onSaveAsTemplate,
     isImportant,
     onToggleImportant,
+    dialogLabels = [],
+    assignedLabelIds = [],
+    onAssignLabel,
+    onUnassignLabel,
 }) => {
     // Локальный текст поиска (для мгновенного отображения в input)
     const [searchQuery, setSearchQuery] = useState('');
@@ -219,6 +233,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 canWrite={canWrite}
                 isImportant={isImportant}
                 onToggleImportant={onToggleImportant}
+                dialogLabels={dialogLabels}
+                assignedLabelIds={assignedLabelIds}
+                onAssignLabel={onAssignLabel}
+                onUnassignLabel={onUnassignLabel}
             />
 
             {/* Основной контент — загрузка / ошибка / сообщения */}

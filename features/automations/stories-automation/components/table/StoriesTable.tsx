@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { UnifiedStory } from '../../types';
 import { ImagePreviewModal } from '../../../../../shared/components/modals/ImagePreviewModal';
 import { HoverPreview } from '../shared/HoverPreview';
@@ -25,7 +25,7 @@ interface StoriesTableProps {
     totalStories?: number;
 }
 
-export const StoriesTable: React.FC<StoriesTableProps> = ({ 
+const StoriesTableInner: React.FC<StoriesTableProps> = ({ 
     stories, isLoading, updatingStatsId, onUpdateStats, onUpdateViewers, onUpdateAll, onLoadStories, onBatchUpdate,
     hasMore, isLoadingMore, onLoadMore, totalStories
 }) => {
@@ -43,8 +43,41 @@ export const StoriesTable: React.FC<StoriesTableProps> = ({
     const [hasAnimatedRows, setHasAnimatedRows] = useState(false);
     const mountedRef = useRef(false);
     
-    // DEBUG: Логирование изменений stories
-    console.log(`[StoriesTable] Рендер с ${stories.length} историями`);
+    // DEBUG: Логирование причин ре-рендера (только в dev)
+    const prevPropsRef = useRef<Record<string, any>>({});
+    if (import.meta.env.DEV) {
+        const currentProps: Record<string, any> = {
+            storiesRef: stories,       // ← ссылка на массив
+            storiesLen: stories.length,
+            isLoading,
+            updatingStatsId,
+            hasMore,
+            isLoadingMore,
+            totalStories,
+            // function refs — для обнаружения нестабильных ссылок
+            onUpdateStats,
+            onUpdateViewers,
+            onUpdateAll,
+            onLoadStories,
+            onBatchUpdate,
+            onLoadMore,
+        };
+        const prev = prevPropsRef.current;
+        const changed = Object.keys(currentProps)
+            .filter(k => prev[k] !== currentProps[k])
+            .map(k => {
+                const pv = prev[k];
+                const nv = currentProps[k];
+                // Для функций — показываем ⚡ (новая ссылка)
+                if (typeof nv === 'function') return `⚡${k}`;
+                return `${k}: ${pv}→${nv}`;
+            });
+        console.log(
+            `[StoriesTable] Рендер с ${stories.length} историями` +
+            (changed.length ? ` | Изменили: ${changed.join(', ')}` : ' | (StrictMode double)')
+        );
+        prevPropsRef.current = currentProps;
+    }
     
     useEffect(() => {
         // При первом монтировании запускаем анимацию строк
@@ -65,7 +98,7 @@ export const StoriesTable: React.FC<StoriesTableProps> = ({
     };
 
     // Обработчик наведения мыши
-    const handleMouseEnter = (e: React.MouseEvent<HTMLDivElement>, url: string) => {
+    const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>, url: string) => {
         const rect = e.currentTarget.getBoundingClientRect();
         if (exitTimeoutRef.current) {
             clearTimeout(exitTimeoutRef.current);
@@ -73,19 +106,19 @@ export const StoriesTable: React.FC<StoriesTableProps> = ({
         }
         setIsExitingPreview(false);
         setHoveredImage({ url, rect });
-    };
+    }, []);
 
     // Обработчик ухода мыши
-    const handleMouseLeave = () => {
+    const handleMouseLeave = useCallback(() => {
         setIsExitingPreview(true);
         exitTimeoutRef.current = window.setTimeout(() => {
             setHoveredImage(null);
             setIsExitingPreview(false);
         }, 200);
-    };
+    }, []);
 
     // Функция переключения раскрытия зрителей
-    const toggleViewers = (storyId: number) => {
+    const toggleViewers = useCallback((storyId: number) => {
         setExpandedViewers(prev => {
             const newSet = new Set(prev);
             if (newSet.has(storyId)) {
@@ -95,8 +128,9 @@ export const StoriesTable: React.FC<StoriesTableProps> = ({
             }
             return newSet;
         });
-    };
-    
+    }, []);
+    // Мемоизированный коллбэк для клика по превью
+    const handleClickPreview = useCallback((url: string) => setPreviewImage(url), []);    
     return (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
              {/* Header / Toolbar */}
@@ -182,7 +216,7 @@ export const StoriesTable: React.FC<StoriesTableProps> = ({
                                         onToggleViewers={toggleViewers}
                                         onMouseEnterPreview={handleMouseEnter}
                                         onMouseLeavePreview={handleMouseLeave}
-                                        onClickPreview={(url) => setPreviewImage(url)}
+                                        onClickPreview={handleClickPreview}
                                     />
 
                                     {/* Раскрытая таблица зрителей - на всю ширину */}
@@ -236,3 +270,6 @@ export const StoriesTable: React.FC<StoriesTableProps> = ({
     </div>
     );
 };
+
+// Мемоизация: ре-рендерим только при реальном изменении пропсов
+export const StoriesTable = React.memo(StoriesTableInner);

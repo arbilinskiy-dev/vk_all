@@ -25,6 +25,7 @@ export interface AuthLogEntry {
     user_id: string | null;
     user_type: string;
     username: string | null;
+    full_name: string | null;
     event_type: string;
     ip_address: string | null;
     user_agent: string | null;
@@ -66,6 +67,7 @@ export interface ActiveSession {
     id: string;
     user_id: string;
     username: string;
+    full_name: string | null;
     role: string;
     user_type: string;
     ip_address: string | null;

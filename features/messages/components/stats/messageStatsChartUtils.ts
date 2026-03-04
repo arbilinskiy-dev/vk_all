@@ -1,11 +1,18 @@
 /**
  * Утилиты для компонента MessageStatsChart.
- * Конвертация UTC→MSK, заполнение пробелов нулями.
+ * Конвертация UTC→MSK, заполнение пробелов нулями, downsampling.
  */
 
 import { MessageStatsChartPoint } from '../../../../services/api/messages_stats.api';
 import { MSK_OFFSET_MS } from './messageStatsChartConstants';
 import { ChartGranularity, NormalizedPoint } from './messageStatsChartTypes';
+
+/**
+ * Максимальное количество точек на графике.
+ * При превышении — агрегируем соседние точки (downsampling).
+ * 200 точек — достаточно для детализации, но не перегружает SVG.
+ */
+export const MAX_CHART_POINTS = 200;
 
 /** Преобразовать Date в «московское» время без сдвига на локальный TZ */
 export function toMSK(date: Date): Date {
@@ -120,4 +127,79 @@ export function fillGaps(data: MessageStatsChartPoint[], granularity: ChartGranu
     }
 
     return result;
+}
+
+// ─── Downsampling: агрегируем точки если их больше MAX_CHART_POINTS ──────
+
+/**
+ * Уменьшает количество точек, группируя соседние и суммируя метрики.
+ * Если точек <= maxPoints — возвращает исходный массив без изменений.
+ */
+export function downsamplePoints(data: NormalizedPoint[], maxPoints: number = MAX_CHART_POINTS): NormalizedPoint[] {
+    if (data.length <= maxPoints) return data;
+
+    const bucketSize = Math.ceil(data.length / maxPoints);
+    const result: NormalizedPoint[] = [];
+
+    for (let i = 0; i < data.length; i += bucketSize) {
+        const chunk = data.slice(i, Math.min(i + bucketSize, data.length));
+        if (chunk.length === 0) continue;
+
+        // Берём метку от средней точки группы (для точного позиционирования на оси X)
+        const midIdx = Math.floor(chunk.length / 2);
+        const midPoint = chunk[midIdx];
+
+        // Суммируем все числовые метрики
+        let incoming = 0, outgoing = 0, total = 0, unique_users = 0;
+        let incoming_payload = 0, incoming_text = 0, outgoing_system = 0, outgoing_bot = 0;
+        let incoming_dialogs = 0, unique_text_users = 0, unique_payload_users = 0, outgoing_recipients = 0;
+
+        for (const pt of chunk) {
+            incoming += pt.incoming;
+            outgoing += pt.outgoing;
+            total += pt.total;
+            unique_users += pt.unique_users;
+            incoming_payload += pt.incoming_payload;
+            incoming_text += pt.incoming_text;
+            outgoing_system += pt.outgoing_system;
+            outgoing_bot += pt.outgoing_bot;
+            incoming_dialogs += pt.incoming_dialogs;
+            unique_text_users += pt.unique_text_users;
+            unique_payload_users += pt.unique_payload_users;
+            outgoing_recipients += pt.outgoing_recipients;
+        }
+
+        result.push({
+            slot: midPoint.slot,
+            incoming,
+            outgoing,
+            total,
+            unique_users,
+            incoming_payload,
+            incoming_text,
+            outgoing_system,
+            outgoing_bot,
+            incoming_dialogs,
+            unique_text_users,
+            unique_payload_users,
+            outgoing_recipients,
+            labelDate: midPoint.labelDate,
+            labelTime: midPoint.labelTime,
+        });
+    }
+
+    return result;
+}
+
+// ─── Авто-выбор гранулярности по объёму данных ──────────────────────────
+
+/** Порог часовых точек, после которого автоматически переключаемся на дни */
+const AUTO_DAYS_THRESHOLD = 168; // 7 дней × 24 часа
+
+/**
+ * Определяет оптимальную гранулярность по объёму данных.
+ * Если часовых точек >168 (неделя) — рекомендует «дни».
+ */
+export function suggestGranularity(dataLength: number): ChartGranularity {
+    return dataLength > AUTO_DAYS_THRESHOLD ? 'days' : 'hours';
 }

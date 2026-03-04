@@ -183,7 +183,7 @@ def get_stories_batch(db: Session, project_ids: list[str]) -> dict[str, list]:
                 "link": story_link,
                 "views": 0,
                 "is_active": log.is_active if hasattr(log, 'is_active') else False,
-                "is_automated": log.vk_post_id is not None and log.vk_post_id != 0,
+                "is_automated": log.vk_post_id is not None and log.vk_post_id > 0,
                 "db_log_id": log.id,
                 "stats": None,
                 "stats_updated_at": None,

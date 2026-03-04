@@ -212,8 +212,11 @@ export const ActiveSessionsTab: React.FC = () => {
                                     <td className="px-4 py-2.5">
                                         <StatusIndicator idleMinutes={session.idle_minutes} />
                                     </td>
-                                    <td className="px-4 py-2.5 text-sm font-medium text-gray-800">
-                                        {session.username}
+                                    <td className="px-4 py-2.5">
+                                        <div className="text-sm font-medium text-gray-800">{session.username}</div>
+                                        {session.full_name && (
+                                            <div className="text-xs text-gray-400">{session.full_name}</div>
+                                        )}
                                     </td>
                                     <td className="px-4 py-2.5">
                                         <RoleBadge role={session.role} />

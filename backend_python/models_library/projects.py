@@ -3,6 +3,7 @@ from sqlalchemy import Column, String, Text, Boolean, Integer, ForeignKey
 from sqlalchemy.orm import relationship
 from database import Base
 from .types import EncryptedString
+from .user_roles import UserRole  # noqa: F401 — нужен для FK
 
 class Project(Base):
     __tablename__ = "projects"
@@ -43,6 +44,7 @@ class User(Base):
     full_name = Column(String)
     username = Column(String, unique=True, index=True)
     password = Column(String)
+    role_id = Column(String, ForeignKey("user_roles.id", ondelete="SET NULL"), nullable=True, index=True)
 
 # Новые модели для Контекста Проекта
 class ProjectContextField(Base):

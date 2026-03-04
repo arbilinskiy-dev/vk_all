@@ -5,10 +5,8 @@ import crud
 import schemas
 
 def get_all_users(db: Session) -> List[schemas.User]:
-    """Получает всех пользователей из базы данных."""
+    """Получает всех пользователей из базы данных (с паролями для админа)."""
     users = crud.get_all_users(db)
-    # Преобразуем SQLAlchemy модели в Pydantic модели.
-    # Пароль будет включен благодаря from_attributes=True.
     return [schemas.User.model_validate(u, from_attributes=True) for u in users]
 
 

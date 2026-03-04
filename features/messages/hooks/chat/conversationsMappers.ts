@@ -55,7 +55,7 @@ export const mapVkMessageToChat = (msg: VkMessageItem): ChatMessageData => ({
 
 /**
  * Маппинг SystemListSubscriber → Conversation.
- * Инжектируем реальный unreadCount, lastMessage и isImportant.
+ * Инжектируем реальный unreadCount, lastMessage, isImportant и labelIds.
  */
 export const mapSubscriberToConversation = (
     sub: SystemListSubscriber,
@@ -64,6 +64,7 @@ export const mapSubscriberToConversation = (
     unreadCountsMap: Record<number, number>,
     lastMessagesMap: Record<number, VkMessageItem>,
     importantMap?: Record<number, boolean>,
+    labelsMap?: Record<number, string[]>,
 ): Conversation => {
     const vkMsg = lastMessagesMap[sub.vk_user_id];
     return {
@@ -74,5 +75,6 @@ export const mapSubscriberToConversation = (
         channel,
         projectId,
         isImportant: importantMap?.[sub.vk_user_id] || false,
+        labelIds: labelsMap?.[sub.vk_user_id] || undefined,
     };
 };

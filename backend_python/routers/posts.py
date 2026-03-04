@@ -13,6 +13,8 @@ import services.task_monitor as task_monitor
 from services import vk_service
 from database import get_db
 from config import settings
+from services.auth_middleware import get_current_user, CurrentUser
+from services.action_tracker import track
 
 router = APIRouter()
 
@@ -66,20 +68,25 @@ def refresh_suggested_posts(payload: schemas.ProjectIdPayload, db: Session = Dep
 
 # --- Post Actions ---
 @router.post("/savePost", response_model=schemas.ScheduledPost)
-def save_post(payload: schemas.SavePostPayload, db: Session = Depends(get_db)):
+def save_post(payload: schemas.SavePostPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     # Здесь мы обрабатываем сохранение (create/update) в базу или в отложку.
     # Если publishNow=True, это должно обрабатываться через /publishPost (фронтенд должен это учитывать)
     if payload.publishNow:
         # Для обратной совместимости, но лучше использовать async publish
         pass
         
-    return post_service.save_post(db, payload, settings.vk_user_token)
+    result = post_service.save_post(db, payload, settings.vk_user_token)
+    _entity_id = getattr(result, 'id', None)
+    track(db, current_user, "post_save", "posts",
+          entity_type="post", entity_id=str(_entity_id) if _entity_id else None,
+          project_id=payload.projectId)
+    return result
 
 class ScheduleTaskPayload(schemas.SavePostPayload):
     deleteOriginalId: Optional[str] = None # ID поста, который нужно удалить после переноса (для Drag-and-Drop move)
 
 @router.post("/schedulePostTask", response_model=schemas.TaskStartResponse)
-def schedule_post_task(payload: ScheduleTaskPayload, background_tasks: BackgroundTasks):
+def schedule_post_task(payload: ScheduleTaskPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Запускает фоновую задачу сохранения/планирования поста в VK.
     Используется для Drag-and-Drop, чтобы избежать зависаний при ротации токенов.
@@ -95,20 +102,30 @@ def schedule_post_task(payload: ScheduleTaskPayload, background_tasks: Backgroun
         settings.vk_user_token
     )
     
+    track(db, current_user, "post_schedule", "posts",
+          entity_type="post", project_id=payload.projectId,
+          metadata={"task_id": task_id})
+    
     return {"taskId": task_id}
 
 @router.post("/deletePost", response_model=schemas.GenericSuccess)
-def delete_post(payload: schemas.DeletePostPayload, db: Session = Depends(get_db)):
+def delete_post(payload: schemas.DeletePostPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     post_service.delete_scheduled_post(db, payload, settings.vk_user_token)
+    track(db, current_user, "post_delete", "posts",
+          entity_type="post", entity_id=payload.postId,
+          project_id=payload.projectId)
     return {"success": True}
 
 @router.post("/deletePublishedPost", response_model=schemas.DeletePublishedPostResponse)
-def delete_published_post(payload: schemas.DeletePostPayload, db: Session = Depends(get_db)):
+def delete_published_post(payload: schemas.DeletePostPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     message = post_service.delete_published_post(db, payload, settings.vk_user_token)
+    track(db, current_user, "post_delete_published", "posts",
+          entity_type="post", entity_id=payload.postId,
+          project_id=payload.projectId)
     return {"success": True, "message": message}
 
 @router.post("/publishPost", response_model=schemas.TaskStartResponse)
-def publish_post(payload: schemas.PublishPostPayload, background_tasks: BackgroundTasks):
+def publish_post(payload: schemas.PublishPostPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """
     Запускает фоновую задачу публикации поста с надежной ротацией токенов.
     """
@@ -129,11 +146,15 @@ def publish_post(payload: schemas.PublishPostPayload, background_tasks: Backgrou
         settings.vk_user_token
     )
     
+    track(db, current_user, "post_publish", "posts",
+          entity_type="post", project_id=payload.projectId,
+          metadata={"task_id": task_id})
+    
     return {"taskId": task_id}
 
 # --- Pin / Unpin ---
 @router.post("/pinPost", response_model=schemas.GenericSuccess)
-def pin_post(payload: schemas.PinPostPayload, db: Session = Depends(get_db)):
+def pin_post(payload: schemas.PinPostPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Закрепляет опубликованный пост на стене сообщества."""
     from fastapi import HTTPException
     project = crud.get_project_by_id(db, payload.projectId)
@@ -155,10 +176,14 @@ def pin_post(payload: schemas.PinPostPayload, db: Session = Depends(get_db)):
     db.query(models.Post).filter(models.Post.id == payload.postId).update({"is_pinned": True})
     db.commit()
     
+    track(db, current_user, "post_pin", "posts",
+          entity_type="post", entity_id=payload.postId,
+          project_id=payload.projectId)
+    
     return {"success": True}
 
 @router.post("/unpinPost", response_model=schemas.GenericSuccess)
-def unpin_post(payload: schemas.PinPostPayload, db: Session = Depends(get_db)):
+def unpin_post(payload: schemas.PinPostPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Открепляет пост со стены сообщества."""
     from fastapi import HTTPException
     project = crud.get_project_by_id(db, payload.projectId)
@@ -177,5 +202,9 @@ def unpin_post(payload: schemas.PinPostPayload, db: Session = Depends(get_db)):
     # Сбрасываем is_pinned в БД
     db.query(models.Post).filter(models.Post.id == payload.postId).update({"is_pinned": False})
     db.commit()
+    
+    track(db, current_user, "post_unpin", "posts",
+          entity_type="post", entity_id=payload.postId,
+          project_id=payload.projectId)
     
     return {"success": True}

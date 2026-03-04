@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Conversation } from '../../types';
 import { ManagerFocusInfo } from '../../hooks/chat/useTypingState';
+import type { DialogLabel } from '../../../../services/api/dialog_labels.api';
 
 interface ConversationItemProps {
     conversation: Conversation;
@@ -14,6 +15,8 @@ interface ConversationItemProps {
     focusedManagers?: ManagerFocusInfo[];
     /** Пропустить анимацию появления (элемент уже был показан в сайдбаре ранее) */
     skipAnimation?: boolean;
+    /** Все метки проекта (для отображения цветных точек) */
+    dialogLabels?: DialogLabel[];
 }
 
 /**
@@ -28,9 +31,20 @@ export const ConversationItem: React.FC<ConversationItemProps> = ({
     isTyping = false,
     focusedManagers = [],
     skipAnimation = false,
+    dialogLabels = [],
 }) => {
     const { user, lastMessage, unreadCount } = conversation;
     const initials = `${user.firstName[0]}${user.lastName[0]}`;
+
+    // Цвета меток, назначенных этому диалогу (макс 4 точки для компактности)
+    const assignedLabelColors = useMemo(() => {
+        if (!conversation.labelIds?.length || !dialogLabels.length) return [];
+        const colorMap = new Map(dialogLabels.map(l => [l.id, l.color]));
+        return conversation.labelIds
+            .map(id => colorMap.get(id))
+            .filter((c): c is string => !!c)
+            .slice(0, 4);
+    }, [conversation.labelIds, dialogLabels]);
     const [avatarLoaded, setAvatarLoaded] = useState(false);
     /** Флаг: анимация появления уже отыграла — не мигаем при каждом перерендере.
      *  skipAnimation=true (элемент уже был показан) → инициализируем как true, чтобы
@@ -143,6 +157,18 @@ export const ConversationItem: React.FC<ConversationItemProps> = ({
                             </svg>
                         )}
                         {user.firstName} {user.lastName}
+                        {/* Цветные точки меток */}
+                        {assignedLabelColors.length > 0 && (
+                            <span className="inline-flex items-center gap-0.5 ml-1 align-middle">
+                                {assignedLabelColors.map((color, i) => (
+                                    <span
+                                        key={i}
+                                        className="inline-block w-1.5 h-1.5 rounded-full flex-shrink-0"
+                                        style={{ backgroundColor: color }}
+                                    />
+                                ))}
+                            </span>
+                        )}
                     </span>
                     <span className={`text-[11px] flex-shrink-0 ${
                         unreadCount > 0 ? 'text-indigo-600 font-medium' : 'text-gray-400'

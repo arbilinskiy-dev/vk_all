@@ -50,6 +50,25 @@ def migrate(engine: Engine):
                 conn.execute(text("ALTER TABLE cached_messages ADD COLUMN is_deleted_from_vk BOOLEAN NOT NULL DEFAULT 0"))
                 conn.commit()
             print("✅ is_deleted_from_vk column added!")
+        # Миграция: добавляем колонку is_outgoing если её нет (старые БД до появления фильтров)
+        if "is_outgoing" not in columns:
+            print("🔄 Adding is_outgoing column to cached_messages...")
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE cached_messages ADD COLUMN is_outgoing BOOLEAN NOT NULL DEFAULT 0"))
+                conn.commit()
+            print("✅ is_outgoing column added!")
+        # Миграция: backfill NULL значений is_outgoing на основе from_id (safety net)
+        # from_id < 0 = сообщество (исходящее), from_id > 0 = пользователь (входящее)
+        if "is_outgoing" in columns or "is_outgoing" not in columns:
+            # Всегда пытаемся починить NULL значения — это безопасная операция
+            with engine.connect() as conn:
+                result = conn.execute(text(
+                    "UPDATE cached_messages SET is_outgoing = (from_id < 0) "
+                    "WHERE is_outgoing IS NULL"
+                ))
+                if result.rowcount > 0:
+                    print(f"🔄 Backfilled {result.rowcount} NULL is_outgoing values based on from_id")
+                conn.commit()
 
     # Таблица message_cache_meta
     if not inspector.has_table("message_cache_meta"):

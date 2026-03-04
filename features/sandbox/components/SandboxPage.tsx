@@ -11,6 +11,7 @@ import { StoriesDataTest } from './tests/test2-stories-data/StoriesDataTest';
 import { GeminiModelsTest } from './tests/test4-gemini-models/GeminiModelsTest';
 import { ImageGenerationTest } from './tests/test5-image-generation/ImageGenerationTest';
 import { VideoGenerationTest } from './tests/test6-video-generation/VideoGenerationTest';
+import { EmailSenderTest } from './tests/test7-email-sender/EmailSenderTest';
 
 // ─── Конфигурация тестов ────────────────────────────────
 
@@ -51,6 +52,12 @@ const SANDBOX_TESTS: SandboxTest[] = [
         title: 'Тест 6: Генерация видео',
         description: 'Генерация видео через модели Veo (асинхронная) по промпту.',
         component: VideoGenerationTest,
+    },
+    {
+        id: 'test7-email-sender',
+        title: 'Тест 7: Email-рассылка',
+        description: 'Отправка писем с вложениями через Яндекс SMTP. Тест подключения, одиночная и массовая отправка.',
+        component: EmailSenderTest,
     },
     // Новые тесты добавляются сюда:
 ];

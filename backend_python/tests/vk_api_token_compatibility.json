@@ -1,0 +1,961 @@
+{
+  "date": "2026-03-04T15:32:13.926636",
+  "test_group_id": 203623179,
+  "test_post": "wall-203623179_16129",
+  "tokens_used": {
+    "ENV_USER": {
+      "label": "ENV User Token (standalone)",
+      "type": "user"
+    },
+    "SYS_625057992": {
+      "label": "System: Андрей Менедж (vk_id=625057992)",
+      "type": "user"
+    },
+    "COMMUNITY_OWN": {
+      "label": "Community Token (КЛЮЧИНИМ, g=203623179)",
+      "type": "community"
+    },
+    "COMMUNITY_OTHER": {
+      "label": "Community Token OTHER (Тестовое сообщество)",
+      "type": "community"
+    },
+    "OAUTH_USER": {
+      "label": "OAuth User (vk_id=18407603, scope=standalone_full)",
+      "type": "user"
+    },
+    "SERVICE_KEY": {
+      "label": "Service Key",
+      "type": "service"
+    }
+  },
+  "results": [
+    {
+      "method": "users.get (Базовая инфо о пользователе)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "COMMUNITY_OWN": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "SERVICE_KEY": {
+          "status": "OK",
+          "detail": "list[1]"
+        }
+      }
+    },
+    {
+      "method": "users.get (С доп. полями (fields))",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "COMMUNITY_OWN": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "SERVICE_KEY": {
+          "status": "OK",
+          "detail": "list[1]"
+        }
+      }
+    },
+    {
+      "method": "wall.get (Получить посты стены)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SERVICE_KEY": {
+          "status": "OK",
+          "detail": "items/count=2"
+        }
+      }
+    },
+    {
+      "method": "wall.get (Отложенные посты)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=0"
+        },
+        "SYS_625057992": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=0"
+        },
+        "SERVICE_KEY": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        }
+      }
+    },
+    {
+      "method": "wall.getById (Пост по ID)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=1"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=1"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=1"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "wall.getComments (Комментарии к посту)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=5"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=5"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=5"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "wall.getReposts (Репосты)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=4"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=0"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=4"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "wall.search (Поиск по стене)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "groups.getById (Информация о группе)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "keys=['groups', 'profiles']"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "keys=['groups', 'profiles']"
+        },
+        "COMMUNITY_OWN": {
+          "status": "OK",
+          "detail": "keys=['groups', 'profiles']"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "OK",
+          "detail": "keys=['groups', 'profiles']"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "keys=['groups', 'profiles']"
+        },
+        "SERVICE_KEY": {
+          "status": "OK",
+          "detail": "keys=['groups', 'profiles']"
+        }
+      }
+    },
+    {
+      "method": "groups.getMembers (Участники группы)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "COMMUNITY_OWN": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "SERVICE_KEY": {
+          "status": "OK",
+          "detail": "items/count=3"
+        }
+      }
+    },
+    {
+      "method": "groups.isMember (Проверка членства)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "value=0"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "value=0"
+        },
+        "COMMUNITY_OWN": {
+          "status": "OK",
+          "detail": "value=0"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "OK",
+          "detail": "value=0"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "value=0"
+        },
+        "SERVICE_KEY": {
+          "status": "OK",
+          "detail": "value=0"
+        }
+      }
+    },
+    {
+      "method": "groups.get (Группы пользователя (filter=admin))",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "groups.getCallbackServers (Callback-серверы)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=10"
+        },
+        "SYS_625057992": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "COMMUNITY_OWN": {
+          "status": "OK",
+          "detail": "items/count=10"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "OAUTH_USER": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "SERVICE_KEY": {
+          "status": "ERROR",
+          "detail": "Code 28: Application authorization failed: method is unavailable with service token."
+        }
+      }
+    },
+    {
+      "method": "likes.getList (Список лайков)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=5"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=5"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=5"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "photos.getAlbums (Альбомы)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "photos.get (Фото со стены)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "video.get (Видео)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "messages.getConversations (Диалоги (нужен community token))",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=1"
+        },
+        "SYS_625057992": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "COMMUNITY_OWN": {
+          "status": "OK",
+          "detail": "items/count=1"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "OK",
+          "detail": "items/count=1"
+        },
+        "OAUTH_USER": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "SERVICE_KEY": {
+          "status": "ERROR",
+          "detail": "Code 28: Application authorization failed: method is unavailable with service token."
+        }
+      }
+    },
+    {
+      "method": "stories.get (Истории группы)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=1"
+        },
+        "SYS_625057992": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "COMMUNITY_OWN": {
+          "status": "OK",
+          "detail": "items/count=1"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "PARAM_ERROR",
+          "detail": "Code 100: One of the parameters specified was missing or invalid: inva"
+        },
+        "OAUTH_USER": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "SERVICE_KEY": {
+          "status": "ERROR",
+          "detail": "Code 28: Application authorization failed: method is unavailable with service token."
+        }
+      }
+    },
+    {
+      "method": "market.get (Товары)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SERVICE_KEY": {
+          "status": "ERROR",
+          "detail": "Code 28: Application authorization failed: method is unavailable with service token."
+        }
+      }
+    },
+    {
+      "method": "market.getAlbums (Подборки товаров)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SERVICE_KEY": {
+          "status": "ERROR",
+          "detail": "Code 28: Application authorization failed: method is unavailable with service token."
+        }
+      }
+    },
+    {
+      "method": "market.getCategories (Категории товаров)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "PARAM_ERROR",
+          "detail": "Code 100: One of the parameters specified was missing or invalid: coun"
+        },
+        "SYS_625057992": {
+          "status": "PARAM_ERROR",
+          "detail": "Code 100: One of the parameters specified was missing or invalid: coun"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "PARAM_ERROR",
+          "detail": "Code 100: One of the parameters specified was missing or invalid: coun"
+        },
+        "SERVICE_KEY": {
+          "status": "ERROR",
+          "detail": "Code 28: Application authorization failed: method is unavailable with service token."
+        }
+      }
+    },
+    {
+      "method": "utils.resolveScreenName (Резолв screen name)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "keys=['object_id', 'type']"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "keys=['object_id', 'type']"
+        },
+        "COMMUNITY_OWN": {
+          "status": "OK",
+          "detail": "keys=['object_id', 'type']"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "OK",
+          "detail": "keys=['object_id', 'type']"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "keys=['object_id', 'type']"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "utils.getServerTime (Серверное время)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "value=1772627497"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "value=1772627498"
+        },
+        "COMMUNITY_OWN": {
+          "status": "OK",
+          "detail": "value=1772627498"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "OK",
+          "detail": "value=1772627499"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "value=1772627499"
+        },
+        "SERVICE_KEY": {
+          "status": "OK",
+          "detail": "value=1772627500"
+        }
+      }
+    },
+    {
+      "method": "friends.get (Друзья пользователя)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=0"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=0"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=0"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "execute (Execute (users.get))",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "COMMUNITY_OWN": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "list[1]"
+        },
+        "SERVICE_KEY": {
+          "status": "OK",
+          "detail": "list[1]"
+        }
+      }
+    },
+    {
+      "method": "execute (Execute (wall.get))",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=1"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=1"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=1"
+        },
+        "SERVICE_KEY": {
+          "status": "OK",
+          "detail": "items/count=1"
+        }
+      }
+    },
+    {
+      "method": "polls.getById (Опрос по ID (ожидаем ошибку — нет реального poll_id))",
+      "tokens": {
+        "ENV_USER": {
+          "status": "PARAM_ERROR",
+          "detail": "Code 100: One of the parameters specified was missing or invalid: poll"
+        },
+        "SYS_625057992": {
+          "status": "PARAM_ERROR",
+          "detail": "Code 100: One of the parameters specified was missing or invalid: poll"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "PARAM_ERROR",
+          "detail": "Code 100: One of the parameters specified was missing or invalid: poll"
+        },
+        "SERVICE_KEY": {
+          "status": "ERROR",
+          "detail": "Code 28: Application authorization failed: method is unavailable with service token."
+        }
+      }
+    },
+    {
+      "method": "newsfeed.search (Поиск по лентам новостей)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=2"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    },
+    {
+      "method": "docs.get (Документы)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "SYS_625057992": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        },
+        "SERVICE_KEY": {
+          "status": "ERROR",
+          "detail": "Code 28: Application authorization failed: method is unavailable with service token."
+        }
+      }
+    },
+    {
+      "method": "secure.checkToken (Проверка токена (secure.*))",
+      "tokens": {
+        "ENV_USER": {
+          "status": "AUTH_ERROR",
+          "detail": "Code 5: Invalid token"
+        },
+        "SYS_625057992": {
+          "status": "AUTH_ERROR",
+          "detail": "Code 5: Invalid token"
+        },
+        "COMMUNITY_OWN": {
+          "status": "AUTH_ERROR",
+          "detail": "Code 5: Invalid token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "AUTH_ERROR",
+          "detail": "Code 5: Invalid token"
+        },
+        "OAUTH_USER": {
+          "status": "AUTH_ERROR",
+          "detail": "Code 5: Invalid token"
+        },
+        "SERVICE_KEY": {
+          "status": "ACCESS_DENIED",
+          "detail": "Code 15: Access denied"
+        }
+      }
+    },
+    {
+      "method": "database.getCities (Поиск городов)",
+      "tokens": {
+        "ENV_USER": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "SYS_625057992": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "COMMUNITY_OWN": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "COMMUNITY_OTHER": {
+          "status": "GROUP_AUTH_ONLY",
+          "detail": "Code 27: Only for community token"
+        },
+        "OAUTH_USER": {
+          "status": "OK",
+          "detail": "items/count=3"
+        },
+        "SERVICE_KEY": {
+          "status": "PROFILE_TYPE",
+          "detail": "Code 1051: Wrong profile type"
+        }
+      }
+    }
+  ]
+}

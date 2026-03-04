@@ -54,7 +54,7 @@ def _get_date_from_log(db: Session, log_obj, project_id: str) -> int:
     
     if date_ts == 0:
         try:
-            if log_obj.vk_post_id and log_obj.vk_post_id != 0:
+            if log_obj.vk_post_id and log_obj.vk_post_id > 0:
                 post_match = db.query(Post).filter(
                     Post.projectId == project_id,
                     Post.vkPostUrl.like(f"%_{log_obj.vk_post_id}")

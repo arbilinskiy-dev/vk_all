@@ -71,6 +71,7 @@ Album = base_models_module.Album
 Photo = base_models_module.Photo
 Variable = base_models_module.Variable
 User = base_models_module.User
+UserResponse = base_models_module.UserResponse
 
 ProjectIdPayload = api_payloads_module.ProjectIdPayload
 ProjectIdsPayload = api_payloads_module.ProjectIdsPayload

@@ -46,12 +46,12 @@ export const ChatInputVariablesBar: React.FC<ChatInputVariablesBarProps> = ({
         <>
             {/* Аккордеон переменных (keep-in-DOM), раскрывается над тулбаром */}
             <div
-                className={`overflow-hidden transition-all duration-200 ${
-                    isVariablesOpen ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'
+                className={`transition-all duration-200 ${
+                    isVariablesOpen ? 'max-h-[40vh] opacity-100' : 'max-h-0 opacity-0 overflow-hidden'
                 }`}
             >
                 {projectId && (
-                    <div className="px-2.5 py-2 bg-gray-50 border-b border-gray-200 flex flex-col gap-2">
+                    <div className="px-2.5 py-2 bg-gray-50 border-b border-gray-200 flex flex-col gap-2 max-h-[40vh] overflow-y-auto custom-scrollbar">
                         {/* Частные переменные ({username}) */}
                         {userName && (
                             <div>

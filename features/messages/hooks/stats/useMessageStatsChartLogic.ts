@@ -3,10 +3,10 @@
  * Стейт, ResizeObserver, вычисляемые данные (useMemo).
  */
 
-import { useMemo, useState, useRef, useEffect } from 'react';
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { MessageStatsChartPoint } from '../../../../services/api/messages_stats.api';
 import { ChartGranularity, ChartOverlayMetric, MetricKey, NormalizedPoint } from '../../components/stats/messageStatsChartTypes';
-import { fillGaps, toMSK } from '../../components/stats/messageStatsChartUtils';
+import { fillGaps, toMSK, downsamplePoints, suggestGranularity, MAX_CHART_POINTS } from '../../components/stats/messageStatsChartUtils';
 
 interface UseMessageStatsChartLogicParams {
     data: MessageStatsChartPoint[];
@@ -21,10 +21,24 @@ const PADDING_Y = 40;
 
 export function useMessageStatsChartLogic({ data, visibleLines, overlayMetrics }: UseMessageStatsChartLogicParams) {
     // ─── State ───
-    const [granularity, setGranularity] = useState<ChartGranularity>('hours');
+    const [granularityOverride, setGranularityOverride] = useState<ChartGranularity | null>(null);
     const [tooltip, setTooltip] = useState<{ x: number; y: number; point: NormalizedPoint } | null>(null);
     /** Индексы активных оверлейных метрик — для них рисуются линии на графике */
     const [activeOverlays, setActiveOverlays] = useState<Set<number>>(new Set());
+
+    // Авто-гранулярность: если данных много — переключаемся на дни автоматически
+    const autoGranularity = useMemo(() => suggestGranularity(data.length), [data.length]);
+    const granularity: ChartGranularity = granularityOverride ?? autoGranularity;
+
+    /** Ручное переключение гранулярности пользователем */
+    const setGranularity = useCallback((g: ChartGranularity) => {
+        setGranularityOverride(g);
+    }, []);
+
+    // Сбрасываем ручной override при смене данных (новый период)
+    useEffect(() => {
+        setGranularityOverride(null);
+    }, [data]);
 
     /** Переключение оверлея: клик → показать/скрыть линию */
     const toggleOverlay = (idx: number) => {
@@ -53,7 +67,12 @@ export function useMessageStatsChartLogic({ data, visibleLines, overlayMetrics }
 
     // ─── Derived state ───
 
-    const normalized = useMemo(() => fillGaps(data, granularity), [data, granularity]);
+    // fillGaps + downsampling: сначала заполняем пробелы, потом ограничиваем кол-во точек
+    const filledData = useMemo(() => fillGaps(data, granularity), [data, granularity]);
+    const normalized = useMemo(() => downsamplePoints(filledData, MAX_CHART_POINTS), [filledData]);
+
+    /** Данные были агрегированы (downsampling) — показать индикатор пользователю */
+    const isDownsampled = filledData.length > MAX_CHART_POINTS;
 
     // Какие линии видимы
     const activeMetrics: MetricKey[] = useMemo(() => {
@@ -84,16 +103,20 @@ export function useMessageStatsChartLogic({ data, visibleLines, overlayMetrics }
         return maxVal;
     }, [normalized, activeMetrics, activeOverlays, overlayMetrics]);
 
-    // Min/Max точки для каждой метрики
+    // Min/Max точки для каждой метрики (без spread — безопасно для больших массивов)
     const minMaxPoints = useMemo(() => {
         if (!normalized || normalized.length === 0) return {};
         const result: Record<string, { minPoint: NormalizedPoint | null; maxPoint: NormalizedPoint | null; minIdx: number; maxIdx: number }> = {};
         for (const key of activeMetrics) {
-            const values = normalized.map(d => d[key]);
-            const minVal = Math.min(...values);
-            const maxVal = Math.max(...values);
-            const minIdx = normalized.findIndex(d => d[key] === minVal);
-            const maxIdx = normalized.findIndex(d => d[key] === maxVal);
+            let minVal = Infinity;
+            let maxVal = -Infinity;
+            let minIdx = 0;
+            let maxIdx = 0;
+            for (let i = 0; i < normalized.length; i++) {
+                const v = normalized[i][key];
+                if (v < minVal) { minVal = v; minIdx = i; }
+                if (v > maxVal) { maxVal = v; maxIdx = i; }
+            }
             result[key] = {
                 minPoint: normalized[minIdx] || null,
                 maxPoint: normalized[maxIdx] || null,
@@ -104,12 +127,12 @@ export function useMessageStatsChartLogic({ data, visibleLines, overlayMetrics }
         return result;
     }, [normalized, activeMetrics]);
 
-    // Координаты точки
-    const getCoords = (value: number, index: number) => {
+    // Координаты точки (мемоизировано для стабильной ссылки)
+    const getCoords = useCallback((value: number, index: number) => {
         const x = PADDING_X + (index / (normalized.length - 1 || 1)) * (width - 2 * PADDING_X);
         const y = (SVG_HEIGHT - PADDING_Y) - (value / maxValue) * (SVG_HEIGHT - 2 * PADDING_Y);
         return { x, y };
-    };
+    }, [normalized.length, width, maxValue]);
 
     // Горизонтальные линии сетки (4 промежуточные + базовая)
     const gridLines = useMemo(() => {
@@ -167,6 +190,8 @@ export function useMessageStatsChartLogic({ data, visibleLines, overlayMetrics }
             gridLines,
             xAxisLabels,
             nowMSK,
+            isDownsampled,
+            autoGranularity,
             height: SVG_HEIGHT,
             paddingX: PADDING_X,
             paddingY: PADDING_Y,

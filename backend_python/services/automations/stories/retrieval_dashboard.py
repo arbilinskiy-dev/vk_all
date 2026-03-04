@@ -59,13 +59,13 @@ def _apply_type_filter(query, filter_type: str):
     if filter_type == 'auto':
         query = query.filter(
             StoriesAutomationLog.vk_post_id != None,
-            StoriesAutomationLog.vk_post_id != 0
+            StoriesAutomationLog.vk_post_id > 0
         )
     elif filter_type == 'manual':
         query = query.filter(
             or_(
                 StoriesAutomationLog.vk_post_id == None,
-                StoriesAutomationLog.vk_post_id == 0
+                StoriesAutomationLog.vk_post_id <= 0
             )
         )
     return query

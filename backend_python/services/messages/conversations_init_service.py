@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 import crud
 import models
-from crud import messages_crud, message_read_crud
+from crud import messages_crud, message_read_crud, dialog_label_crud
 from services.lists.retrieval.fetchers import fetch_list_items, fetch_list_count
 from services.lists.retrieval.unread_filter import get_unread_user_ids
 from schemas.models.lists import SystemListMailingItem
@@ -60,7 +60,31 @@ def conversations_init(
     # 2. Загружаем подписчиков (основная страница)
     #    При filter_unread='unread' передаём фильтр в fetch_list_items
     #    При filter_unread='important' запрашиваем только важные диалоги
-    if filter_unread == 'important':
+    #    При filter_unread='label:<id>' фильтруем по метке
+    if filter_unread.startswith('label:'):
+        # Фильтр по метке диалога
+        label_id = filter_unread.split(':', 1)[1]
+        label_user_ids = dialog_label_crud.get_user_ids_by_label(db, project_id, label_id)
+        total_count = len(label_user_ids)
+
+        # Пагинация
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_ids = label_user_ids[start:end]
+
+        if page_ids:
+            items = (
+                db.query(ProjectDialog)
+                .join(VkProfile, ProjectDialog.vk_profile_id == VkProfile.id)
+                .filter(
+                    ProjectDialog.project_id == project_id,
+                    VkProfile.vk_user_id.in_(page_ids),
+                )
+                .all()
+            )
+        else:
+            items = []
+    elif filter_unread == 'important':
         # Фильтр «Важное»: сначала получаем vk_user_ids важных диалогов, затем загружаем подписчиков
         important_all = (
             db.query(VkProfile.vk_user_id)
@@ -166,13 +190,18 @@ def conversations_init(
         )
         important_user_ids = {row.vk_user_id for row in important_rows}
 
-    # 6. Пакетно: unread counts + last messages (одна DB-сессия!)
+    # 6. Пакетно: unread counts + last messages + метки диалогов (одна DB-сессия!)
     unread_counts = (
         message_read_crud.get_unread_counts_batch(db, project_id, vk_user_ids)
         if vk_user_ids else {}
     )
     last_messages = (
         messages_crud.get_last_messages_batch(db, project_id, vk_user_ids)
+        if vk_user_ids else {}
+    )
+    # Метки диалогов: batch-запрос {vk_user_id: [label_id, ...]}
+    dialog_labels_map = (
+        dialog_label_crud.get_labels_batch(db, project_id, vk_user_ids)
         if vk_user_ids else {}
     )
 
@@ -193,4 +222,5 @@ def conversations_init(
         "unread_counts": {str(uid): cnt for uid, cnt in unread_counts.items()},
         "last_messages": {str(uid): msg for uid, msg in last_messages.items()},
         "important_dialogs": {str(uid): True for uid in important_user_ids},
+        "dialog_labels": {str(uid): lids for uid, lids in dialog_labels_map.items()},
     }

@@ -1,6 +1,6 @@
 
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { User } from '../../../shared/types';
 import * as api from '../../../services/api';
 import { v4 as uuidv4 } from 'uuid';
@@ -8,13 +8,58 @@ import { ConfirmationModal } from '../../../shared/components/modals/Confirmatio
 import { VkUsersTab } from './VkUsersTab';
 import { AuthLogsTab } from './AuthLogsTab';
 import { ActiveSessionsTab } from './ActiveSessionsTab';
+import { UserActivityDashboard } from './UserActivityDashboard';
+import { RolesTab } from './RolesTab';
 import { useAuth } from '../../auth/contexts/AuthContext';
+
+// Карта транслитерации кириллицы → латиницы
+const TRANSLIT_MAP: Record<string, string> = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo',
+    'ж': 'zh', 'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm',
+    'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u',
+    'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+    'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+};
+
+/** Транслитерация ФИО → логин (например "Иванов Иван" → "ivanov.ivan") */
+const generateLogin = (fullName: string): string => {
+    const parts = fullName.trim().split(/\s+/).filter(Boolean);
+    const translitParts = parts.map(part =>
+        part.toLowerCase().split('').map(ch => TRANSLIT_MAP[ch] ?? ch).join('')
+    );
+    // Оставляем только латиницу, цифры и точки
+    return translitParts.join('.').replace(/[^a-z0-9.]/g, '');
+};
+
+/** Делает логин уникальным среди существующих (добавляет суффикс 2, 3, 4...) */
+const makeUniqueLogin = (baseLogin: string, existingLogins: string[]): string => {
+    if (!baseLogin) return baseLogin;
+    const lowerExisting = existingLogins.map(l => l.toLowerCase());
+    if (!lowerExisting.includes(baseLogin.toLowerCase())) return baseLogin;
+    let counter = 2;
+    while (lowerExisting.includes(`${baseLogin}${counter}`.toLowerCase())) {
+        counter++;
+    }
+    return `${baseLogin}${counter}`;
+};
+
+/** Генерация случайного пароля (8 символов: буквы + цифры) */
+const generatePassword = (): string => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let password = '';
+    for (let i = 0; i < 8; i++) {
+        password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+};
 
 const UserTable: React.FC<{
     users: User[];
     onUserChange: (userId: string, field: keyof User, value: any) => void;
     onRemoveUser: (userId: string) => void;
-}> = ({ users, onUserChange, onRemoveUser }) => {
+    manuallyEditedFields: Record<string, Set<string>>;
+    onMarkManualEdit: (userId: string, field: string) => void;
+}> = ({ users, onUserChange, onRemoveUser, manuallyEditedFields, onMarkManualEdit }) => {
     
     const inputClasses = "w-full p-1 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm bg-white";
     
@@ -23,10 +68,10 @@ const UserTable: React.FC<{
             <table className="w-full">
                 <thead className="bg-gray-50 border-b-2 border-gray-200">
                     <tr>
-                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3">ФИО</th>
-                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3">Логин</th>
-                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3">Пароль</th>
-                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: '30%' }}>ФИО</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: '25%' }}>Логин</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: '40%' }}>Пароль</th>
+                        <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style={{ width: '5%' }}></th>
                     </tr>
                 </thead>
                 <tbody className="bg-white">
@@ -45,7 +90,10 @@ const UserTable: React.FC<{
                                 <input
                                     type="text"
                                     value={user.username}
-                                    onChange={(e) => onUserChange(user.id, 'username', e.target.value)}
+                                    onChange={(e) => {
+                                        onMarkManualEdit(user.id, 'username');
+                                        onUserChange(user.id, 'username', e.target.value);
+                                    }}
                                     className={inputClasses}
                                     placeholder="ivanov"
                                 />
@@ -53,11 +101,13 @@ const UserTable: React.FC<{
                             <td className="px-4 py-2">
                                 <input
                                     type="text"
-                                    defaultValue={user.password || ''}
-                                    onChange={(e) => onUserChange(user.id, 'password', e.target.value)}
-                                    className={inputClasses}
-                                    placeholder="Введите пароль..."
-                                />
+                                    value={user.password || ''}
+                                    onChange={(e) => {
+                                        onMarkManualEdit(user.id, 'password');
+                                        onUserChange(user.id, 'password', e.target.value);
+                                    }}
+                                    className={`${inputClasses} ${!user.id.startsWith('new-') && !user.password ? 'placeholder:text-gray-400' : ''}`}
+                                    placeholder={user.id.startsWith('new-') ? 'Введите пароль...' : 'Введите новый пароль...'}                                />
                             </td>
                              <td className="px-4 py-2 text-right">
                                 <button
@@ -81,7 +131,7 @@ const UserTable: React.FC<{
 export const UserManagementPage: React.FC = () => {
     const { user: currentUser } = useAuth();
     const isAdmin = currentUser?.role === 'admin';
-    const [activeTab, setActiveTab] = useState<'users' | 'vk_users' | 'auth_logs' | 'active_sessions'>('users');
+    const [activeTab, setActiveTab] = useState<'users' | 'vk_users' | 'auth_logs' | 'active_sessions' | 'user_activity' | 'roles'>('users');
     
     const [initialUsers, setInitialUsers] = useState<User[]>([]);
     const [users, setUsers] = useState<User[]>([]);
@@ -89,6 +139,8 @@ export const UserManagementPage: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [deleteConfirmation, setDeleteConfirmation] = useState<{ deletedUsers: User[]; onConfirm: () => void; } | null>(null);
+    // Трекинг ручных правок логина/пароля — чтобы не перезаписывать при изменении ФИО
+    const manuallyEditedFieldsRef = useRef<Record<string, Set<string>>>({});
     
     const fetchUsers = useCallback(async () => {
         setIsLoading(true);
@@ -111,8 +163,35 @@ export const UserManagementPage: React.FC = () => {
         }
     }, [fetchUsers, activeTab]);
 
+    const handleMarkManualEdit = (userId: string, field: string) => {
+        if (!manuallyEditedFieldsRef.current[userId]) {
+            manuallyEditedFieldsRef.current[userId] = new Set();
+        }
+        manuallyEditedFieldsRef.current[userId].add(field);
+    };
+
     const handleUserChange = (userId: string, field: keyof User, value: any) => {
-        setUsers(currentUsers => currentUsers.map(u => u.id === userId ? { ...u, [field]: value } : u));
+        setUsers(currentUsers => currentUsers.map(u => {
+            if (u.id !== userId) return u;
+            const updated = { ...u, [field]: value };
+
+            // Авто-генерация логина и пароля при вводе ФИО для новых пользователей
+            if (field === 'full_name' && u.id.startsWith('new-')) {
+                const edited = manuallyEditedFieldsRef.current[u.id];
+                if (!edited?.has('username')) {
+                    const baseLogin = generateLogin(value as string);
+                    // Собираем логины всех остальных пользователей для проверки уникальности
+                    const otherLogins = currentUsers
+                        .filter(other => other.id !== userId)
+                        .map(other => other.username);
+                    updated.username = makeUniqueLogin(baseLogin, otherLogins);
+                }
+                if (!edited?.has('password') && !u.password) {
+                    updated.password = generatePassword();
+                }
+            }
+            return updated;
+        }));
     };
 
     const handleRemoveUser = (userId: string) => {
@@ -124,8 +203,8 @@ export const UserManagementPage: React.FC = () => {
             id: `new-${uuidv4()}`,
             full_name: '',
             username: '',
-            password: '',
-            role: 'user', // Default role
+            password: '', // Пароль сгенерируется при вводе ФИО
+            role: 'user',
         };
         setUsers(currentUsers => [...currentUsers, newUser]);
     };
@@ -136,7 +215,7 @@ export const UserManagementPage: React.FC = () => {
         try {
             // Базовая валидация
             for (const user of users) {
-                if (!user.full_name.trim() || !user.username.trim() || (!user.password && user.id.startsWith('new-'))) {
+                if (!(user.full_name ?? '').trim() || !user.username.trim() || (!user.password && user.id.startsWith('new-'))) {
                      throw new Error('Все поля (ФИО, Логин, Пароль) должны быть заполнены для всех пользователей.');
                 }
             }
@@ -192,6 +271,12 @@ export const UserManagementPage: React.FC = () => {
                         {isAdmin && (
                             <button onClick={() => setActiveTab('auth_logs')} className={tabClass('auth_logs')}>Логи авторизации</button>
                         )}
+                        {isAdmin && (
+                            <button onClick={() => setActiveTab('user_activity')} className={tabClass('user_activity')}>Аналитика</button>
+                        )}
+                        {isAdmin && (
+                            <button onClick={() => setActiveTab('roles')} className={tabClass('roles')}>Роли</button>
+                        )}
                     </div>
                 </div>
                 {activeTab === 'users' && (
@@ -220,7 +305,7 @@ export const UserManagementPage: React.FC = () => {
                         {error ? (
                             <div className="text-center text-red-600 p-8 bg-red-50 rounded-lg">{error}</div>
                         ) : (
-                            <UserTable users={users} onUserChange={handleUserChange} onRemoveUser={handleRemoveUser} />
+                            <UserTable users={users} onUserChange={handleUserChange} onRemoveUser={handleRemoveUser} manuallyEditedFields={manuallyEditedFieldsRef.current} onMarkManualEdit={handleMarkManualEdit} />
                         )}
                     </div>
                 )}
@@ -237,6 +322,16 @@ export const UserManagementPage: React.FC = () => {
                 {activeTab === 'auth_logs' && isAdmin && (
                     <div className="p-4 overflow-auto custom-scrollbar h-full">
                         <AuthLogsTab />
+                    </div>
+                )}
+                {activeTab === 'user_activity' && isAdmin && (
+                    <div className="p-4 overflow-auto custom-scrollbar h-full">
+                        <UserActivityDashboard />
+                    </div>
+                )}
+                {activeTab === 'roles' && isAdmin && (
+                    <div className="p-4 overflow-auto custom-scrollbar h-full">
+                        <RolesTab />
                     </div>
                 )}
             </main>

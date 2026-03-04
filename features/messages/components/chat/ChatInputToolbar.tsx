@@ -85,7 +85,7 @@ export const ChatInputToolbar: React.FC<ChatInputToolbarProps> = ({
                         type="button"
                         onClick={onToggleVariables}
                         title="Переменные для подстановки"
-                        className={`${TOOLBAR_BTN_CLASS} gap-1 !px-1.5 ${isVariablesOpen ? '!bg-indigo-100 !text-indigo-600' : ''}`}
+                        className={`${TOOLBAR_BTN_CLASS} inline-flex items-center gap-1 !px-1.5 ${isVariablesOpen ? '!bg-indigo-100 !text-indigo-600' : ''}`}
                     >
                         <svg className={`w-3.5 h-3.5 transition-transform duration-200 ${isVariablesOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />

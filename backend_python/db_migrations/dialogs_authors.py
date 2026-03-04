@@ -39,7 +39,9 @@ def migrate(engine: Engine):
         if 'is_important' not in columns:
             print("Adding column 'is_important' to 'project_dialogs'...")
             with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE project_dialogs ADD COLUMN is_important BOOLEAN NOT NULL DEFAULT 0"))
+                # PostgreSQL требует DEFAULT FALSE для BOOLEAN, SQLite принимает 0
+                default_val = "0" if is_sqlite else "FALSE"
+                conn.execute(text(f"ALTER TABLE project_dialogs ADD COLUMN is_important BOOLEAN NOT NULL DEFAULT {default_val}"))
                 conn.commit()
             print("Column 'is_important' added successfully.")
 

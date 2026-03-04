@@ -184,7 +184,9 @@
 | `wall` (schedule_new) | ✅ Полная реализация | `handlers/wall/schedule_post_new.py` |
 | `wall` (schedule_delete) | ✅ Полная реализация | `handlers/wall/schedule_post_delete.py` |
 | `wall_comments` | 🔲 Stub (логирование) | `handlers/wall_comments/handler.py` |
-| `messages` | 🔲 Stub (логирование) | `handlers/messages/handler.py` |
+| `message_new` | ✅ Полная реализация | `handlers/messages/message_new.py` |
+| `message_allow/deny` | ✅ Полная реализация | `handlers/messages/message_allow_deny.py` |
+| `message_reply/edit/read/typing/event` | 🔲 Stub (логирование) | `handlers/messages/` |
 | `photos` | 🔲 Stub (логирование) | `handlers/photos/handler.py` |
 | `videos` | 🔲 Stub (логирование) | `handlers/videos/handler.py` |
 | `audio` | 🔲 Stub (логирование) | `handlers/audio/handler.py` |

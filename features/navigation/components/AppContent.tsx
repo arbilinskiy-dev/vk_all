@@ -79,6 +79,13 @@ interface AppContentProps {
     requestResort?: () => void;
     /** Переключить пометку «Важное» для диалога */
     toggleImportant?: (vkUserId: number, isImportant: boolean) => Promise<void>;
+    // --- Метки (ярлыки) диалогов ---
+    /** Все метки проекта */
+    dialogLabels?: import('../../../../services/api/dialog_labels.api').DialogLabel[];
+    /** Назначить метку диалогу */
+    onAssignLabel?: (vkUserId: number, labelId: string) => Promise<void>;
+    /** Снять метку с диалога */
+    onUnassignLabel?: (vkUserId: number, labelId: string) => Promise<void>;
 }
 
 export const AppContent: React.FC<AppContentProps> = ({
@@ -113,6 +120,9 @@ export const AppContent: React.FC<AppContentProps> = ({
     onProjectUnreadUpdate,
     requestResort,
     toggleImportant,
+    dialogLabels,
+    onAssignLabel,
+    onUnassignLabel,
 }) => {
     const {
         projects,
@@ -268,6 +278,9 @@ export const AppContent: React.FC<AppContentProps> = ({
                 onProjectUnreadUpdate={onProjectUnreadUpdate}
                 requestResort={requestResort}
                 toggleImportant={toggleImportant}
+                dialogLabels={dialogLabels}
+                onAssignLabel={onAssignLabel}
+                onUnassignLabel={onUnassignLabel}
             />
         );
     }

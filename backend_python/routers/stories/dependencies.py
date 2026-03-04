@@ -10,6 +10,7 @@ from config import settings
 from datetime import datetime, timedelta, timezone
 import json
 import uuid
+import re
 
 
 def get_db():
@@ -63,15 +64,29 @@ def find_or_create_log_by_story_link(
     ).first()
     
     if not log:
+        # Извлекаем story_id из ссылки для уникальности (vk_post_id = -story_id)
+        story_id = 0
+        match = re.search(r'story-?\d+_(\d+)', story_link)
+        if match:
+            story_id = int(match.group(1))
+        
         log = StoriesAutomationLog(
             id=str(uuid.uuid4()),
             project_id=project_id,
-            vk_post_id=0,
+            vk_post_id=-story_id if story_id else 0,  # Отрицательный story ID для ручных историй
             status='published',
             log=json.dumps({"story_link": story_link}),
         )
         db.add(log)
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            # Если запись уже существует — найдём её
+            log = db.query(StoriesAutomationLog).filter(
+                StoriesAutomationLog.project_id == project_id,
+                StoriesAutomationLog.log.contains(story_link)
+            ).first()
     
     return log
 

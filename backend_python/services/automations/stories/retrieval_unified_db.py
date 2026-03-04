@@ -12,14 +12,18 @@ from .retrieval_helpers import get_story_preview
 
 
 def _create_manual_story_log(project_id: str, group_id: int, s_id: int, vk_story: dict) -> StoriesAutomationLog:
-    """Создаёт запись лога для ручной истории, найденной в VK."""
+    """Создаёт запись лога для ручной истории, найденной в VK.
+    
+    vk_post_id = -s_id (отрицательный VK story ID) для уникальности.
+    Автоматические истории используют положительный vk_post_id (ID поста на стене).
+    """
     story_link = f"https://vk.com/story-{group_id}_{s_id}"
     current_preview = get_story_preview(vk_story)
     
     return StoriesAutomationLog(
         id=str(uuid.uuid4()),
         project_id=project_id,
-        vk_post_id=0,  # Manual
+        vk_post_id=-s_id,  # Отрицательный story ID для ручных историй (уникален в паре project_id + vk_post_id)
         status='published',
         created_at=datetime.fromtimestamp(vk_story.get('date', 0), tz=timezone.utc),
         image_url=current_preview,
@@ -58,14 +62,16 @@ def _commit_updates(db: Session, logs_to_update: list, new_logs_to_add: list):
             db.add_all(logs_to_update)
             db.commit()
         except Exception as e:
+            db.rollback()  # Обязательный rollback, иначе сессия остаётся сломанной
             print(f"STORIES: Failed to save healed logs: {e}")
 
     if new_logs_to_add:
         try:
             db.add_all(new_logs_to_add)
             db.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            db.rollback()  # Обязательный rollback, иначе сессия остаётся сломанной
+            print(f"STORIES: Failed to add new logs (IntegrityError likely): {e}")
 
 
 def _update_last_stories_timestamp(db: Session, project_id: str):
@@ -76,4 +82,5 @@ def _update_last_stories_timestamp(db: Session, project_id: str):
             project.last_stories_update = datetime.now(timezone.utc).isoformat()
             db.commit()
     except Exception as e:
+        db.rollback()  # Rollback чтобы не оставлять сессию в сломанном состоянии
         print(f"STORIES: Failed to update last_stories_update: {e}")

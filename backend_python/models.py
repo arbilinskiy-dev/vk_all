@@ -63,3 +63,8 @@ from models_library.auth import AuthSession, AuthLog
 from models_library.message_templates import MessageTemplate
 # NEW: Списки промокодов для шаблонов сообщений
 from models_library.promo_lists import PromoList, PromoListCode
+# NEW: Метки (ярлыки) диалогов
+from models_library.dialog_labels import DialogLabel, DialogLabelAssignment
+# NEW: Роли пользователей и лог действий
+from models_library.user_roles import UserRole
+from models_library.user_actions import UserAction

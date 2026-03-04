@@ -2,6 +2,7 @@
  * Типы, интерфейсы и константы для хука useConversations.
  */
 
+import React from 'react';
 import { VkMessageItem } from '../../../../services/api/messages.api';
 import { Conversation, MessagesChannel, MailingUserInfo } from '../../types';
 
@@ -23,6 +24,8 @@ export interface UseConversationsResult {
     error: string | null;
     /** Общее количество пользователей в списке рассылки */
     totalCount: number;
+    /** Общее количество непрочитанных диалогов (стабильное, не зависит от текущего фильтра) */
+    totalUnreadCount: number;
     /** Текущая страница (пагинация) */
     page: number;
     /** Загрузить следующую страницу (подгрузка при скролле) */
@@ -43,6 +46,10 @@ export interface UseConversationsResult {
     requestResort: () => void;
     /** Переключить пометку «Важное» для диалога (звёздочка) */
     toggleImportant: (vkUserId: number, isImportant: boolean) => Promise<void>;
+    /** Словарь меток диалогов: vk_user_id → [label_id, ...] */
+    dialogLabelsMap: Record<number, string[]>;
+    /** Сеттер dialogLabelsMap (для обновления из useDialogLabels) */
+    setDialogLabelsMap: React.Dispatch<React.SetStateAction<Record<number, string[]>>>;
 }
 
 /** Размер страницы (сколько пользователей подгружаем за раз) */

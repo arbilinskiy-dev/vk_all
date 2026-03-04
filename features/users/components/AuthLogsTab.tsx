@@ -64,7 +64,7 @@ export const AuthLogsTab: React.FC = () => {
     // Фильтры
     const [filterUser, setFilterUser] = useState<string | null>(null);
     const [filterEvent, setFilterEvent] = useState<string | null>(null);
-    const [users, setUsers] = useState<{ user_id: string; username: string }[]>([]);
+    const [users, setUsers] = useState<{ user_id: string; username: string; display_name?: string }[]>([]);
 
     // Модалка подтверждения очистки
     const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -136,7 +136,7 @@ export const AuthLogsTab: React.FC = () => {
                 >
                     <option value="">Все пользователи</option>
                     {users.map(u => (
-                        <option key={u.user_id} value={u.user_id}>{u.username || u.user_id}</option>
+                        <option key={u.user_id} value={u.user_id}>{u.display_name || u.username || u.user_id}</option>
                     ))}
                 </select>
 
@@ -203,8 +203,13 @@ export const AuthLogsTab: React.FC = () => {
                                     <td className="px-4 py-2.5 text-sm text-gray-600 whitespace-nowrap">
                                         {formatDate(log.created_at)}
                                     </td>
-                                    <td className="px-4 py-2.5 text-sm font-medium text-gray-800">
-                                        {log.username || log.details?.attempted_username || '—'}
+                                    <td className="px-4 py-2.5">
+                                        <div className="text-sm font-medium text-gray-800">
+                                            {log.username || log.details?.attempted_username || '—'}
+                                        </div>
+                                        {log.full_name && (
+                                            <div className="text-xs text-gray-400">{log.full_name}</div>
+                                        )}
                                     </td>
                                     <td className="px-4 py-2.5">
                                         <EventBadge eventType={log.event_type} />
