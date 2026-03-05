@@ -24,7 +24,7 @@ import { useSmartRefresh } from './hooks/useSmartRefresh';
 import { AccordionSectionKey } from './features/projects/components/modals/ProjectSettingsModal';
 import { AppContent } from './features/navigation/components/AppContent';
 
-export type AppView = 'schedule' | 'suggested' | 'products' | 'automations' | 'db-management' | 'user-management' | 'settings' | 'training' | 'updates' | 'automations-stories' | 'automations-reviews-contest' | 'automations-promo-drop' | 'automations-contests' | 'automations-ai-posts' | 'automations-birthday' | 'automations-activity-contest' | 'automations-contest-v2' | 'lists-system' | 'lists-user' | 'lists-automations' | 'vk-auth-test' | 'sandbox' | 'messages-vk' | 'messages-tg' | 'messages-stats';
+export type AppView = 'schedule' | 'suggested' | 'products' | 'automations' | 'db-management' | 'user-management' | 'settings' | 'training' | 'updates' | 'automations-stories' | 'automations-reviews-contest' | 'automations-promo-drop' | 'automations-contests' | 'automations-ai-posts' | 'automations-birthday' | 'automations-activity-contest' | 'automations-contest-v2' | 'lists-system' | 'lists-user' | 'lists-automations' | 'vk-auth-test' | 'sandbox' | 'messages-vk' | 'messages-tg' | 'messages-stats' | 'messages-am-analysis' | 'stats-dlvry' | 'stats-vk-ads' | 'stats-vk-group' | 'stats-crm';
 export type AppModule = 'km' | 'am' | 'stats' | 'lists';
 
 const App: React.FC = () => {
@@ -46,7 +46,8 @@ const App: React.FC = () => {
         handleSelectGlobalView,
         handleSelectKmView,
         handleSelectListsView,
-        handleSelectMessagesView
+        handleSelectMessagesView,
+        handleSelectStatsView
     } = useAppState();
 
     // Данные из контекста
@@ -306,17 +307,19 @@ const App: React.FC = () => {
             
             <PrimarySidebar
                 userRole={user.role}
+                isSystemAdmin={user.is_system_admin === true}
                 activeModule={activeModule}
                 activeView={activeView}
                 onSelectModule={handleSelectModule}
                 onSelectView={handleSelectKmView}
                 onSelectListsView={handleSelectListsView}
                 onSelectMessagesView={handleSelectMessagesView}
+                onSelectStatsView={handleSelectStatsView}
                 onSelectGlobalView={handleSelectGlobalView}
             />
             
-            {/* Сайдбар проектов отображается в модулях контент-менеджмента, списков и сообщений (скрывается в мониторинге) */}
-            {(activeModule === 'km' || activeModule === 'lists' || activeModule === 'am') && activeView !== 'messages-stats' && (
+            {/* Сайдбар проектов отображается в модулях контент-менеджмента, списков, сообщений и статистики (скрывается в мониторинге и АМ Анализе) */}
+            {(activeModule === 'km' || activeModule === 'lists' || activeModule === 'am' || activeModule === 'stats') && activeView !== 'messages-stats' && activeView !== 'messages-am-analysis' && (
                  <Sidebar
                     projects={projects}
                     activeProjectId={activeProjectId}
@@ -337,8 +340,8 @@ const App: React.FC = () => {
                 />
             )}
 
-            {/* Сайдбар диалогов отображается в модуле сообщений при выбранном проекте (скрывается в мониторинге) */}
-            {activeModule === 'am' && activeProject && activeView !== 'messages-stats' && (
+            {/* Сайдбар диалогов отображается в модуле сообщений при выбранном проекте (скрывается в мониторинге и АМ Анализе) */}
+            {activeModule === 'am' && activeProject && activeView !== 'messages-stats' && activeView !== 'messages-am-analysis' && (
                 <ConversationsSidebar
                     conversations={conversations}
                     activeConversationId={activeConversationId}

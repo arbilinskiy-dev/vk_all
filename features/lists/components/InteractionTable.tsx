@@ -13,7 +13,7 @@ interface InteractionTableProps {
     isFetchingMore?: boolean;
 }
 
-export const InteractionTable: React.FC<InteractionTableProps> = ({ items, isLoading, projectId, vkGroupId, listType, onLoadMore, isFetchingMore }) => {
+export const InteractionTable: React.FC<InteractionTableProps> = React.memo(({ items, isLoading, projectId, vkGroupId, listType, onLoadMore, isFetchingMore }) => {
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
     const observerTarget = useRef<HTMLDivElement>(null);
@@ -134,6 +134,7 @@ export const InteractionTable: React.FC<InteractionTableProps> = ({ items, isLoa
                                             <img 
                                                 src={item.photo_url} 
                                                 alt="" 
+                                                loading="lazy"
                                                 className="w-10 h-10 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity shadow-sm" 
                                                 onClick={(e) => { e.stopPropagation(); setPreviewImage(item.photo_url!); }}
                                             />
@@ -247,4 +248,4 @@ export const InteractionTable: React.FC<InteractionTableProps> = ({ items, isLoa
             )}
         </>
     );
-};
+});

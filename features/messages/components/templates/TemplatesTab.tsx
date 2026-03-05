@@ -71,9 +71,9 @@ export const TemplatesTab: React.FC<TemplatesTabProps> = ({
     // =============================================
     if (state.mode === 'create' || state.mode === 'edit') {
         return (
-            <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Шапка с кнопкой «Назад» */}
-                <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 bg-gray-50">
+            <>
+                {/* Шапка с кнопкой «Назад» — sticky внутри родительского scroll-контейнера */}
+                <div className="sticky top-0 z-10 flex items-center gap-2 px-4 py-2.5 border-b border-gray-100 bg-gray-50">
                     <button
                         onClick={actions.handleBack}
                         className="p-1 rounded hover:bg-gray-200 text-gray-500 hover:text-gray-700 transition-colors"
@@ -87,22 +87,20 @@ export const TemplatesTab: React.FC<TemplatesTabProps> = ({
                         {state.mode === 'edit' ? 'Редактирование шаблона' : 'Новый шаблон'}
                     </span>
                 </div>
-                {/* Форма редактора */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar">
-                    <TemplateInlineEditor
-                        template={state.editingTemplate}
-                        initialText={state.editorInitialText}
-                        userName={userName}
-                        projectId={projectId}
-                        project={project}
-                        currentUserId={currentUserId}
-                        isSaving={state.isSaving}
-                        onSave={actions.handleSave}
-                        onCancel={actions.handleBack}
-                        onPreview={actions.preview}
-                    />
-                </div>
-            </div>
+                {/* Форма редактора — контент скроллируется родителем */}
+                <TemplateInlineEditor
+                    template={state.editingTemplate}
+                    initialText={state.editorInitialText}
+                    userName={userName}
+                    projectId={projectId}
+                    project={project}
+                    currentUserId={currentUserId}
+                    isSaving={state.isSaving}
+                    onSave={actions.handleSave}
+                    onCancel={actions.handleBack}
+                    onPreview={actions.preview}
+                />
+            </>
         );
     }
 
@@ -110,9 +108,9 @@ export const TemplatesTab: React.FC<TemplatesTabProps> = ({
     // Режим: Список шаблонов (по умолчанию)
     // =============================================
     return (
-        <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Шапка: поиск + создание */}
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100">
+        <>
+            {/* Шапка: поиск + создание — sticky внутри родительского scroll-контейнера */}
+            <div className="sticky top-0 z-10 flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-white">
                 <div className="flex-1 relative">
                     <input
                         type="text"
@@ -136,54 +134,52 @@ export const TemplatesTab: React.FC<TemplatesTabProps> = ({
                 </button>
             </div>
 
-            {/* Список шаблонов */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar">
-                {state.filteredTemplates.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 px-6">
-                        <svg className="w-12 h-12 text-gray-200 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <p className="text-sm text-gray-400 text-center mb-1">
-                            {state.searchQuery ? 'Шаблоны не найдены' : 'Нет шаблонов'}
+            {/* Список шаблонов — контент скроллируется родителем */}
+            {state.filteredTemplates.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 px-6">
+                    <svg className="w-12 h-12 text-gray-200 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <p className="text-sm text-gray-400 text-center mb-1">
+                        {state.searchQuery ? 'Шаблоны не найдены' : 'Нет шаблонов'}
+                    </p>
+                    {!state.searchQuery && (
+                        <p className="text-xs text-gray-300 text-center">
+                            Создайте первый шаблон для быстрых ответов
                         </p>
-                        {!state.searchQuery && (
-                            <p className="text-xs text-gray-300 text-center">
-                                Создайте первый шаблон для быстрых ответов
-                            </p>
-                        )}
-                    </div>
-                ) : (
-                    <div className="flex flex-col gap-2 p-3">
-                        {state.filteredTemplates.map(template => (
-                            <TemplateCard
-                                key={template.id}
-                                template={template}
-                                previewingId={state.previewingId}
-                                previewTexts={state.previewTexts}
-                                previewLoadingIds={state.previewLoadingIds}
-                                promoVariables={state.promoVariables}
-                                expandedTextIds={state.expandedTextIds}
-                                deletingId={state.deletingId}
-                                isDeleting={state.isDeleting}
-                                userName={userName}
-                                getEmptyPromoLists={actions.getEmptyPromoLists}
-                                onApplyTemplate={onApplyTemplate}
-                                onEdit={actions.handleEdit}
-                                onDelete={actions.handleDelete}
-                                onTogglePreview={actions.handleTogglePreview}
-                                onSetDeletingId={actions.setDeletingId}
-                                onToggleExpandText={(id) => {
-                                    actions.setExpandedTextIds(prev => {
-                                        const next = new Set(prev);
-                                        if (next.has(id)) { next.delete(id); } else { next.add(id); }
-                                        return next;
-                                    });
-                                }}
-                            />
-                        ))}
-                    </div>
-                )}
-            </div>
-        </div>
+                    )}
+                </div>
+            ) : (
+                <div className="flex flex-col gap-2 p-3">
+                    {state.filteredTemplates.map(template => (
+                        <TemplateCard
+                            key={template.id}
+                            template={template}
+                            previewingId={state.previewingId}
+                            previewTexts={state.previewTexts}
+                            previewLoadingIds={state.previewLoadingIds}
+                            promoVariables={state.promoVariables}
+                            expandedTextIds={state.expandedTextIds}
+                            deletingId={state.deletingId}
+                            isDeleting={state.isDeleting}
+                            userName={userName}
+                            getEmptyPromoLists={actions.getEmptyPromoLists}
+                            onApplyTemplate={onApplyTemplate}
+                            onEdit={actions.handleEdit}
+                            onDelete={actions.handleDelete}
+                            onTogglePreview={actions.handleTogglePreview}
+                            onSetDeletingId={actions.setDeletingId}
+                            onToggleExpandText={(id) => {
+                                actions.setExpandedTextIds(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(id)) { next.delete(id); } else { next.add(id); }
+                                    return next;
+                                });
+                            }}
+                        />
+                    ))}
+                </div>
+            )}
+        </>
     );
 };

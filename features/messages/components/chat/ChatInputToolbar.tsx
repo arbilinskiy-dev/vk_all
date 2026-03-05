@@ -9,13 +9,16 @@ interface ChatInputToolbarProps {
     disabled?: boolean;
     isEmojiPickerOpen: boolean;
     isVariablesOpen?: boolean;
+    isTemplatesOpen?: boolean;
     hasProject?: boolean;
+    hasTemplates?: boolean;
     canUndo: boolean;
     canRedo: boolean;
     onFileSelect: () => void;
     onLink: () => void;
     onToggleEmoji: () => void;
     onToggleVariables?: () => void;
+    onToggleTemplates?: () => void;
     onUndo: () => void;
     onRedo: () => void;
 }
@@ -24,13 +27,16 @@ export const ChatInputToolbar: React.FC<ChatInputToolbarProps> = ({
     disabled,
     isEmojiPickerOpen,
     isVariablesOpen,
+    isTemplatesOpen,
     hasProject,
+    hasTemplates,
     canUndo,
     canRedo,
     onFileSelect,
     onLink,
     onToggleEmoji,
     onToggleVariables,
+    onToggleTemplates,
     onUndo,
     onRedo,
 }) => {
@@ -91,6 +97,24 @@ export const ChatInputToolbar: React.FC<ChatInputToolbarProps> = ({
                             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                         </svg>
                         <span className="text-[11px] font-medium">Переменные</span>
+                    </button>
+                </>
+            )}
+
+            {/* Шаблоны */}
+            {hasProject && hasTemplates && onToggleTemplates && (
+                <>
+                    <div className="w-px h-4 bg-gray-300 mx-1" />
+                    <button
+                        type="button"
+                        onClick={onToggleTemplates}
+                        title="Шаблоны быстрых ответов"
+                        className={`${TOOLBAR_BTN_CLASS} inline-flex items-center gap-1 !px-1.5 ${isTemplatesOpen ? '!bg-indigo-100 !text-indigo-600' : ''}`}
+                    >
+                        <svg className={`w-3.5 h-3.5 transition-transform duration-200 ${isTemplatesOpen ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                        <span className="text-[11px] font-medium">Шаблоны</span>
                     </button>
                 </>
             )}

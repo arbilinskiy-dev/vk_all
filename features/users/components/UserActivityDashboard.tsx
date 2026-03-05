@@ -342,15 +342,15 @@ const HourlyHeatmap: React.FC<{ data: HourlyPoint[] }> = ({ data }) => {
 
     return (
         <div>
-            <div className="grid grid-cols-12 gap-1">
+            <div className="grid gap-0.5" style={{ gridTemplateColumns: 'repeat(24, minmax(0, 1fr))' }}>
                 {data.map(h => (
                     <div
                         key={h.hour}
-                        className={`rounded text-center py-1.5 text-xs font-medium ${getColor(h.count)} transition-colors`}
+                        className={`rounded text-center py-1 text-[10px] font-medium ${getColor(h.count)} transition-colors`}
                         title={`${h.hour}:00 — ${h.count} входов`}
                     >
-                        <div className="text-[10px] opacity-70">{String(h.hour).padStart(2, '0')}</div>
-                        <div className="font-bold">{h.count}</div>
+                        <div className="text-[9px] opacity-70">{String(h.hour).padStart(2, '0')}</div>
+                        <div className="font-bold text-[10px]">{h.count}</div>
                     </div>
                 ))}
             </div>

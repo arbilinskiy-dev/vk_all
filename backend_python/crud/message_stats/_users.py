@@ -1,16 +1,16 @@
 """
 ЧТЕНИЕ: Детализация по пользователям внутри проекта.
-Поддерживает фильтрацию по дате через hourly JSON.
+Поддерживает фильтрацию по дате через нормализованную таблицу MessageStatsHourlyUsers.
 """
 
-import json
 import logging
+from collections import defaultdict
 from typing import Dict, Any, Optional, Set
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from models_library.message_stats import MessageStatsHourly, MessageStatsUser
-from crud.message_stats._helpers import _hourly_date_filter
+from models_library.message_stats import MessageStatsHourly, MessageStatsUser, MessageStatsHourlyUsers
+from crud.message_stats._helpers import _hourly_date_filter, _hourly_users_date_filter
 
 logger = logging.getLogger("crud.message_stats")
 
@@ -22,56 +22,24 @@ def _collect_active_user_ids(
     date_to: Optional[str],
     message_type: Optional[str] = None,
 ) -> Set[int]:
-    """Собрать ID пользователей, активных в проекте за период, из hourly JSON."""
-    q = db.query(
-        MessageStatsHourly.unique_users_json,
-        MessageStatsHourly.unique_text_users_json,
-        MessageStatsHourly.unique_payload_users_json,
-        MessageStatsHourly.outgoing_users_json,
-    ).filter(
-        MessageStatsHourly.project_id == project_id
+    """Собрать ID пользователей, активных в проекте за период, из нормализованной таблицы."""
+    base_q = db.query(MessageStatsHourlyUsers.vk_user_id).distinct().filter(
+        MessageStatsHourlyUsers.project_id == project_id
     )
-    q = _hourly_date_filter(q, date_from, date_to)
-    active: Set[int] = set()
+    base_q = _hourly_users_date_filter(base_q, date_from, date_to)
 
     if message_type == 'text':
-        # Собираем ОБА набора — text и payload — из всех hourly-слотов.
-        # Reconcile из VK API НЕ различает text/payload (нет поля payload в истории),
-        # поэтому при создании новой hourly-строки ВСЕ входящие попадают в text_json.
-        # Callback/sync корректно пишут payload → payload_json достоверен.
+        # Reconcile из VK API НЕ различает text/payload → при создании hourly-строки
+        # все входящие попадают в type=1 (text). Callback/sync корректно пишут payload.
         # Итог: text_users - payload_users = гарантированно «реальные» пользователи.
-        text_users: Set[int] = set()
-        payload_users: Set[int] = set()
-        for users_json, text_json, payload_json, out_json in q.all():
-            if text_json:
-                try:
-                    text_users.update(json.loads(text_json))
-                except Exception:
-                    pass
-            if payload_json:
-                try:
-                    payload_users.update(json.loads(payload_json))
-                except Exception:
-                    pass
-        active = text_users - payload_users
+        text_ids = {r[0] for r in base_q.filter(MessageStatsHourlyUsers.user_type == 1).all()}
+        payload_ids = {r[0] for r in base_q.filter(MessageStatsHourlyUsers.user_type == 2).all()}
+        return text_ids - payload_ids
     elif message_type == 'payload':
-        for users_json, text_json, payload_json, out_json in q.all():
-            if payload_json:
-                try:
-                    active.update(json.loads(payload_json))
-                except Exception:
-                    pass
+        return {r[0] for r in base_q.filter(MessageStatsHourlyUsers.user_type == 2).all()}
     else:
-        for users_json, text_json, payload_json, out_json in q.all():
-            # Все активные (входящие + исходящие)
-            for js in (users_json, out_json):
-                if js:
-                    try:
-                        active.update(json.loads(js))
-                    except Exception:
-                        pass
-
-    return active
+        # Все активные (входящие + исходящие) — все типы
+        return {r[0] for r in base_q.all()}
 
 
 def _count_per_user_from_hourly(
@@ -84,6 +52,7 @@ def _count_per_user_from_hourly(
 ) -> Dict[int, Dict[str, int]]:
     """
     Подсчитать кол-во входящих/исходящих за период ПО КАЖДОМУ пользователю.
+    Читает из нормализованной таблицы MessageStatsHourlyUsers.
     Поддерживает message_type для суб-фильтрации:
     - text: только реальные набранные (incoming_text_count среди text users)
     - payload: только кнопочные (incoming_payload_count среди payload users)
@@ -91,69 +60,70 @@ def _count_per_user_from_hourly(
     """
     if not active_ids:
         return {}
-    q = db.query(
-        MessageStatsHourly.unique_text_users_json,
-        MessageStatsHourly.unique_payload_users_json,
-        MessageStatsHourly.outgoing_users_json,
+
+    # Получаем hourly-счётчики проекта за период
+    hq = db.query(
+        MessageStatsHourly.hour_slot,
         MessageStatsHourly.incoming_count,
         MessageStatsHourly.outgoing_count,
         MessageStatsHourly.incoming_text_count,
         MessageStatsHourly.incoming_payload_count,
+    ).filter(MessageStatsHourly.project_id == project_id)
+    hq = _hourly_date_filter(hq, date_from, date_to)
+    hourly_data = {r.hour_slot: r for r in hq.all()}
+
+    # Получаем user-slot-type из нормализованной таблицы
+    uq = db.query(
+        MessageStatsHourlyUsers.hour_slot,
+        MessageStatsHourlyUsers.vk_user_id,
+        MessageStatsHourlyUsers.user_type,
     ).filter(
-        MessageStatsHourly.project_id == project_id
+        MessageStatsHourlyUsers.project_id == project_id,
+        MessageStatsHourlyUsers.vk_user_id.in_(active_ids),
     )
-    q = _hourly_date_filter(q, date_from, date_to)
+    uq = _hourly_users_date_filter(uq, date_from, date_to)
+
+    # Строим per-slot множества пользователей по типам
+    slot_text_users: Dict[str, Set[int]] = defaultdict(set)
+    slot_payload_users: Dict[str, Set[int]] = defaultdict(set)
+    slot_out_users: Dict[str, Set[int]] = defaultdict(set)
+
+    for slot, uid, utype in uq.all():
+        if utype == 1:
+            slot_text_users[slot].add(uid)
+        elif utype == 2:
+            slot_payload_users[slot].add(uid)
+        elif utype == 3:
+            slot_out_users[slot].add(uid)
 
     # Собираем слоты для пропорционального распределения
     slot_incoming: list = []  # (count, set_of_uids)
     slot_outgoing: list = []
 
-    for text_json, payload_json, out_json, inc_cnt, out_cnt, text_cnt, payload_cnt in q.all():
+    for slot, h in hourly_data.items():
         if message_type == 'text':
             # Только текстовые: распределяем incoming_text_count среди text users
-            inc_users: Set[int] = set()
-            if text_json:
-                try:
-                    inc_users.update(json.loads(text_json))
-                except Exception:
-                    pass
             # Пересекаем с active_ids чтобы payload-юзеры (ошибочно попавшие
-            # в text_json из reconcile) не участвовали в распределении
-            inc_users &= active_ids
+            # из reconcile) не участвовали в распределении
+            inc_users = slot_text_users.get(slot, set()) & active_ids
             if inc_users:
-                slot_incoming.append((text_cnt or 0, inc_users))
+                slot_incoming.append((h.incoming_text_count or 0, inc_users))
         elif message_type == 'payload':
             # Только кнопочные: распределяем incoming_payload_count среди payload users
-            inc_users = set()
-            if payload_json:
-                try:
-                    inc_users.update(json.loads(payload_json))
-                except Exception:
-                    pass
+            inc_users = slot_payload_users.get(slot, set())
             if inc_users:
-                slot_incoming.append((payload_cnt or 0, inc_users))
+                slot_incoming.append((h.incoming_payload_count or 0, inc_users))
         else:
             # Все входящие: text ∪ payload
-            inc_users = set()
-            for js in (text_json, payload_json):
-                if js:
-                    try:
-                        inc_users.update(json.loads(js))
-                    except Exception:
-                        pass
+            inc_users = slot_text_users.get(slot, set()) | slot_payload_users.get(slot, set())
             if inc_users:
-                slot_incoming.append((inc_cnt or 0, inc_users))
+                slot_incoming.append((h.incoming_count or 0, inc_users))
 
         # Исходящие не зависят от message_type (только входящие суб-фильтр)
-        if not message_type:  # Показываем исходящие только без суб-фильтра
-            out_users: Set[int] = set()
-            if out_json:
-                try:
-                    out_users.update(json.loads(out_json))
-                except Exception:
-                    pass
+        if not message_type:
+            out_users = slot_out_users.get(slot, set())
             if out_users:
-                slot_outgoing.append((out_cnt or 0, out_users))
+                slot_outgoing.append((h.outgoing_count or 0, out_users))
 
     # Распределяем сообщения пропорционально (в каждом слоте делим count на кол-во юзеров)
     user_incoming: Dict[int, float] = {}

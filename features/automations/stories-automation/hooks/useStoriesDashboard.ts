@@ -50,13 +50,14 @@ export const useStoriesDashboard = (projectId?: string) => {
                 customEndDate: customEndDate || undefined,
             });
 
+            // Функциональный updater: проверяем ref в момент рендера (не диспатча),
+            // чтобы stale-ответ от старого проекта не перезаписал данные нового
             if (currentProjectIdRef.current !== pid) return;
-
-            setDashboardStats(stats);
+            setDashboardStats(prev => currentProjectIdRef.current !== pid ? prev : stats);
         } catch (error) {
             console.error('[STORIES] Ошибка загрузки статистики дашборда:', error);
         } finally {
-            setIsLoadingDashboard(false);
+            if (currentProjectIdRef.current === pid) setIsLoadingDashboard(false);
         }
     }, []); // Стабильная ссылка — projectId читается из ref
 
@@ -65,6 +66,10 @@ export const useStoriesDashboard = (projectId?: string) => {
         const { periodType, filterType, customStartDate, customEndDate } = lastParamsRef.current;
         return loadDashboardStats(periodType, filterType, customStartDate, customEndDate);
     }, [loadDashboardStats]);
+
+    // При смене проекта: НЕ сбрасываем dashboardStats в null.
+    // Старые данные остаются видимыми пока новые не загрузятся — без мерцания карточек.
+    // Перезагрузка запускается из dashboard/useStoriesDashboard через projectId в deps эффекта фильтров.
 
     return {
         dashboardStats,

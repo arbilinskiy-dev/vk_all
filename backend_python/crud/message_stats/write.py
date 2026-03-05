@@ -1,6 +1,11 @@
 """
 ЗАПИСЬ: Атомарные upsert при каждом callback (message_new / message_reply).
 Горячий путь — вызывается при каждом входящем/исходящем сообщении.
+
+Нормализованная архитектура:
+- Пользователи хранятся в message_stats_hourly_users (INSERT ON CONFLICT DO NOTHING)
+- Счётчики пересчитываются только при появлении нового юзера в слоте
+- JSON-поля больше не используются (deprecated)
 """
 
 import json
@@ -8,8 +13,12 @@ import time
 import logging
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from models_library.message_stats import MessageStatsHourly, MessageStatsUser, MessageStatsAdmin
+from models_library.message_stats import (
+    MessageStatsHourly, MessageStatsUser, MessageStatsAdmin, MessageStatsHourlyUsers,
+)
+from crud.message_stats._helpers import _recount_hourly_users
 
 logger = logging.getLogger("crud.message_stats")
 
@@ -61,63 +70,49 @@ def _upsert_hourly(
     is_incoming: bool, timestamp: float,
     has_payload: bool = False, sender_id: str = None,
 ) -> None:
-    """Атомарный upsert в таблицу часовых слотов."""
+    """Атомарный upsert в таблицу часовых слотов + нормализованную таблицу юзеров."""
     # Формируем hour_slot из timestamp
     dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
     hour_slot = dt.strftime("%Y-%m-%dT%H")
     row_id = f"{project_id}_{hour_slot}"
     
+    # Определяем тип пользователя: 1=text, 2=payload, 3=outgoing
+    if is_incoming:
+        user_type = 2 if has_payload else 1
+    else:
+        user_type = 3
+    
     existing = db.query(MessageStatsHourly).filter(MessageStatsHourly.id == row_id).first()
     
     if existing:
-        # Обновляем общие счётчики
+        # Обновляем счётчики сообщений
         if is_incoming:
             existing.incoming_count = (existing.incoming_count or 0) + 1
-            # Детализация входящих: кнопки vs живые
             if has_payload:
                 existing.incoming_payload_count = (existing.incoming_payload_count or 0) + 1
-                # Обновляем unique_payload_users
-                try:
-                    payload_users_set = set(json.loads(existing.unique_payload_users_json or "[]"))
-                except (json.JSONDecodeError, TypeError):
-                    payload_users_set = set()
-                payload_users_set.add(vk_user_id)
-                existing.unique_payload_users_json = json.dumps(list(payload_users_set))
             else:
                 existing.incoming_text_count = (existing.incoming_text_count or 0) + 1
-                # Обновляем unique_text_users
-                try:
-                    text_users_set = set(json.loads(existing.unique_text_users_json or "[]"))
-                except (json.JSONDecodeError, TypeError):
-                    text_users_set = set()
-                text_users_set.add(vk_user_id)
-                existing.unique_text_users_json = json.dumps(list(text_users_set))
         else:
             existing.outgoing_count = (existing.outgoing_count or 0) + 1
-            # Детализация исходящих: система vs бот
             if sender_id:
                 existing.outgoing_system_count = (existing.outgoing_system_count or 0) + 1
             else:
                 existing.outgoing_bot_count = (existing.outgoing_bot_count or 0) + 1
-            # Обновляем outgoing_users (получатели исходящих)
-            try:
-                out_users_set = set(json.loads(existing.outgoing_users_json or "[]"))
-            except (json.JSONDecodeError, TypeError):
-                out_users_set = set()
-            out_users_set.add(vk_user_id)
-            existing.outgoing_users_json = json.dumps(list(out_users_set))
         
-        # Обновляем unique_users
-        try:
-            users_set = set(json.loads(existing.unique_users_json or "[]"))
-        except (json.JSONDecodeError, TypeError):
-            users_set = set()
+        # INSERT юзера в нормализованную таблицу (ON CONFLICT DO NOTHING)
+        result = db.execute(
+            pg_insert(MessageStatsHourlyUsers.__table__).values(
+                project_id=project_id,
+                hour_slot=hour_slot,
+                vk_user_id=vk_user_id,
+                user_type=user_type,
+            ).on_conflict_do_nothing()
+        )
         
-        users_set.add(vk_user_id)
-        existing.unique_users_json = json.dumps(list(users_set))
-        existing.unique_users_count = len(users_set)
-        # unique_dialogs = unique_users в рамках одного проекта-часа
-        existing.unique_dialogs_count = len(users_set)
+        # Если юзер новый для этого слота/типа — пересчитываем счётчики
+        if result.rowcount > 0:
+            _recount_hourly_users(db, existing, project_id, hour_slot)
+        
         existing.updated_at = time.time()
     else:
         # Создаём новую строку
@@ -134,14 +129,28 @@ def _upsert_hourly(
             outgoing_system_count=1 if (not is_incoming and sender_id) else 0,
             outgoing_bot_count=1 if (not is_incoming and not sender_id) else 0,
             unique_users_count=1,
-            unique_users_json=json.dumps([vk_user_id]),
-            unique_text_users_json=json.dumps([vk_user_id] if is_text_incoming else []),
-            unique_payload_users_json=json.dumps([vk_user_id] if (is_incoming and has_payload) else []),
-            outgoing_users_json=json.dumps([vk_user_id] if not is_incoming else []),
+            unique_text_users_count=1 if is_text_incoming else 0,
+            unique_payload_users_count=1 if (is_incoming and has_payload) else 0,
+            outgoing_users_count=0 if is_incoming else 1,
+            incoming_users_count=1 if is_incoming else 0,
             unique_dialogs_count=1,
+            # JSON поля (deprecated — пустые)
+            unique_users_json="[]",
+            unique_text_users_json="[]",
+            unique_payload_users_json="[]",
+            outgoing_users_json="[]",
             created_at=now,
             updated_at=now,
         ))
+        # INSERT юзера в нормализованную таблицу
+        db.execute(
+            pg_insert(MessageStatsHourlyUsers.__table__).values(
+                project_id=project_id,
+                hour_slot=hour_slot,
+                vk_user_id=vk_user_id,
+                user_type=user_type,
+            ).on_conflict_do_nothing()
+        )
 
 
 def _upsert_user(db: Session, project_id: str, vk_user_id: int, is_incoming: bool, timestamp: float) -> None:

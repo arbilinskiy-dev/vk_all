@@ -44,7 +44,9 @@ from .likes.handler import LikesHandler
 from .market.handler import MarketHandler
 
 # Участники сообщества
-from .members.handler import MembersHandler
+from .members.group_join import GroupJoinHandler
+from .members.group_leave import GroupLeaveHandler
+from .members.handler import MembersBlockHandler
 
 # Обсуждения
 from .board.handler import BoardHandler
@@ -102,7 +104,9 @@ def _register_all_handlers():
         # Commerce
         MarketHandler,
         # Community
-        MembersHandler,
+        GroupJoinHandler,
+        GroupLeaveHandler,
+        MembersBlockHandler,
         BoardHandler,
         GroupManagementHandler,
         # Monetization

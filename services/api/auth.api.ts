@@ -6,7 +6,7 @@ export type LoginPayload = {
     password: string;
 }
 
-export const login = async (credentials: LoginPayload): Promise<{ success: boolean; role: 'admin' | 'user', username: string, full_name?: string, session_token?: string }> => {
+export const login = async (credentials: LoginPayload): Promise<{ success: boolean; role: 'admin' | 'user', username: string, full_name?: string, session_token?: string, is_system_admin?: boolean }> => {
     return callApi('auth/login', credentials);
 };
 
@@ -14,7 +14,7 @@ export const logout = async (): Promise<{ success: boolean }> => {
     return callApi('auth/logout', {});
 };
 
-export const checkSession = async (): Promise<{ valid: boolean; username: string; role: string; full_name?: string }> => {
+export const checkSession = async (): Promise<{ valid: boolean; username: string; role: string; full_name?: string; is_system_admin?: boolean }> => {
     return callApi('auth/check-session', {});
 };
 

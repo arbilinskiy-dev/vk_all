@@ -1,5 +1,5 @@
 
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { Project } from '../../../shared/types';
 import * as api from '../../../services/api';
 import { ListType } from '../types';
@@ -15,6 +15,16 @@ export const useListFetching = (
 ) => {
     const PAGE_SIZE = 50;
 
+    // --- C1: Инкрементальные счётчики запросов для защиты от race condition ---
+    // При быстром переключении табов ответ от устаревшего запроса игнорируется
+    const itemsRequestIdRef = useRef(0);
+    const statsRequestIdRef = useRef(0);
+
+    // --- M2: Ref-based guard вместо state для защиты от параллельных вызовов ---
+    // state.isLoadingList в замыкании useCallback может быть stale,
+    // ref обновляется синхронно и всегда актуален
+    const isLoadingItemsRef = useRef(false);
+
     const fetchMeta = useCallback(async () => {
         setters.setIsLoadingMeta(true);
         try {
@@ -24,6 +34,8 @@ export const useListFetching = (
             }
         } catch (e) {
             console.error(e);
+            // M7: Уведомление пользователя об ошибке загрузки метаданных
+            window.showAppToast?.('Не удалось загрузить метаданные списка', 'error');
         } finally {
             if (state.activeProjectIdRef.current === project.id) {
                 setters.setIsLoadingMeta(false);
@@ -38,6 +50,9 @@ export const useListFetching = (
             return;
         }
 
+        // C1: Запоминаем ID этого запроса — при получении ответа проверим актуальность
+        const myRequestId = ++statsRequestIdRef.current;
+
         setters.setIsLoadingStats(true);
         try {
             const statsData = await api.getListStats(
@@ -49,23 +64,33 @@ export const useListFetching = (
                 state.statsDateTo,
                 state.filterCanWrite // Передаем фильтр ЛС в статистику
             );
-            if (state.activeProjectIdRef.current === project.id) {
+            // C1: Игнорируем ответ если за время запроса был запущен новый fetchStats
+            if (state.activeProjectIdRef.current === project.id && statsRequestIdRef.current === myRequestId) {
                 setters.setStats(statsData);
             }
         } catch (e) {
             console.error("Failed to load stats", e);
+            // M7: Уведомление при ошибке загрузки статистики
+            window.showAppToast?.('Не удалось загрузить статистику', 'error');
         } finally {
              if (state.activeProjectIdRef.current === project.id) {
-                setters.setIsLoadingStats(false);
+                // Снимаем лоадер только если это последний запрос
+                if (statsRequestIdRef.current === myRequestId) {
+                    setters.setIsLoadingStats(false);
+                }
              }
         }
     }, [project.id, state.statsPeriod, state.statsGroupBy, state.statsDateFrom, state.statsDateTo, state.filterCanWrite]);
 
     const fetchItems = useCallback(async (pageNum: number, search: string, isReset: boolean = false) => {
         if (!state.activeList) return;
-        // Защита от повторного вызова во время загрузки (предотвращает спам запросов)
-        if (!isReset && state.isLoadingList) return;
+        // M2: Ref-based guard — синхронно проверяем актуальный флаг загрузки
+        if (!isReset && isLoadingItemsRef.current) return;
         
+        // C1: Запоминаем ID запроса для проверки актуальности при получении ответа
+        const myRequestId = ++itemsRequestIdRef.current;
+
+        isLoadingItemsRef.current = true;
         setters.setIsLoadingList(true);
         try {
             let count = 0;
@@ -78,7 +103,8 @@ export const useListFetching = (
                      metaData = data.meta;
                      count = data.items.length;
                      total = data.total_count;
-                     if (state.activeProjectIdRef.current === project.id) {
+                     // C1: Проверяем что запрос ещё актуален
+                     if (state.activeProjectIdRef.current === project.id && itemsRequestIdRef.current === myRequestId) {
                         if (isReset) setters.setPosts(data.items);
                         else setters.setPosts(prev => [...prev, ...data.items]);
                      }
@@ -94,14 +120,15 @@ export const useListFetching = (
                         state.filterCanWrite,
                         state.filterBdateMonth,
                         state.filterPlatform,
-                        state.filterAge // NEW
+                        state.filterAge
                     );
                     
                     metaData = response.meta;
                     count = response.items.length;
                     total = response.total_count;
                     
-                    if (state.activeProjectIdRef.current === project.id) {
+                    // C1: Проверяем что запрос ещё актуален
+                    if (state.activeProjectIdRef.current === project.id && itemsRequestIdRef.current === myRequestId) {
                         if (isReset) setters.setPosts(response.items);
                         else setters.setPosts(prev => [...prev, ...response.items]);
                     }
@@ -118,12 +145,13 @@ export const useListFetching = (
                     state.filterOnline,
                     state.filterBdateMonth,
                     state.filterPlatform,
-                    state.filterAge // NEW
+                    state.filterAge
                 );
                 metaData = data.meta;
                 count = data.items.length;
                 total = data.total_count;
-                if (state.activeProjectIdRef.current === project.id) {
+                // C1: Проверяем что запрос ещё актуален
+                if (state.activeProjectIdRef.current === project.id && itemsRequestIdRef.current === myRequestId) {
                     if (isReset) setters.setInteractions(data.items);
                     else setters.setInteractions(prev => [...prev, ...data.items]);
                 }
@@ -141,35 +169,47 @@ export const useListFetching = (
                     state.filterCanWrite,
                     state.filterBdateMonth,
                     state.filterPlatform,
-                    state.filterAge // NEW
+                    state.filterAge
                 );
                 metaData = data.meta;
                 count = data.items.length;
                 total = data.total_count;
-                if (state.activeProjectIdRef.current === project.id) {
+                // C1: Проверяем что запрос ещё актуален
+                if (state.activeProjectIdRef.current === project.id && itemsRequestIdRef.current === myRequestId) {
                     if (isReset) setters.setItems(data.items);
                     else setters.setItems(prev => [...prev, ...data.items]);
                 }
             }
             
-            if (state.activeProjectIdRef.current === project.id) {
+            // C1: Записываем общие метаданные только если запрос актуален
+            if (state.activeProjectIdRef.current === project.id && itemsRequestIdRef.current === myRequestId) {
                 if (metaData) setters.setMeta(metaData);
                 setters.setIsListLoaded(true);
-                // Важно: hasMore должно быть true только если мы получили полную страницу
-                setters.setHasMore(count === PAGE_SIZE);
+                // m2: Используем total_count для точного определения hasMore
+                // вместо эвристики count === PAGE_SIZE (избегаем лишний запрос на границе)
+                setters.setHasMore(pageNum * PAGE_SIZE < total);
                 setters.setPage(pageNum);
                 if (isReset) setters.setTotalItemsCount(total);
             }
 
         } catch (e) {
             console.error(e);
-            // Сбрасываем флаг загрузки даже при ошибке, чтобы интерфейс не завис
+            // M7: Уведомление при ошибке загрузки списка
+            window.showAppToast?.('Не удалось загрузить данные списка', 'error');
         } finally {
+            // M2: Снимаем ref-guard синхронно
+            if (itemsRequestIdRef.current === myRequestId) {
+                isLoadingItemsRef.current = false;
+            }
             if (state.activeProjectIdRef.current === project.id) {
-                setters.setIsLoadingList(false);
+                // Снимаем UI-лоадер только если это последний запрос
+                if (itemsRequestIdRef.current === myRequestId) {
+                    setters.setIsLoadingList(false);
+                }
             }
         }
-    }, [project.id, state.activeList, state.isLoadingList, state.filterQuality, state.filterSex, state.filterOnline, state.filterCanWrite, state.filterBdateMonth, state.filterPlatform, state.filterAge]);
+    // M2: Убран state.isLoadingList из deps — используем ref вместо state для guard
+    }, [project.id, state.activeList, state.filterQuality, state.filterSex, state.filterOnline, state.filterCanWrite, state.filterBdateMonth, state.filterPlatform, state.filterAge]);
 
     return {
         fetchMeta,

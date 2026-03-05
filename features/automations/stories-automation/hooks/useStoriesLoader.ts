@@ -40,6 +40,9 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
     // Ref для отслеживания предыдущего projectId (для сброса данных в loadStories)
     const prevProjectIdRef = useRef<string | undefined>(undefined);
 
+    // Флаг: данные были загружены хотя бы раз (скелетон только при первом открытии)
+    const hasEverLoadedRef = useRef(false);
+
     // Загрузка историй с кэшированием:
     // 1. Сначала показываем данные из кэша (быстро)
     // 2. Проверяем свежесть
@@ -170,17 +173,18 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
         const prevMap = new Map<string | number, UnifiedStory>(prev.map(s => [s.vk_story_id || s.log_id, s]));
 
         // Проверяем, есть ли реальные изменения
+        // ВАЖНО: сравниваем только примитивные поля (timestamps, ссылки).
+        // detailed_stats и viewers — объекты с разными ссылками при каждом API-запросе,
+        // поэтому их нельзя сравнивать через !==. Если timestamps совпадают — данные те же.
         const hasChanges = newItems.some(newStory => {
             const key = newStory.vk_story_id || newStory.log_id;
             const existing = prevMap.get(key);
             if (!existing) return true; // новая история — есть изменение
-            // Сравниваем ключевые поля данных
             return (
                 newStory.story_link !== existing.story_link ||
-                newStory.detailed_stats !== existing.detailed_stats ||
                 newStory.stats_updated_at !== existing.stats_updated_at ||
-                newStory.viewers !== existing.viewers ||
-                newStory.viewers_updated_at !== existing.viewers_updated_at
+                newStory.viewers_updated_at !== existing.viewers_updated_at ||
+                newStory.vk_story_id !== existing.vk_story_id
             );
         });
 
@@ -242,7 +246,12 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
         let cancelled = false;
         const loadStoriesWithCancel = async () => {
             if (!projectId || activeTab !== 'stats') return;
-            setIsLoadingStories(true);
+            // Скелетон только при первом открытии.
+            // При переключении проекта — тихая замена данных без скелетона,
+            // чтобы таблица не размонтировалась/перемонтировалась.
+            if (!hasEverLoadedRef.current) {
+                setIsLoadingStories(true);
+            }
             try {
                 // Загружаем кэш (первая страница)
                 const cachedRes = await callApi<PaginatedStoriesResponse>('getCachedStories', {
@@ -253,9 +262,11 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
                 if (cancelled) return;
                 if ((cachedRes as any).error) {
                     window.showAppToast?.((cachedRes as any).error, 'error');
-                    setStories([]);
-                    setTotalStories(0);
-                    setIsLoadingStories(false);
+                    // Функциональный updater: проверяем ref в момент рендера (не диспатча),
+                    // чтобы stale-обновление от старого проекта не затёрло данные нового
+                    setStories(prev => currentProjectIdRef.current !== projectId ? prev : []);
+                    setTotalStories(prev => currentProjectIdRef.current !== projectId ? prev : 0);
+                    if (currentProjectIdRef.current === projectId) setIsLoadingStories(false);
                 } else {
                     // Атомарная загрузка кэша: все батчи локально, потом один setStories
                     const cachedTotal = cachedRes.total || 0;
@@ -263,11 +274,15 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
                         ? await loadAllBatchesLocal('getCachedStories', projectId, cachedTotal, cachedRes.items || [], () => cancelled)
                         : (cachedRes.items || []);
                     if (cancelled) return;
-                    // Кэш загружен — показываем данные и снимаем скелетон сразу
-                    // (фоновое обновление идёт «тихо» без индикатора загрузки)
-                    setStories(allCachedItems);
-                    setTotalStories(cachedTotal);
-                    setIsLoadingStories(false);
+                    // Кэш загружен — показываем данные и снимаем скелетон сразу.
+                    // Функциональный updater + ref-проверка: защита от stale-обновлений
+                    // при быстром переключении проектов (React batching edge case).
+                    setStories(prev => currentProjectIdRef.current !== projectId ? prev : allCachedItems);
+                    setTotalStories(prev => currentProjectIdRef.current !== projectId ? prev : cachedTotal);
+                    if (currentProjectIdRef.current === projectId) {
+                        setIsLoadingStories(false);
+                        hasEverLoadedRef.current = true;
+                    }
                 }
                 // Проверяем свежесть
                 const freshness = await callApi<{ is_stale: boolean }>('getStoriesFreshness', { projectId });
@@ -288,9 +303,13 @@ export const useStoriesLoader = (projectId?: string, activeTab: 'settings' | 'st
                         ? await loadAllBatchesLocal('refreshStories', projectId, refreshTotal, refreshRes.items, () => cancelled)
                         : refreshRes.items;
                     if (cancelled) return;
-                    // Один атомарный merge — пользователь видит плавное обновление
-                    setStories(prev => mergeStories(prev, allRefreshItems));
-                    setTotalStories(refreshTotal);
+                    // Один атомарный merge — пользователь видит плавное обновление.
+                    // Ref-проверка внутри updater предотвращает перезапись данных нового проекта.
+                    setStories(prev => {
+                        if (currentProjectIdRef.current !== projectId) return prev;
+                        return mergeStories(prev, allRefreshItems);
+                    });
+                    setTotalStories(prev => currentProjectIdRef.current !== projectId ? prev : refreshTotal);
                 }
             } catch (error: any) {
                 if (!cancelled) {

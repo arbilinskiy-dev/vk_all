@@ -201,6 +201,15 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, editedProj
                                             placeholder="Код подтверждения"
                                         />
                                     </td>}
+                                    {visibleColumns.dlvry_affiliate_id && <td className="px-4 py-2">
+                                        <input
+                                            type="text"
+                                            value={currentData.dlvry_affiliate_id || ''}
+                                            onChange={(e) => onProjectChange(project.id, 'dlvry_affiliate_id', e.target.value)}
+                                            className={`${inputClasses} w-full`}
+                                            placeholder="ID филиала"
+                                        />
+                                    </td>}
                                     {visibleColumns.vkGroupName && <td className="px-4 py-2 text-sm text-gray-800 truncate">
                                         {project.vkGroupName}
                                     </td>}

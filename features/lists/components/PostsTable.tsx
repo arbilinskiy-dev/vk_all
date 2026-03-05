@@ -10,7 +10,7 @@ interface PostsTableProps {
     isFetchingMore?: boolean;
 }
 
-export const PostsTable: React.FC<PostsTableProps> = ({ items, isLoading, onLoadMore, isFetchingMore }) => {
+export const PostsTable: React.FC<PostsTableProps> = React.memo(({ items, isLoading, onLoadMore, isFetchingMore }) => {
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const observerTarget = useRef<HTMLDivElement>(null);
 
@@ -107,6 +107,7 @@ export const PostsTable: React.FC<PostsTableProps> = ({ items, isLoading, onLoad
                                             <img 
                                                 src={item.image_url} 
                                                 alt="" 
+                                                loading="lazy"
                                                 className="w-full h-full object-cover cursor-pointer hover:scale-110 transition-transform" 
                                                 onClick={() => setPreviewImage(item.image_url!)}
                                             />
@@ -175,4 +176,4 @@ export const PostsTable: React.FC<PostsTableProps> = ({ items, isLoading, onLoad
             )}
         </>
     );
-};
+});

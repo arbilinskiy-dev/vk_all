@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { callApi } from '../../../../shared/utils/apiClient';
 import { PublishedPost, StoryLog } from '../types';
 import { useProjects } from '../../../../contexts/ProjectsContext';
@@ -22,7 +22,18 @@ export const useStoriesSettings = (projectId?: string) => {
     const [posts, setPosts] = useState<PublishedPost[]>([]);
     const [logs, setLogs] = useState<StoryLog[]>([]);
 
-    // Загрузка данных при смене проекта
+    // Флаг: данные были загружены хотя бы раз — после этого скелетон всей страницы не показывается
+    const hasEverLoadedRef = useRef(false);
+
+    // Ref для отслеживания текущего projectId (защита от stale-ответов)
+    const currentProjectIdRef = useRef<string | undefined>(projectId);
+    if (projectId !== currentProjectIdRef.current) {
+        currentProjectIdRef.current = projectId;
+    }
+
+    // Загрузка данных при смене проекта.
+    // НЕ сбрасываем state синхронно — старые данные остаются видимыми
+    // до прихода новых, чтобы избежать мерцания интерфейса.
     useEffect(() => {
         if (!projectId) return;
         loadData();
@@ -30,25 +41,38 @@ export const useStoriesSettings = (projectId?: string) => {
 
     /** Загрузка настроек, постов и логов */
     const loadData = async () => {
-        setIsLoading(true);
+        const targetPid = currentProjectIdRef.current;
+        // Скелетон всей страницы показываем только при первом запуске.
+        // При смене проекта контент остаётся смонтированным — дашборд не релоадится.
+        if (!hasEverLoadedRef.current) {
+            setIsLoading(true);
+        }
         setIsInitialLoad(true);
         try {
             const [settingsData, postsData, logsData] = await Promise.all([
-                callApi('getStoriesAutomation', { projectId }),
-                callApi('getCachedPublishedPosts', { projectId }),
-                callApi('getStoriesAutomationLogs', { projectId }),
+                callApi('getStoriesAutomation', { projectId: targetPid }),
+                callApi('getCachedPublishedPosts', { projectId: targetPid }),
+                callApi('getStoriesAutomationLogs', { projectId: targetPid }),
             ]);
+
+            // Защита от stale-ответов: если проект сменился — не перезаписываем state
+            if (currentProjectIdRef.current !== targetPid) return;
 
             setIsActive(settingsData.is_active || false);
             setKeywords(settingsData.keywords || '');
             setPosts(postsData || []);
             setLogs(logsData || []);
+            hasEverLoadedRef.current = true;
         } catch (error) {
             console.error(error);
-            window.showAppToast?.('Не удалось загрузить данные', 'error');
+            if (currentProjectIdRef.current === targetPid) {
+                window.showAppToast?.('Не удалось загрузить данные', 'error');
+            }
         } finally {
-            setIsLoading(false);
-            setIsInitialLoad(false);
+            if (currentProjectIdRef.current === targetPid) {
+                setIsLoading(false);
+                setIsInitialLoad(false);
+            }
         }
     };
 

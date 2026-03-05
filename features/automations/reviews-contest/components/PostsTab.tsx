@@ -69,8 +69,20 @@ export const PostsTab: React.FC<PostsTabProps> = ({ projectId: propProjectId, pr
         
         setIsProcessing(true);
         try {
-            await api.processContestEntries(projectId);
+            const result = await api.processContestEntries(projectId);
             await refresh();
+            
+            // Показываем фидбэк пользователю
+            if (result.processed > 0) {
+                const errPart = result.errors > 0 ? ` (ошибок: ${result.errors})` : '';
+                window.showAppToast?.(`Обработано постов: ${result.processed}${errPart}`, 'success');
+            } else if (result.limit_reached) {
+                window.showAppToast?.("Лимит участников достигнут. Подведите итоги для нового раунда.", 'info');
+            } else if (result.message) {
+                window.showAppToast?.(result.message, 'info');
+            } else if (result.errors > 0) {
+                window.showAppToast?.(`Ошибки при комментировании: ${result.errors}. Проверьте токен сообщества.`, 'error');
+            }
         } catch (e) {
             window.showAppToast?.("Ошибка при обработке постов: " + (e instanceof Error ? e.message : String(e)), 'error');
         } finally {

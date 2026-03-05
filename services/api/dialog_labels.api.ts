@@ -4,6 +4,7 @@
  */
 
 import { API_BASE_URL } from '../../shared/config';
+import { getAuthHeaders } from '../../shared/utils/apiClient';
 
 // =============================================================================
 // Типы
@@ -40,7 +41,9 @@ export interface DialogLabelResponse {
 /** Получить все метки проекта */
 export async function getDialogLabels(projectId: string): Promise<DialogLabelsListResponse> {
     const params = new URLSearchParams({ project_id: projectId });
-    const response = await fetch(`${API_BASE_URL}/dialog-labels/list?${params}`);
+    const response = await fetch(`${API_BASE_URL}/dialog-labels/list?${params}`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new Error(err.detail || `Ошибка загрузки меток: ${response.status}`);
@@ -56,7 +59,7 @@ export async function createDialogLabel(
 ): Promise<DialogLabelResponse> {
     const response = await fetch(`${API_BASE_URL}/dialog-labels/create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ project_id: projectId, name, color }),
     });
     if (!response.ok) {
@@ -73,7 +76,7 @@ export async function updateDialogLabel(
 ): Promise<DialogLabelResponse> {
     const response = await fetch(`${API_BASE_URL}/dialog-labels/${labelId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(data),
     });
     if (!response.ok) {
@@ -87,6 +90,7 @@ export async function updateDialogLabel(
 export async function deleteDialogLabel(labelId: string): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE_URL}/dialog-labels/${labelId}`, {
         method: 'DELETE',
+        headers: getAuthHeaders(false),
     });
     if (!response.ok) {
         const err = await response.json().catch(() => ({}));
@@ -105,7 +109,7 @@ export async function assignDialogLabel(
 ): Promise<{ success: boolean; created: boolean }> {
     const response = await fetch(`${API_BASE_URL}/dialog-labels/assign`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ project_id: projectId, vk_user_id: vkUserId, label_id: labelId }),
     });
     if (!response.ok) {
@@ -121,7 +125,7 @@ export async function unassignDialogLabel(
 ): Promise<{ success: boolean; removed: boolean }> {
     const response = await fetch(`${API_BASE_URL}/dialog-labels/unassign`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ project_id: projectId, vk_user_id: vkUserId, label_id: labelId }),
     });
     if (!response.ok) {
@@ -137,7 +141,7 @@ export async function setDialogLabels(
 ): Promise<{ success: boolean; label_ids: string[] }> {
     const response = await fetch(`${API_BASE_URL}/dialog-labels/set-dialog-labels`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ project_id: projectId, vk_user_id: vkUserId, label_ids: labelIds }),
     });
     if (!response.ok) {

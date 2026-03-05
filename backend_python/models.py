@@ -68,3 +68,7 @@ from models_library.dialog_labels import DialogLabel, DialogLabelAssignment
 # NEW: Роли пользователей и лог действий
 from models_library.user_roles import UserRole
 from models_library.user_actions import UserAction
+# NEW: DLVRY заказы (внешняя CRM — приём вебхуков от DLVRY)
+from models_library.dlvry_orders import DlvryOrder, DlvryOrderItem, DlvryWebhookLog
+# NEW: История вступлений/выходов пользователей (аналитический лог)
+from models_library.membership_history import UserMembershipHistory

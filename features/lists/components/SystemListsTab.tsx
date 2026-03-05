@@ -1,11 +1,10 @@
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Project } from '../../../shared/types';
 import { ListStatisticsPanel } from './ListStatisticsPanel';
 import { InteractionSyncModal } from './modals/InteractionSyncModal';
 import { useSystemListsManager } from '../hooks/useSystemListsManager';
-import { ListGroup, ListType, FilterCanWrite, StatsPeriod, StatsGroupBy } from '../types';
-import * as api from '../../../services/api';
+import { ListGroup, ListType, FilterCanWrite, StatsPeriod, StatsGroupBy, getStatsLayoutGroup } from '../types';
 import { useAuth } from '../../auth/contexts/AuthContext';
 import { ConfirmationModal } from '../../../shared/components/modals/ConfirmationModal';
 import { AppView } from '../../../App';
@@ -40,19 +39,21 @@ export const SystemListsTab: React.FC<{
         handleResetFilters, handleTabChange, handleLoadMore,
         setStatsPeriod, setStatsGroupBy, setStatsDateFrom, setStatsDateTo,
         handleRefreshPostsWithLimit,
-        setFilterBdateMonth, setFilterPlatform, setFilterAge
+        setFilterBdateMonth, setFilterPlatform, setFilterAge,
+        handleClearList
     } = actions;
     
     const [clearListConfirmation, setClearListConfirmation] = useState<{ isOpen: boolean; listType: string } | null>(null);
     const [isClearing, setIsClearing] = useState(false);
 
-    const handleStatsParamsChange = (period: StatsPeriod, groupBy: StatsGroupBy, dateFrom?: string, dateTo?: string, canWrite?: FilterCanWrite) => {
+    // M8: Стабилизированный callback — все зависимости (setState) стабильны → [] deps
+    const handleStatsParamsChange = useCallback((period: StatsPeriod, groupBy: StatsGroupBy, dateFrom?: string, dateTo?: string, canWrite?: FilterCanWrite) => {
         setStatsPeriod(period);
         setStatsGroupBy(groupBy);
         if (dateFrom) setStatsDateFrom(dateFrom);
         if (dateTo) setStatsDateTo(dateTo);
         if (canWrite) setFilterCanWrite(canWrite);
-    };
+    }, [setStatsPeriod, setStatsGroupBy, setStatsDateFrom, setStatsDateTo, setFilterCanWrite]);
 
     const handleInitiateClearList = () => {
         if (activeList) {
@@ -60,22 +61,17 @@ export const SystemListsTab: React.FC<{
         }
     };
 
+    // Мягкий сброс данных без перезагрузки страницы
     const handleConfirmClearList = async () => {
         if (!clearListConfirmation) return;
         
         setIsClearing(true);
         try {
-            await api.clearListData(project.id, clearListConfirmation.listType);
-            setIsClearing(false);
+            await handleClearList(clearListConfirmation.listType);
             setClearListConfirmation(null);
-
-            if (state.activeProjectIdRef.current === project.id) {
-                 setTimeout(() => {
-                     window.location.reload();
-                 }, 100);
-            }
         } catch (e) {
             window.showAppToast?.("Ошибка очистки: " + (e instanceof Error ? e.message : String(e)), 'error');
+        } finally {
             setIsClearing(false);
             setClearListConfirmation(null);
         }
@@ -115,7 +111,7 @@ export const SystemListsTab: React.FC<{
                         <p className="text-lg font-medium">Выберите список для просмотра</p>
                     </div>
                 ) : (
-                     <div className="flex flex-col h-full animate-fade-in-up">
+                     <div key={getStatsLayoutGroup(activeList)} className="flex flex-col h-full animate-fade-in-up">
                         <div className="flex-shrink-0">
                             <ListStatisticsPanel 
                                 stats={stats} 
@@ -154,6 +150,7 @@ export const SystemListsTab: React.FC<{
                                 onRefreshInteractionUsers={handleRefreshInteractionUsers}
                                 user={user}
                                 onInitiateClearList={handleInitiateClearList}
+                                isLoadingList={isLoadingList}
                             />
                         </div>
                         

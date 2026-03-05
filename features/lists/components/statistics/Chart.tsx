@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { PostChartData } from '../../../../services/api/lists.api';
 
@@ -92,6 +92,42 @@ const Tooltip: React.FC<{
             </div>
         </div>,
         document.body
+    );
+};
+
+/**
+ * SVG polyline с анимацией «рисования» через stroke-dashoffset.
+ * При изменении points линия плавно перерисовывается.
+ */
+const AnimatedPolyline: React.FC<{ points: string; stroke: string }> = ({ points, stroke }) => {
+    const ref = useRef<SVGPolylineElement>(null);
+    const [dashOffset, setDashOffset] = useState(0);
+    const [totalLength, setTotalLength] = useState(0);
+
+    useEffect(() => {
+        if (!ref.current) return;
+        const len = ref.current.getTotalLength();
+        setTotalLength(len);
+        setDashOffset(len);
+        // Trigger reflow, then animate to 0
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => setDashOffset(0));
+        });
+    }, [points]);
+
+    return (
+        <polyline
+            ref={ref}
+            points={points}
+            fill="none"
+            stroke={stroke}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray={totalLength || undefined}
+            strokeDashoffset={dashOffset}
+            style={{ transition: 'stroke-dashoffset 1.2s ease-out' }}
+        />
     );
 };
 
@@ -251,8 +287,8 @@ export const Chart: React.FC<ChartProps> = ({ data, activeMetrics, onMetricToggl
                         const areaPath = `M${paddingX},${height - paddingY} L${points} L${width - paddingX},${height - paddingY} Z`;
                         return (
                             <g key={metric}>
-                                <path d={areaPath} fill={COLORS[metric as Metric].fill} />
-                                <polyline points={points} fill="none" stroke={COLORS[metric as Metric].stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                <path d={areaPath} fill={COLORS[metric as Metric].fill} className="animate-chart-area" />
+                                <AnimatedPolyline points={points} stroke={COLORS[metric as Metric].stroke} />
                             </g>
                         );
                     })}

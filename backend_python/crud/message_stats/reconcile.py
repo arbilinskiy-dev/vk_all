@@ -12,7 +12,6 @@
   - reconcile_from_vk_streaming() — SSE-генератор с ThreadPoolExecutor
 """
 
-import json
 import time
 import logging
 from typing import Dict, List, Any, Set, Tuple, Optional, Generator
@@ -22,10 +21,11 @@ from queue import Queue, Empty
 
 from sqlalchemy.orm import Session
 
-from models_library.message_stats import MessageStatsHourly
+from models_library.message_stats import MessageStatsHourlyUsers
 from models_library.projects import Project as ProjectModel
 from services.messages.vk_client import get_community_tokens
 from crud.message_stats._project_worker import process_single_project
+from crud.message_stats._helpers import _hourly_users_date_filter
 
 logger = logging.getLogger("crud.message_stats.reconcile")
 
@@ -88,50 +88,29 @@ def reconcile_from_vk_streaming(
     # --- 1. Определяем пары (project_id, vk_user_id) для сверки ---
     # FIX M3: prep-фаза обёрнута в try/except → при ошибке БД отдаём {"type": "error"}
     try:
-        # Всегда используем MessageStatsHourly для определения пар (project, user).
-        # Ранее ветка "Всё время" (date_from=None, date_to=None) читала
-        # MessageStatsUser — кумулятивную таблицу с 34K записями.
-        # Теперь единая логика: hourly-записи (с фильтром дат или без).
-        from crud.message_stats.read import _hourly_date_filter
-
-        hourly_q = db.query(
-            MessageStatsHourly.project_id,
-            MessageStatsHourly.hour_slot,
-            MessageStatsHourly.unique_text_users_json,
-            MessageStatsHourly.unique_payload_users_json,
-            MessageStatsHourly.incoming_count,
+        # Запрос к нормализованной таблице — входящие пользователи (text + payload)
+        users_q = db.query(
+            MessageStatsHourlyUsers.project_id,
+            MessageStatsHourlyUsers.vk_user_id,
+        ).distinct().filter(
+            MessageStatsHourlyUsers.user_type.in_([1, 2]),
         )
-        # Фильтр дат: если date_from/date_to переданы — применяем,
-        # иначе берём ВСЕ hourly-записи (= "Всё время")
-        hourly_q = _hourly_date_filter(hourly_q, date_from, date_to)
-        hourly_rows = hourly_q.all()
+        users_q = _hourly_users_date_filter(users_q, date_from, date_to)
 
         if date_from or date_to:
             logger.info(
-                f"Сверка: найдено {len(hourly_rows)} hourly-записей "
+                f"Сверка: запрос к нормализованной таблице "
                 f"за {date_from}T00 — {date_to}T23"
             )
         else:
             logger.info(
-                f"Сверка (всё время): найдено {len(hourly_rows)} hourly-записей"
+                "Сверка (всё время): запрос к нормализованной таблице"
             )
 
         period_pairs: Dict[str, Set[int]] = defaultdict(set)
-        for row in hourly_rows:
-            if row.unique_text_users_json:
-                try:
-                    for uid in json.loads(row.unique_text_users_json):
-                        if isinstance(uid, int) and uid > 0:
-                            period_pairs[row.project_id].add(uid)
-                except (json.JSONDecodeError, TypeError):
-                    pass
-            if row.unique_payload_users_json:
-                try:
-                    for uid in json.loads(row.unique_payload_users_json):
-                        if isinstance(uid, int) and uid > 0:
-                            period_pairs[row.project_id].add(uid)
-                except (json.JSONDecodeError, TypeError):
-                    pass
+        for pid, uid in users_q.all():
+            if isinstance(uid, int) and uid > 0:
+                period_pairs[pid].add(uid)
 
         project_ids = list(period_pairs.keys())
         total_dialogs = sum(len(v) for v in period_pairs.values())

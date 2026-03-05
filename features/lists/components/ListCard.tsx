@@ -1,6 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { AnimatedNumber } from '../../../shared/hooks/useCountAnimation';
 
 interface RefreshOption {
     label: string;
@@ -112,13 +113,13 @@ export const ListCard: React.FC<ListCardProps> = ({
                             className="block text-3xl font-bold text-gray-800 tracking-tight"
                             title={`Загружено в базу: ${storedCount.toLocaleString('ru-RU')}`}
                         >
-                            {storedCount.toLocaleString('ru-RU')}
+                            <AnimatedNumber value={storedCount} format />
                         </span>
                         <p 
                             className="text-xs text-gray-400 font-medium -mt-1" 
                             title={`Всего постов в VK: ${count.toLocaleString('ru-RU')}`}
                         >
-                            из {count.toLocaleString('ru-RU')} в VK
+                            из <AnimatedNumber value={count} format /> в VK
                         </p>
                     </div>
                 ) : (
@@ -127,7 +128,7 @@ export const ListCard: React.FC<ListCardProps> = ({
                             className="block text-3xl font-bold text-gray-800 tracking-tight truncate" 
                             title={String(count)}
                         >
-                            {count.toLocaleString('ru-RU')}
+                            <AnimatedNumber value={count} format />
                         </span>
                         {/* Невидимый элемент для выравнивания высоты */}
                         <p className="text-xs font-medium -mt-1 invisible h-4">&nbsp;</p>

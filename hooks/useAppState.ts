@@ -16,7 +16,7 @@ export const useAppState = () => {
         setActiveModule(module);
         setActiveViewParams({}); // Сбрасываем параметры при смене модуля
         // Если мы уходим из модулей с проектами, сбрасываем активный проект
-        if (module !== 'km' && module !== 'lists' && module !== 'am') {
+        if (module !== 'km' && module !== 'lists' && module !== 'am' && module !== 'stats') {
             setActiveProjectId(null);
         } else {
             // Логика установки вида по умолчанию при переключении модулей
@@ -31,6 +31,11 @@ export const useAppState = () => {
                 // Модуль сообщений: по умолчанию показываем VK
                 if (activeView !== 'messages-vk' && activeView !== 'messages-tg' && activeView !== 'messages-stats') {
                     setActiveView('messages-vk');
+                }
+            } else if (module === 'stats') {
+                // Модуль статистики: по умолчанию показываем DLVRY
+                if (!activeView.startsWith('stats-')) {
+                    setActiveView('stats-dlvry');
                 }
             }
         }
@@ -68,6 +73,13 @@ export const useAppState = () => {
         setActiveViewParams({});
     };
 
+    /** Переключение вида внутри модуля «Статистика» (stats) */
+    const handleSelectStatsView = (view: AppView) => {
+        setActiveView(view);
+        setActiveModule('stats');
+        setActiveViewParams({});
+    };
+
     return {
         activeModule,
         activeProjectId,
@@ -83,6 +95,7 @@ export const useAppState = () => {
         handleSelectGlobalView,
         handleSelectKmView,
         handleSelectListsView,
-        handleSelectMessagesView
+        handleSelectMessagesView,
+        handleSelectStatsView
     };
 };

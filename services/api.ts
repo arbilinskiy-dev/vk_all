@@ -35,3 +35,5 @@ export * from './api/messages.api';
 export * from './api/messages_stats.api';
 export * from './api/dialog_labels.api';
 export * from './api/user_activity.api';
+export * from './api/am_analysis.api';
+export * from './api/dlvry.api';

@@ -65,7 +65,8 @@ export const PostDateTimePicker: React.FC<PostDateTimePickerProps> = ({
         const handleSetNow = () => {
             const now = new Date();
             now.setMinutes(now.getMinutes() + 2);
-            const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+            // Используем локальную дату, не UTC (toISOString сдвигает дату в часовых поясах восточнее UTC)
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             const timeStr = now.toTimeString().slice(0, 5);  // HH:MM
             onDateSlotChange(dateSlots[0].id, 'date', dateStr);
             onDateSlotChange(dateSlots[0].id, 'time', timeStr);

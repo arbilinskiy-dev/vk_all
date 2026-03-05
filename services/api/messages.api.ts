@@ -4,6 +4,7 @@
  */
 
 import { API_BASE_URL } from '../../shared/config';
+import { getAuthHeaders } from '../../shared/utils/apiClient';
 
 /** Элемент сообщения VK API */
 export interface VkMessageItem {
@@ -217,7 +218,7 @@ export async function getConversationsInit(
 ): Promise<ConversationsInitResponse> {
     const response = await fetch(`${API_BASE_URL}/messages/conversations-init`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             project_id: projectId,
             page,
@@ -251,7 +252,9 @@ export async function getLastMessages(
         user_ids: userIds.join(','),
     });
 
-    const response = await fetch(`${API_BASE_URL}/messages/last-messages?${params}`);
+    const response = await fetch(`${API_BASE_URL}/messages/last-messages?${params}`, {
+        headers: getAuthHeaders(),
+    });
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -296,7 +299,9 @@ export async function getMessageHistory(
         params.set('search', search);
     }
 
-    const response = await fetch(`${API_BASE_URL}/messages/history?${params}`);
+    const response = await fetch(`${API_BASE_URL}/messages/history?${params}`, {
+        headers: getAuthHeaders(),
+    });
     
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -316,7 +321,7 @@ export async function loadAllMessages(
 ): Promise<LoadAllMessagesResponse> {
     const response = await fetch(`${API_BASE_URL}/messages/history/all`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             project_id: projectId,
             user_id: userId,
@@ -345,7 +350,7 @@ export async function sendMessage(
 ): Promise<SendMessageResponse> {
     const response = await fetch(`${API_BASE_URL}/messages/send`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             project_id: projectId,
             user_id: userId,
@@ -380,6 +385,7 @@ export async function uploadMessageAttachment(
 
     const response = await fetch(`${API_BASE_URL}/messages/upload-attachment`, {
         method: 'POST',
+        headers: getAuthHeaders(false),
         body: formData,
     });
 
@@ -415,7 +421,9 @@ export async function getMailingUserInfo(
         params.set('force_refresh', 'true');
     }
 
-    const response = await fetch(`${API_BASE_URL}/messages/user-info?${params}`);
+    const response = await fetch(`${API_BASE_URL}/messages/user-info?${params}`, {
+        headers: getAuthHeaders(),
+    });
     
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -447,7 +455,7 @@ export async function markDialogAsRead(
 ): Promise<MarkReadResponse> {
     const response = await fetch(`${API_BASE_URL}/messages/mark-read`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             project_id: projectId,
             user_id: userId,
@@ -485,7 +493,7 @@ export async function markDialogAsUnread(
 ): Promise<MarkUnreadResponse> {
     const response = await fetch(`${API_BASE_URL}/messages/mark-unread`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             project_id: projectId,
             user_id: userId,
@@ -521,7 +529,7 @@ export async function markAllDialogsAsRead(
 ): Promise<MarkAllReadResponse> {
     const response = await fetch(`${API_BASE_URL}/messages/mark-all-read`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             project_id: projectId,
             manager_id: managerId || undefined,
@@ -560,7 +568,9 @@ export async function getUnreadCounts(
         params.set('user_ids', userIds.join(','));
     }
 
-    const response = await fetch(`${API_BASE_URL}/messages/unread-counts?${params}`);
+    const response = await fetch(`${API_BASE_URL}/messages/unread-counts?${params}`, {
+        headers: getAuthHeaders(),
+    });
     
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -589,7 +599,9 @@ export async function getUnreadDialogCountsBatch(
     }
 
     const params = new URLSearchParams({ project_ids: projectIds.join(',') });
-    const response = await fetch(`${API_BASE_URL}/messages/unread-dialog-counts-batch?${params}`);
+    const response = await fetch(`${API_BASE_URL}/messages/unread-dialog-counts-batch?${params}`, {
+        headers: getAuthHeaders(),
+    });
 
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -614,7 +626,7 @@ export async function setDialogFocus(
 ): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE_URL}/messages/dialog-focus`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             project_id: projectId,
             vk_user_id: vkUserId,
@@ -639,7 +651,7 @@ export async function sendTypingStatus(
 ): Promise<{ success: boolean }> {
     const response = await fetch(`${API_BASE_URL}/messages/typing`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ project_id: projectId, user_id: userId }),
     });
 
@@ -662,7 +674,7 @@ export async function toggleDialogImportant(
 ): Promise<{ success: boolean; is_important: boolean }> {
     const response = await fetch(`${API_BASE_URL}/messages/toggle-important`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
             project_id: projectId,
             vk_user_id: vkUserId,
@@ -689,7 +701,8 @@ export async function getDialogFocuses(
     projectId: string,
 ): Promise<DialogFocusesResponse> {
     const response = await fetch(
-        `${API_BASE_URL}/messages/dialog-focuses?project_id=${encodeURIComponent(projectId)}`
+        `${API_BASE_URL}/messages/dialog-focuses?project_id=${encodeURIComponent(projectId)}`,
+        { headers: getAuthHeaders() },
     );
 
     if (!response.ok) {

@@ -1,6 +1,6 @@
 
 import { ScheduledPost, SuggestedPost } from '../../shared/types';
-import { callApi } from '../../shared/utils/apiClient';
+import { callApi, getAuthHeaders } from '../../shared/utils/apiClient';
 import { RefreshProgress } from './lists.api';
 import { API_BASE_URL } from '../../shared/config';
 
@@ -146,7 +146,9 @@ export const pollPostTask = async (
     return new Promise((resolve, reject) => {
         const intervalId = setInterval(async () => {
             try {
-                const response = await fetch(`${API_BASE_URL}/lists/system/getTaskStatus/${taskId}`);
+                const response = await fetch(`${API_BASE_URL}/lists/system/getTaskStatus/${taskId}`, {
+                    headers: getAuthHeaders(),
+                });
                 const data = await response.json();
                 
                 if (onProgress) onProgress(data);

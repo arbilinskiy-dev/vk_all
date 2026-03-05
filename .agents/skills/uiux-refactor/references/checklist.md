@@ -42,9 +42,11 @@
 
 ### 6. Уведомления и модалки
 - [ ] Нет `alert()`, `confirm()`, `prompt()` — запрещены
-- [ ] Toast: через `showAppToast()` или `toastBridge`
+- [ ] Toast: через `showAppToast()` или `useToast()` из `shared/components/ToastProvider.tsx`
 - [ ] Подтверждения: через `ConfirmationModal` из `shared/components/modals/`
 - [ ] Модалки: backdrop `bg-black/50`, z-index выше всех элементов
+- [ ] **Нет инлайн-алертов** (`bg-green-50 border-green-200` и т.п.) для транзиентных уведомлений — использовать `useToast().success()`
+- [ ] Нет паттерна `useState` + `setTimeout` для показа/скрытия уведомлений — использовать `useToast()`
 - **Детали:** `references/notifications.md`
 
 ### 7. Кнопки-иконки (SVG)
@@ -183,6 +185,15 @@
 - [ ] Загрузка данных: скелетон `animate-pulse` → контент `animate-fade-in-up`
 - [ ] Нет мгновенных вставок блоков без анимации
 - [ ] Нет пустоты (`null`) при загрузке — всегда скелетон
+- [ ] **Все числовые показатели** обёрнуты в `AnimatedNumber` из `shared/hooks/useCountAnimation.tsx`
+- [ ] **Нет голых чисел** `{stats.total}` или `{count.toLocaleString()}` — должно быть `<AnimatedNumber value={...} />`
+- [ ] **SVG-линии графиков** имеют draw-анимацию (stroke-dashoffset через `AnimatedPolyline`)
+- [ ] **Области под линиями** имеют fade-in (`className="animate-chart-area"`)
+- [ ] **Pie/Donut-диаграммы** имеют scale+rotate входную анимацию (`className="animate-pie-chart"`)
+- [ ] **Bar-чарты** (столбцы) имеют `transition-all duration-[800ms] ease-out`
+- [ ] **Прогресс-бары** имеют `transition-all duration-[800ms] ease-out` на ширине
+- [ ] **Нет серых оверлеев** (bg-white/60, opacity-60) при обновлении данных — данные заменяются тихо
+- [ ] **Нет спиннеров поверх контента** при смене проекта/фильтра — AnimatedNumber анимирует переход
 - **Детали:** `references/animations.md`
 
 ### 19. Tailwind Spacing — Валидация классов

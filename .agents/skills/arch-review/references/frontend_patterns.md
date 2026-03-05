@@ -138,7 +138,7 @@ function BigList({ items }: { items: Item[] }) {
 }
 ```
 
-## Предотвращение лишних ре-рендеров
+## Предотвращение лишних ре-рендеров (Context)
 
 ```typescript
 // ❌ Создаёт новый объект на каждый рендер → потомки ре-рендерятся
@@ -152,4 +152,106 @@ function Parent() {
   const value = useMemo(() => ({ user, settings }), [user, settings]);
   return <Context.Provider value={value}><Child /></Context.Provider>;
 }
+```
+
+## useCallback([]) + ref — стабильные функции для React.memo
+
+> **Реальный кейс:** StoriesTable → 28+ рендеров → 6 (Release 10)
+
+```typescript
+// ❌ useCallback пересоздаётся при каждом изменении stories → ломает React.memo
+const loadMore = useCallback(() => {
+    if (stories.length < totalStories) fetchBatch(projectId, stories.length);
+}, [projectId, stories.length, totalStories]);
+
+// ✅ Стабильная ссылка навсегда — refs обновляются через useEffect
+const storiesLengthRef = useRef(stories.length);
+const totalStoriesRef = useRef(totalStories);
+const projectIdRef = useRef(projectId);
+
+useEffect(() => { storiesLengthRef.current = stories.length; }, [stories.length]);
+useEffect(() => { totalStoriesRef.current = totalStories; }, [totalStories]);
+useEffect(() => { projectIdRef.current = projectId; }, [projectId]);
+
+const loadMore = useCallback(() => {
+    if (storiesLengthRef.current < totalStoriesRef.current) {
+        fetchBatch(projectIdRef.current, storiesLengthRef.current);
+    }
+}, []); // ← пустой массив = стабильная ссылка
+```
+
+**Когда применять:** функция передаётся через props в React.memo компонент ИЛИ используется как зависимость в другом useCallback/useEffect.
+
+## setState merge с hasChanges — предотвращение ложных обновлений
+
+```typescript
+// ❌ .map() + spread ВСЕГДА создаёт новый массив → React видит изменение
+setStories(prev => prev.map(s => {
+    const updated = newItems.find(n => n.id === s.id);
+    return updated ? { ...s, ...updated } : s;
+}));
+
+// ✅ Проверка hasChanges по ПРИМИТИВНЫМ полям → return prev если данные те же
+setStories(prev => {
+    const merged = buildMerged(prev, newItems);
+    const hasChanges = merged.some((item, i) => {
+        const old = prev[i];
+        if (!old) return true;
+        return (
+            item.stats_updated_at !== old.stats_updated_at ||
+            item.viewers_updated_at !== old.viewers_updated_at ||
+            item.story_link !== old.story_link ||
+            item.vk_story_id !== old.vk_story_id
+        );
+    }) || merged.length !== prev.length;
+    return hasChanges ? merged : prev;  // prev = та же ссылка → React.memo пропускает
+});
+```
+
+**КРИТИЧНО:** сравнивать ТОЛЬКО примитивы (string, number, boolean). Вложенные объекты после JSON.parse() **всегда** имеют новые ссылки в памяти:
+```typescript
+// ❌ ЛОЖНОЕ СРАБАТЫВАНИЕ — ссылки всегда разные после JSON-десериализации
+item.detailed_stats !== old.detailed_stats  // false даже при {views: 5} === {views: 5}
+
+// ✅ Сравниваем примитивное поле-маркер (timestamp обновления)
+item.stats_updated_at !== old.stats_updated_at  // true ТОЛЬКО при реальном изменении
+```
+
+## Атомарная загрузка батчей
+
+```typescript
+// ❌ 10 батчей = 10 setState = 10 ре-рендеров
+for (let page = 1; page <= totalPages; page++) {
+    const batch = await fetchBatch(page);
+    setStories(prev => [...prev, ...batch]);
+}
+
+// ✅ Один setState с полным набором данных
+const allItems: Story[] = [];
+for (let page = 1; page <= totalPages; page++) {
+    const batch = await fetchBatch(page);
+    allItems.push(...batch);
+}
+setStories(allItems);  // ОДИН рендер
+```
+
+## Цепочка React.memo — правило полного каскада
+
+```
+// ❌ memo только на конечном элементе — промежуточный пропускает все рендеры
+Hook → ParentView (нет memo) → MemoTable          → 28+ рендеров
+
+// ✅ memo на КАЖДОМ уровне каскада
+Hook → MemoParentView → MemoTable                  → 6 рендеров
+```
+
+Внутренние обработчики мемоизированного компонента тоже обязаны быть стабильны:
+```typescript
+// Внутри StoriesTableInner (который обёрнут в React.memo):
+const handleMouseEnter = useCallback((id: string) => setHoveredId(id), []);
+const handleMouseLeave = useCallback(() => setHoveredId(null), []);
+const toggleViewers = useCallback((id: string) => {
+    setOpenViewersId(prev => prev === id ? null : id);
+}, []);
+```
 ```

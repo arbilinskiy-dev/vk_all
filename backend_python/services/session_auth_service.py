@@ -130,6 +130,7 @@ def authenticate_and_create_session(
         "role": role,
         "full_name": full_name,
         "session_token": session.session_token,
+        "is_system_admin": user_id == "admin",
     }
 
 

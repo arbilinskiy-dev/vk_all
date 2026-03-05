@@ -144,6 +144,15 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     /** Пользователь нажал «Сохранить как шаблон» в ChatInput — открываем редактор */
     const handleSaveAsTemplate = useCallback((text: string) => {
         setSaveAsTemplateText(text);
+        // Если правая панель свёрнута — разворачиваем и открываем вкладку «Шаблоны»
+        setIsInfoPanelExpanded(prev => {
+            if (!prev) {
+                try { localStorage.setItem(STORAGE_KEY, 'true'); } catch {}
+                return true;
+            }
+            return prev;
+        });
+        setInitialTab('templates');
     }, []);
 
     /** Сброс saveAsTemplateText после открытия модалки */
@@ -169,10 +178,10 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
 
     // Есть активный диалог — показываем чат + правая панель (полная/минималистичная)
     return (
-        <div className="flex h-full w-full">
+        <div className="flex h-full w-full min-h-0 overflow-hidden">
             {/* Чат — занимает всю ширину в минималистичном режиме, 50% в полном */}
-            <div className={`h-full flex-shrink-0 border-r border-gray-200 transition-all duration-300 ${
-                isInfoPanelExpanded ? 'w-1/2' : 'flex-1'
+            <div className={`h-full min-w-0 border-r border-gray-200 transition-all duration-300 ${
+                isInfoPanelExpanded ? 'w-1/2 flex-shrink' : 'flex-1'
             }`}>
                 <ChatView
                     user={state.activeConversation.user}
@@ -220,7 +229,7 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                 />
             </div>
             {/* Правая рабочая область — информация о пользователе */}
-            <div className={`h-full border-l border-gray-100 transition-all duration-300 flex flex-col ${
+            <div className={`h-full min-w-0 border-l border-gray-100 transition-all duration-300 flex flex-col ${
                 isInfoPanelExpanded ? 'flex-1' : 'w-[320px] flex-shrink-0'
             }`}>
                 {/* Кнопка свернуть/развернуть */}

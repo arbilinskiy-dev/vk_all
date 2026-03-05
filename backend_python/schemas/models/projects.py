@@ -24,7 +24,8 @@ class Project(BaseModel):
     communityToken: Optional[str] = None
     additional_community_tokens: Optional[List[str]] = []
     sort_order: Optional[int] = None
-    last_market_update: Optional[str] = None 
+    last_market_update: Optional[str] = None
+    dlvry_affiliate_id: Optional[str] = None  # ID филиала DLVRY (привязка к проекту)
     
     model_config = ConfigDict(from_attributes=True)
 

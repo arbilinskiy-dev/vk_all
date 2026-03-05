@@ -37,6 +37,9 @@ class Project(Base):
     last_scheduled_update = Column(String, nullable=True)
     last_market_update = Column(String, nullable=True)
     last_stories_update = Column(String, nullable=True)  # Время последнего обновления историй
+    
+    # DLVRY: ID филиала для привязки заказов из DLVRY к проекту
+    dlvry_affiliate_id = Column(String, nullable=True)
 
 class User(Base):
     __tablename__ = "users"

@@ -13,7 +13,7 @@ interface UseListStateProps {
 
 export const useListState = ({ project, activeListGroup, onActiveListGroupChange }: UseListStateProps) => {
     // --- Состояния UI и навигации ---
-    // Используем localStorage для сохранения активной вкладки, чтобы она не сбрасывалась при перезагрузке
+    // Сквозной ключ — выбранный список сохраняется единый для всех проектов
     const [activeList, setActiveList] = useLocalStorage<ListType | null>('system-lists-active-tab', null);
     
     const [page, setPage] = useState(1);
@@ -60,6 +60,7 @@ export const useListState = ({ project, activeListGroup, onActiveListGroupChange
         subscribers: { isRefreshing: false, label: null },
         history_join: { isRefreshing: false, label: null },
         history_leave: { isRefreshing: false, label: null },
+        history_timeline: { isRefreshing: false, label: null },
         mailing: { isRefreshing: false, label: null },
         posts: { isRefreshing: false, label: null },
         likes: { isRefreshing: false, label: null },
@@ -77,6 +78,52 @@ export const useListState = ({ project, activeListGroup, onActiveListGroupChange
     useEffect(() => {
         activeProjectIdRef.current = project.id;
     }, [project.id]);
+
+    // --- Хелперы для группового сброса состояний (DRY) ---
+    
+    const resetFilters = () => {
+        setFilterQuality('all');
+        setFilterSex('all');
+        setFilterOnline('any');
+        setFilterCanWrite('all');
+        setFilterBdateMonth('any');
+        setFilterPlatform('any');
+        setFilterAge('any');
+    };
+
+    const resetData = () => {
+        setItems([]);
+        setPosts([]);
+        setInteractions([]);
+        setStats(null);
+        setTotalItemsCount(0);
+        setPage(1);
+        setSearchQuery('');
+        setHasMore(false);
+    };
+
+    const resetStatsParams = () => {
+        setStatsPeriod('all');
+        setStatsGroupBy('month');
+        setStatsDateFrom('');
+        setStatsDateTo('');
+    };
+
+    const DEFAULT_REFRESH_STATES: Record<ListType, RefreshState> = {
+        subscribers: { isRefreshing: false, label: null },
+        history_join: { isRefreshing: false, label: null },
+        history_leave: { isRefreshing: false, label: null },
+        mailing: { isRefreshing: false, label: null },
+        posts: { isRefreshing: false, label: null },
+        likes: { isRefreshing: false, label: null },
+        comments: { isRefreshing: false, label: null },
+        reposts: { isRefreshing: false, label: null },
+        reviews_winners: { isRefreshing: false, label: null },
+        reviews_participants: { isRefreshing: false, label: null },
+        reviews_posts: { isRefreshing: false, label: null },
+        authors: { isRefreshing: false, label: null },
+        history_timeline: { isRefreshing: false, label: null },
+    };
 
     return {
         state: {
@@ -97,7 +144,12 @@ export const useListState = ({ project, activeListGroup, onActiveListGroupChange
             setIsLoadingMeta, setIsLoadingStats, setIsLoadingList, setIsListLoaded,
             setIsRefreshingSubscriberDetails, setIsRefreshingAuthorDetails, setIsSyncModalOpen, setInteractionSyncType,
             setRefreshStates,
-            setIsInteractionsSyncing
+            setIsInteractionsSyncing,
+            // Хелперы группового сброса
+            resetFilters,
+            resetData,
+            resetStatsParams,
+            DEFAULT_REFRESH_STATES
         }
     };
 };

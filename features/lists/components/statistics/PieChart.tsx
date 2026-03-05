@@ -56,9 +56,17 @@ export const PieChart: React.FC<{ data: Record<string, number>; total: number }>
     return (
         <div className="flex items-center gap-4">
             <div className="w-32 h-32 flex-shrink-0">
-                <svg viewBox="-1 -1 2 2" style={{ transform: 'rotate(-90deg)' }}>
+                <svg viewBox="-1 -1 2 2" className="animate-pie-chart">
                     {segments.map((seg, i) => (
-                        <path key={i} d={seg.pathData} fill={seg.color} />
+                        <path 
+                            key={i} 
+                            d={seg.pathData} 
+                            fill={seg.color}
+                            style={{ 
+                                opacity: 0,
+                                animation: `chart-area-fade 0.5s ease-out ${i * 0.1}s forwards`
+                            }}
+                        />
                     ))}
                     {/* Если всего один сегмент 100%, path может глючить, рисуем круг */}
                     {segments.length === 1 && <circle cx="0" cy="0" r="1" fill={segments[0].color} />}

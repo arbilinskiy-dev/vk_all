@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { FilterDropdown } from '../FilterDropdown';
 import { ListType, FilterQuality, FilterSex, FilterOnline, FilterCanWrite, RefreshState, FilterBdateMonth, FilterPlatform, FilterAge } from '../../types';
@@ -39,9 +39,12 @@ interface ListsFiltersProps {
     // Admin действия
     user: AuthUser | null;
     onInitiateClearList: () => void;
+    
+    // Состояние загрузки для индикации поиска
+    isLoadingList?: boolean;
 }
 
-export const ListsFilters: React.FC<ListsFiltersProps> = ({
+export const ListsFilters: React.FC<ListsFiltersProps> = React.memo(({
     activeList,
     searchQuery,
     totalItemsCount,
@@ -67,7 +70,8 @@ export const ListsFilters: React.FC<ListsFiltersProps> = ({
     onRefreshList,
     onRefreshInteractionUsers,
     user,
-    onInitiateClearList
+    onInitiateClearList,
+    isLoadingList
 }) => {
     
     const hasActiveFilters = searchQuery.trim() !== '' || 
@@ -88,6 +92,17 @@ export const ListsFilters: React.FC<ListsFiltersProps> = ({
     const analysisMenuRef = useRef<HTMLDivElement>(null);
     const [analysisMenuPos, setAnalysisMenuPos] = useState({ top: 0, left: 0 });
 
+    // Обновление позиции dropdown «Анализ» при scroll/resize
+    const updateAnalysisPosition = useCallback(() => {
+        if (analysisBtnRef.current) {
+            const rect = analysisBtnRef.current.getBoundingClientRect();
+            setAnalysisMenuPos({
+                top: rect.bottom + 4,
+                left: rect.left
+            });
+        }
+    }, []);
+
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (
@@ -102,19 +117,27 @@ export const ListsFilters: React.FC<ListsFiltersProps> = ({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isAnalysisOpen]);
 
+    // Репозиционирование и закрытие при scroll/resize
+    useEffect(() => {
+        if (!isAnalysisOpen) return;
+        const handleScrollOrResize = () => {
+            updateAnalysisPosition();
+        };
+        window.addEventListener('scroll', handleScrollOrResize, true);
+        window.addEventListener('resize', handleScrollOrResize);
+        return () => {
+            window.removeEventListener('scroll', handleScrollOrResize, true);
+            window.removeEventListener('resize', handleScrollOrResize);
+        };
+    }, [isAnalysisOpen, updateAnalysisPosition]);
+
     const handleAnalysisClick = () => {
         if (isAnalysisOpen) {
             setIsAnalysisOpen(false);
             return;
         }
 
-        if (analysisBtnRef.current) {
-            const rect = analysisBtnRef.current.getBoundingClientRect();
-            setAnalysisMenuPos({
-                top: rect.bottom + 4,
-                left: rect.left
-            });
-        }
+        updateAnalysisPosition();
         setIsAnalysisOpen(true);
     };
 
@@ -235,13 +258,26 @@ export const ListsFilters: React.FC<ListsFiltersProps> = ({
                         title="Обновить детали профилей в истории"
                     >
                         {refreshStates[activeList].isRefreshing ? (
-                            <div className="loader h-4 w-4 border-2 border-gray-400 border-t-indigo-500"></div>
+                            <div className="flex items-center gap-1">
+                                <div className="loader h-4 w-4 border-2 border-gray-400 border-t-indigo-500"></div>
+                                {refreshStates[activeList].label && (
+                                    <span className="text-xs text-gray-500">{refreshStates[activeList].label}</span>
+                                )}
+                            </div>
                         ) : (
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                             </svg>
                         )}
                     </button>
+                )}
+                {activeList === 'history_timeline' && (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-violet-50 border border-violet-200 rounded-md text-xs text-violet-600 font-medium" title="Хронология автоматически объединяет данные списков Вступившие и Вышедшие">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        Объединённый вид
+                    </span>
                 )}
                 {activeList && ['likes', 'comments', 'reposts'].includes(activeList) && (
                     <button
@@ -387,8 +423,15 @@ export const ListsFilters: React.FC<ListsFiltersProps> = ({
                     </div>
                 )}
                 
-                <div className="text-sm text-gray-500 font-medium px-2 border-l border-gray-300 ml-1">
-                    Найдено: {totalItemsCount}
+                <div className="text-sm text-gray-500 font-medium px-2 border-l border-gray-300 ml-1 min-w-[100px]">
+                    {isLoadingList ? (
+                        <span className="flex items-center gap-1.5">
+                            <div className="loader h-3 w-3 border-2 border-gray-300 border-t-indigo-500" />
+                            <span className="text-gray-400">Поиск...</span>
+                        </span>
+                    ) : (
+                        `Найдено: ${totalItemsCount}`
+                    )}
                 </div>
 
                 {user?.role === 'admin' && (
@@ -406,4 +449,4 @@ export const ListsFilters: React.FC<ListsFiltersProps> = ({
             </div>
         </div>
     );
-};
+});

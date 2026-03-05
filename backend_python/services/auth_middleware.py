@@ -93,6 +93,22 @@ async def get_current_admin(current_user: CurrentUser = Depends(get_current_user
     return current_user
 
 
+async def get_system_admin(current_user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """
+    FastAPI dependency — проверяет, что текущий пользователь — системный администратор
+    (авторизован через admin_username/admin_password из переменных окружения).
+    Такой пользователь имеет user_id='admin'.
+    
+    Используется для особо чувствительных разделов (АМ-аналитика и т.д.).
+    """
+    if current_user.user_id != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Доступ запрещён. Раздел доступен только системному администратору.",
+        )
+    return current_user
+
+
 async def get_optional_user(request: Request, db: Session = Depends(get_db)) -> Optional[CurrentUser]:
     """
     Опциональная аутентификация — не блокирует запрос если токена нет.

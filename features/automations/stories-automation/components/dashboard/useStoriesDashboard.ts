@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { PeriodType, FilterType, ViewersStats } from './types';
 
 interface UseStoriesDashboardProps {
+    /** ID текущего проекта (для перезагрузки при смене проекта без ремаунта) */
+    projectId?: string;
     /** Агрегированная демография с бэкенда (из dashboardStats.demographics) */
     demographics: ViewersStats | null;
     /** Перезапрос агрегированной статистики с бэкенда при смене фильтров */
@@ -33,7 +35,7 @@ interface UseStoriesDashboardReturn {
  * Вся статистика (views, clicks, likes, демография зрителей и т.д.) приходит
  * с бэкенда через /getStoriesDashboardStats — один запрос покрывает ВСЕ истории.
  */
-export const useStoriesDashboard = ({ demographics, loadDashboardStats }: UseStoriesDashboardProps): UseStoriesDashboardReturn => {
+export const useStoriesDashboard = ({ projectId, demographics, loadDashboardStats }: UseStoriesDashboardProps): UseStoriesDashboardReturn => {
     const [filterType, setFilterType] = useState<FilterType>('all');
     const [periodType, setPeriodType] = useState<PeriodType>('all');
     const [customStartDate, setCustomStartDate] = useState<string>('');
@@ -52,10 +54,11 @@ export const useStoriesDashboard = ({ demographics, loadDashboardStats }: UseSto
         }
     }, []);
 
-    // При смене фильтров — перезапрос агрегированной статистики с бэкенда
+    // При смене фильтров или проекта — перезапрос агрегированной статистики с бэкенда
+    // projectId в deps гарантирует перезагрузку даже если фильтры не изменились (без key-ремаунта)
     useEffect(() => {
         loadDashboardStats(periodType, filterType, customStartDate, customEndDate);
-    }, [periodType, filterType, customStartDate, customEndDate]);
+    }, [projectId, periodType, filterType, customStartDate, customEndDate]);
 
     // Демография зрителей — приходит с бэкенда в dashboardStats.demographics
     const emptyViewersStats: ViewersStats = {

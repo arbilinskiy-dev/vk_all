@@ -3,6 +3,7 @@ import React from 'react';
 import { ListStats } from '../../../../../services/api/lists.api';
 import { StatCard, ValueWithPercent, ProgressBar, getPercent } from '../UserStatsComponents';
 import { PieChart } from '../PieChart';
+import { AnimatedNumber } from '../../../../../shared/hooks/useCountAnimation';
 
 interface CardProps {
     stats: ListStats;
@@ -14,7 +15,7 @@ export const QualityCard: React.FC<CardProps> = ({ stats, className }) => (
         <div className="space-y-3">
             <div className="flex justify-between items-center">
                 <span className="text-sm text-gray-600">Всего</span>
-                <span className="font-bold text-gray-900">{stats.total_users}</span>
+                <span className="font-bold text-gray-900"><AnimatedNumber value={stats.total_users} /></span>
             </div>
             <div className="h-px bg-gray-100"></div>
             <div className="flex justify-between items-center text-green-700">
@@ -41,19 +42,19 @@ export const MailingStatusCard: React.FC<CardProps> = ({ stats, className }) => 
                 <div className="flex justify-between items-center text-cyan-700">
                     <span className="text-sm">Можно писать</span>
                     <span className="font-bold">
-                        {stats.mailing_stats.allowed_count} <span className="text-xs font-normal opacity-70">({getPercent(stats.mailing_stats.allowed_count, stats.total_users)})</span>
+                        <AnimatedNumber value={stats.mailing_stats.allowed_count} /> <span className="text-xs font-normal opacity-70">({getPercent(stats.mailing_stats.allowed_count, stats.total_users)})</span>
                     </span>
                 </div>
                 <div className="flex justify-between items-center text-gray-500">
                     <span className="text-sm">Запрещено</span>
                     <span className="font-bold">
-                        {stats.mailing_stats.forbidden_count} <span className="text-xs font-normal opacity-70">({getPercent(stats.mailing_stats.forbidden_count, stats.total_users)})</span>
+                        <AnimatedNumber value={stats.mailing_stats.forbidden_count} /> <span className="text-xs font-normal opacity-70">({getPercent(stats.mailing_stats.forbidden_count, stats.total_users)})</span>
                     </span>
                 </div>
                 <div className="h-px bg-gray-100"></div>
                 <div className="flex justify-between items-center font-medium text-green-800 bg-green-50 p-2 rounded-md border border-green-100">
                     <span className="text-xs">Целевая (Актив + ЛС)</span>
-                    <span>{stats.mailing_stats.active_allowed_count}</span>
+                    <span><AnimatedNumber value={stats.mailing_stats.active_allowed_count} /></span>
                 </div>
             </div>
         </StatCard>
@@ -71,7 +72,7 @@ export const LifetimeCard: React.FC<CardProps> = ({ stats, className }) => {
                 {/* Среднее по всем */}
                 <div className="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100">
                     <span className="text-sm text-gray-800 font-bold">Среднее по всем</span>
-                    <span className="font-bold text-indigo-700 text-lg">{hasData ? lifetime.total_avg : '—'} дн.</span>
+                    <span className="font-bold text-indigo-700 text-lg">{hasData ? <><AnimatedNumber value={lifetime.total_avg} /> дн.</> : '—'}</span>
                 </div>
                 
                 <div className="h-px bg-gray-100"></div>
@@ -79,13 +80,13 @@ export const LifetimeCard: React.FC<CardProps> = ({ stats, className }) => {
                 {/* По активным */}
                 <div className="flex justify-between items-center text-green-700">
                     <span className="text-sm">По активным (в рассылке)</span>
-                    <span className="font-bold">{hasData ? lifetime.allowed_avg : '—'} дн.</span>
+                    <span className="font-bold">{hasData ? <><AnimatedNumber value={lifetime.allowed_avg} /> дн.</> : '—'}</span>
                 </div>
                 
                 {/* По отписавшимся */}
                 <div className="flex justify-between items-center text-red-600">
                     <span className="text-sm">По отписавшимся</span>
-                    <span className="font-bold">{hasData ? lifetime.forbidden_avg : '—'} дн.</span>
+                    <span className="font-bold">{hasData ? <><AnimatedNumber value={lifetime.forbidden_avg} /> дн.</> : '—'}</span>
                 </div>
 
                 <div className="mt-2 text-[10px] text-gray-400 leading-tight">
@@ -133,7 +134,7 @@ export const LastContactCard: React.FC<CardProps> = ({ stats, className }) => {
             <div className="mt-3 pt-2 border-t border-gray-100 flex justify-between items-center text-xs text-gray-400">
                 <span>Нет данных:</span>
                 <span className="font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
-                    {stats.last_contact_stats.unknown} ({getPercent(stats.last_contact_stats.unknown, stats.total_users)})
+                    <AnimatedNumber value={stats.last_contact_stats.unknown} /> ({getPercent(stats.last_contact_stats.unknown, stats.total_users)})
                 </span>
             </div>
         </StatCard>
@@ -219,7 +220,7 @@ export const OnlineCard: React.FC<CardProps> = ({ stats, className }) => (
         <div className="mt-3 pt-2 border-t border-gray-100 flex justify-between items-center text-xs text-gray-400">
             <span>Скрыт / Неизвестно:</span>
             <span className="font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
-                {stats.online_stats.unknown} ({getPercent(stats.online_stats.unknown, stats.total_users)})
+                <AnimatedNumber value={stats.online_stats.unknown} /> ({getPercent(stats.online_stats.unknown, stats.total_users)})
             </span>
         </div>
     </StatCard>
@@ -251,10 +252,10 @@ export const AgeCard: React.FC<CardProps> = ({ stats, className }) => {
                     return (
                         <div key={config.key} className="flex flex-col items-center flex-1 h-full justify-end group relative cursor-default">
                             <span className={`text-[10px] mb-1 font-medium text-gray-500 transition-colors`}>
-                                {count > 0 ? count : ''}
+                                {count > 0 ? <AnimatedNumber value={count} /> : ''}
                             </span>
                             <div 
-                                className="w-full rounded-t-sm transition-all duration-300 relative bg-purple-300 group-hover:bg-purple-400"
+                                className="w-full rounded-t-sm transition-all duration-[800ms] ease-out relative bg-purple-300 group-hover:bg-purple-400"
                                 style={{ height: `${displayHeight}%` }}
                             >
                             </div>
@@ -274,7 +275,7 @@ export const AgeCard: React.FC<CardProps> = ({ stats, className }) => {
             <div className="mt-3 flex justify-between items-center text-xs text-gray-400 pt-2 border-t border-gray-100">
                 <span>Не указано:</span>
                 <span className="font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
-                    {ageStats["unknown"] || 0} ({getPercent(ageStats["unknown"] || 0, stats.total_users)})
+                    <AnimatedNumber value={ageStats["unknown"] || 0} /> ({getPercent(ageStats["unknown"] || 0, stats.total_users)})
                 </span>
             </div>
         </StatCard>
@@ -304,10 +305,10 @@ export const BirthdayCard: React.FC<CardProps> = ({ stats, className }) => {
                     return (
                         <div key={month} className="flex flex-col items-center flex-1 h-full justify-end group relative cursor-default">
                             <span className={`text-[10px] mb-1 font-medium transition-colors ${isCurrentMonth ? 'text-indigo-700 font-bold' : 'text-gray-500'}`}>
-                                {count > 0 ? count : ''}
+                                {count > 0 ? <AnimatedNumber value={count} /> : ''}
                             </span>
                             <div 
-                                className={`w-full rounded-t-sm transition-all duration-300 relative ${isCurrentMonth ? 'bg-indigo-600' : 'bg-indigo-300 group-hover:bg-indigo-400'}`}
+                                className={`w-full rounded-t-sm transition-all duration-[800ms] ease-out relative ${isCurrentMonth ? 'bg-indigo-600' : 'bg-indigo-300 group-hover:bg-indigo-400'}`}
                                 style={{ height: `${displayHeight}%` }}
                             >
                             </div>
@@ -331,7 +332,7 @@ export const BirthdayCard: React.FC<CardProps> = ({ stats, className }) => {
             <div className="mt-3 flex justify-between items-center text-xs text-gray-400 pt-2 border-t border-gray-100">
                 <span>Не указано:</span>
                 <span className="font-medium text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full">
-                    {bdateStats["13"] || 0} ({getPercent(bdateStats["13"] || 0, stats.total_users)})
+                    <AnimatedNumber value={bdateStats["13"] || 0} /> ({getPercent(bdateStats["13"] || 0, stats.total_users)})
                 </span>
             </div>
         </StatCard>

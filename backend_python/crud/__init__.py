@@ -141,6 +141,14 @@ from .lists.authors import (
     bulk_update_author_details,
     delete_all_authors
 )
+# NEW: История вступлений/выходов (аналитический лог)
+from .lists.membership_history import (
+    add_history_record as add_membership_history_record,
+    get_last_action as get_last_membership_action,
+    get_last_actions_bulk as get_last_membership_actions_bulk,
+    bulk_add_history_records as bulk_add_membership_history,
+    get_user_history as get_user_membership_history,
+)
 
 # Импорт для системных аккаунтов
 from .system_accounts.account_crud import (

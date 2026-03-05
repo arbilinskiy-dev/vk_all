@@ -1,9 +1,10 @@
 /**
  * Главная страница статистики сообщений.
- * Кросс-проектный дашборд с тремя вкладками:
+ * Кросс-проектный дашборд с четырьмя вкладками:
  *   - «Входящие» — сводка, график, таблица проектов (фокус на входящих)
  *   - «Исходящие» — сводка, график, таблица администраторов + проектов (фокус на исходящих)
  *   - «Подписки» — подписки/отписки (message_allow / message_deny)
+ *   - «Сотрудники» — диалоги конкретного сотрудника во всех проектах
  * Шапка, фильтры периода и панель чата — общие для всех вкладок.
  *
  * Hub-файл: импортирует хук и под-компоненты, контракт не изменён.
@@ -22,6 +23,7 @@ import { AdminStatsTable } from './AdminStatsTable';
 import { MonitoringChatPanel, MonitoringChatUser } from './MonitoringChatPanel';
 import { SubscriptionsChart } from './SubscriptionsChart';
 import { SubscriptionsProjectsTable } from './SubscriptionsProjectsTable';
+import { EmployeeStatsTab } from './EmployeeStatsTab';
 
 interface MessageStatsPageProps {
     /** Список всех проектов (для маппинга project_id → название) */
@@ -212,12 +214,14 @@ export const MessageStatsPage: React.FC<MessageStatsPageProps> = ({
                             incoming: 'bg-green-100 text-green-700 shadow-sm',
                             outgoing: 'bg-orange-100 text-orange-700 shadow-sm',
                             subscriptions: 'bg-blue-100 text-blue-700 shadow-sm',
+                            employees: 'bg-purple-100 text-purple-700 shadow-sm',
                         };
                         const activeClasses = colorMap[tab.value] || 'bg-gray-100 text-gray-700 shadow-sm';
                         const dotColor: Record<string, string> = {
                             incoming: 'bg-green-500',
                             outgoing: 'bg-orange-500',
                             subscriptions: 'bg-blue-500',
+                            employees: 'bg-purple-500',
                         };
                         return (
                             <button
@@ -533,6 +537,24 @@ export const MessageStatsPage: React.FC<MessageStatsPageProps> = ({
                             </>
                         )}
                     </div>
+                )}
+
+                {/* ============================================================
+                    ВКЛАДКА: ДИАЛОГИ СОТРУДНИКОВ
+                   ============================================================ */}
+                {state.activeTab === 'employees' && (
+                    <EmployeeStatsTab
+                        mergedAdminStats={state.mergedAdminStats}
+                        selectedEmployeeName={state.selectedEmployeeName}
+                        employeeLoading={state.employeeLoading}
+                        employeeProjectsGrouped={state.employeeProjectsGrouped}
+                        employeeSummary={state.employeeSummary}
+                        projectsMap={state.projectsMap}
+                        selectEmployee={actions.selectEmployee}
+                        onNavigateToChat={onNavigateToChat}
+                        onSelectChatUser={handleSelectChatUser}
+                        activeChatUser={chatUser}
+                    />
                 )}
             </div>
             </div>

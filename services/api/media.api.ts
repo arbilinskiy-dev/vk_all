@@ -1,5 +1,5 @@
 import { Album, Photo, PhotoAttachment, Attachment } from '../../shared/types';
-import { callApi } from '../../shared/utils/apiClient';
+import { callApi, getAuthHeaders } from '../../shared/utils/apiClient';
 import { API_BASE_URL } from '../../shared/config';
 
 // --- MEDIA API ---
@@ -107,6 +107,7 @@ export const uploadPhoto = async (file: File, projectId: string): Promise<PhotoA
         try {
             const response = await fetch(url, {
                 method: 'POST',
+                headers: getAuthHeaders(false),
                 body: formData,
                 signal: controller.signal,
             });
@@ -179,8 +180,7 @@ export const uploadPhotoToAlbum = async (file: File, projectId: string, albumId:
 
         try {
             const response = await fetch(url, {
-                method: 'POST',
-                body: formData,
+                method: 'POST',                headers: getAuthHeaders(false),                body: formData,
                 signal: controller.signal,
             });
 
@@ -271,6 +271,7 @@ export const uploadVideo = async (
         try {
             const response = await fetch(url, {
                 method: 'POST',
+                headers: getAuthHeaders(false),
                 body: formData,
                 signal: timeoutController.signal,
             });
@@ -394,6 +395,7 @@ export const reuploadForProjects = async (
     try {
         const response = await fetch(url, {
             method: 'POST',
+            headers: getAuthHeaders(false),
             body: formData,
             signal: controller.signal,
         });

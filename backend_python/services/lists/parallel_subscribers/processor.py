@@ -324,6 +324,26 @@ def _save_new_subscribers(db, project_id: str, new_ids: list, vk_members_map: di
         batch_start = datetime.now()
         crud.bulk_add_subscribers(db, new_subscribers_data)
         crud.bulk_add_history_join(db, new_history_data)
+        
+        # Запись в user_membership_history (с дедупликацией по callback)
+        batch_vk_ids = [item['vk_user_id'] for item in new_history_data]
+        last_actions = crud.get_last_membership_actions_bulk(db, project_id, batch_vk_ids)
+        
+        history_records = []
+        for vk_id in batch_vk_ids:
+            last_action = last_actions.get(vk_id)
+            if last_action != 'join':
+                history_records.append({
+                    'project_id': project_id,
+                    'vk_user_id': vk_id,
+                    'action': 'join',
+                    'action_date': timestamp,
+                    'source': 'sync',
+                })
+        
+        if history_records:
+            crud.bulk_add_membership_history(db, history_records)
+        
         batch_duration = (datetime.now() - batch_start).total_seconds()
         
         if batch_duration > 5:
@@ -372,6 +392,27 @@ def _process_left_subscribers(db, project_id: str, left_ids: list, timestamp, pr
         
         if leave_history:
             crud.bulk_add_history_leave(db, leave_history)
+        
+        # Запись в user_membership_history (с дедупликацией по callback)
+        leave_vk_ids = [item['vk_user_id'] for item in leave_history]
+        if leave_vk_ids:
+            last_actions = crud.get_last_membership_actions_bulk(db, project_id, leave_vk_ids)
+            
+            history_records = []
+            for vk_id in leave_vk_ids:
+                last_action = last_actions.get(vk_id)
+                if last_action != 'leave':
+                    history_records.append({
+                        'project_id': project_id,
+                        'vk_user_id': vk_id,
+                        'action': 'leave',
+                        'action_date': timestamp,
+                        'source': 'sync',
+                    })
+            
+            if history_records:
+                crud.bulk_add_membership_history(db, history_records)
+        
         crud.bulk_delete_subscribers(db, project_id, batch_ids)
         
         batch_duration = (datetime.now() - batch_start).total_seconds()

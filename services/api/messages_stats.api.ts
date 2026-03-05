@@ -4,6 +4,7 @@
  */
 
 import { API_BASE_URL } from '../../shared/config';
+import { getAuthHeaders } from '../../shared/utils/apiClient';
 
 // =============================================================================
 // Типы ответов API
@@ -138,7 +139,7 @@ export async function fetchMessageStatsSummary(params?: {
     if (params?.dateTo) searchParams.set('date_to', params.dateTo);
     const qs = searchParams.toString();
     const url = `${API_BASE_URL}/messages/stats/summary${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки сводки: ${res.status}`);
     return res.json();
 }
@@ -153,14 +154,14 @@ export async function fetchMessageStatsProjects(params?: {
     if (params?.dateTo) searchParams.set('date_to', params.dateTo);
     const qs = searchParams.toString();
     const url = `${API_BASE_URL}/messages/stats/projects${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки проектов: ${res.status}`);
     return res.json();
 }
 
 /** Получить сводку по конкретному проекту */
 export async function fetchMessageStatsProject(projectId: string): Promise<MessageStatsGlobalSummary> {
-    const res = await fetch(`${API_BASE_URL}/messages/stats/project/${projectId}`);
+    const res = await fetch(`${API_BASE_URL}/messages/stats/project/${projectId}`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки проекта: ${res.status}`);
     return res.json();
 }
@@ -178,7 +179,7 @@ export async function fetchMessageStatsChart(params?: {
 
     const qs = searchParams.toString();
     const url = `${API_BASE_URL}/messages/stats/chart${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки графика: ${res.status}`);
     return res.json();
 }
@@ -208,7 +209,7 @@ export async function fetchMessageStatsUsers(
 
     const qs = searchParams.toString();
     const url = `${API_BASE_URL}/messages/stats/project/${projectId}/users${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки пользователей: ${res.status}`);
     return res.json();
 }
@@ -247,6 +248,7 @@ export interface SyncFromLogsProgress {
 export async function syncMessageStatsFromLogs(): Promise<SyncFromLogsStartResponse> {
     const res = await fetch(`${API_BASE_URL}/messages/stats/sync-from-logs`, {
         method: 'POST',
+        headers: getAuthHeaders(false),
     });
     if (!res.ok) throw new Error(`Ошибка синхронизации: ${res.status}`);
     return res.json();
@@ -259,6 +261,7 @@ export async function syncMessageStatsFromLogs(): Promise<SyncFromLogsStartRespo
 export async function getSyncFromLogsStatus(taskId: string): Promise<SyncFromLogsProgress> {
     const res = await fetch(`${API_BASE_URL}/lists/system/getTaskStatus/${taskId}`, {
         cache: 'no-store',
+        headers: getAuthHeaders(),
     });
     if (!res.ok) throw new Error(`Ошибка получения статуса: ${res.status}`);
     return res.json();
@@ -312,7 +315,7 @@ export async function reconcileMessageStats(params?: {
     const qs = searchParams.toString();
     const url = `${API_BASE_URL}/messages/stats/reconcile${qs ? `?${qs}` : ''}`;
 
-    const res = await fetch(url, { method: 'POST' });
+    const res = await fetch(url, { method: 'POST', headers: getAuthHeaders(false) });
     if (!res.ok) throw new Error(`Ошибка сверки: ${res.status}`);
 
     // Читаем SSE-поток
@@ -378,7 +381,7 @@ export async function reconcileMessageStats(params?: {
 
 /** Строка таблицы администраторов */
 export interface AdminStatsItem {
-    sender_id: number;
+    sender_id: string;
     sender_name: string;
     messages_sent: number;
     unique_dialogs: number;
@@ -404,7 +407,7 @@ export interface AdminDialogItem {
 /** Ответ: детализация диалогов администратора */
 export interface AdminDialogsResponse {
     success: boolean;
-    sender_id: number;
+    sender_id: string;
     sender_name: string;
     dialogs: AdminDialogItem[];
 }
@@ -419,14 +422,14 @@ export async function fetchAdminStats(params?: {
     if (params?.dateTo) searchParams.set('date_to', params.dateTo);
     const qs = searchParams.toString();
     const url = `${API_BASE_URL}/messages/stats/admins${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки администраторов: ${res.status}`);
     return res.json();
 }
 
 /** Получить диалоги конкретного администратора */
 export async function fetchAdminDialogs(
-    senderId: number,
+    senderId: string,
     params?: {
         dateFrom?: string;
         dateTo?: string;
@@ -437,7 +440,7 @@ export async function fetchAdminDialogs(
     if (params?.dateTo) searchParams.set('date_to', params.dateTo);
     const qs = searchParams.toString();
     const url = `${API_BASE_URL}/messages/stats/admin/${senderId}/dialogs${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки диалогов: ${res.status}`);
     return res.json();
 }

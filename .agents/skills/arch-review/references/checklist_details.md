@@ -114,3 +114,146 @@ N+1 = количество_итераций × количество_запрос
 **Как исправлять:**
 - **Фронтенд:** Поднять запрос на уровень выше, передавать данные через props/context. Или React Query (дедупликация из коробки)
 - **Бэкенд:** Передавать уже загруженные данные как параметр, а не запрашивать повторно
+
+---
+
+## 9. TOAST bloat (JSON в VARCHAR + UPDATE)
+
+> **Условное исследование**: этот пункт анализируется только если в области ревью обнаружены VARCHAR/Text колонки, хранящие JSON-массивы, И эти колонки UPDATE-ятся. Если нет — пропускаем с пометкой ✅.
+
+### Суть проблемы
+
+PostgreSQL хранит строки > 2 KB в отдельном **TOAST-хранилище** (The Oversized-Attribute Storage Technique). При UPDATE строки с TOAST-данными:
+1. Создаётся **новая** версия TOAST-страниц
+2. Старая версия становится **dead tuple**
+3. Autovacuum **не может удалить TOAST dead tuples**, если хотя бы одна основная строка ссылается на них
+4. При массовых UPDATE (например, 30 000 итераций reconcile) — dead tuples накапливаются **экспоненциально**
+
+**Формула bloat:**
+```
+TOAST_size = N_updates × avg_json_size × (1 + dead_ratio)
+Реальный кейс: 4 JSON-колонки × ~200 юзеров/массив × 30000 updates = 44.5 GB
+Факт: данные 58 MB, диск 44.5 GB (×750 bloat)
+```
+
+### Быстрая диагностика (3 признака)
+
+| # | Признак | Как проверить |
+|---|---|---|
+| 1 | **JSON в VARCHAR** | `grep -r "json.loads\|json.dumps" crud/` + проверить что колонка — `String`/`Text`, не `JSONB` |
+| 2 | **UPDATE в цикле** | Колонка присваивается (=) внутри `for`/`while` или в функции, вызываемой из цикла |
+| 3 | **Массивы растут** | JSON-массив получает `.append()` / `.extend()` / union — т.е. размер растёт со временем |
+
+**Если все 3 признака = YES → CRITICAL**: диск заполнится за дни/недели в зависимости от нагрузки.
+
+### Что исследовать при обнаружении
+
+1. **Масштаб**: сколько строк в таблице × средний размер JSON × частота UPDATE
+2. **Кто читает JSON**: фронтенд использует массивы user_id или только числовые счётчики?
+3. **Пересечение данных**: если данные per-project и cross-project overlap = 0, можно sum вместо union
+4. **Текущий bloat**: `SELECT pg_total_relation_size('table')` vs `SELECT pg_relation_size('table')`
+
+### Решение: нормализация + INSERT-only паттерн
+
+```
+❌ Было:
+  table: hourly_stats
+  columns: ..., users_json VARCHAR  ← "[1,2,3,4,5]"
+  pattern: READ json → append → UPDATE json (TOAST dead tuple!)
+
+✅ Стало:
+  table: hourly_stats
+  columns: ..., users_count INTEGER  ← 5
+
+  table: hourly_stats_users  (новая, нормализованная)
+  columns: stat_id, user_id, user_type
+  pattern: INSERT ON CONFLICT DO NOTHING  (нет UPDATE → нет TOAST!)
+
+  + _recount() для горячего пути (per-slot)
+  + _bulk_recount() для batch-операций (per-project)
+```
+
+Подробный паттерн реализации: [backend_patterns.md — «Нормализация JSON → INSERT-only»](backend_patterns.md)
+
+### Реальный кейс из проекта (март 2026 — TOAST bloat)
+
+| Метрика | До | После |
+|---|---|---|
+| Размер таблицы на диске | 44,575 MB | 64.8 MB |
+| Размер реальных данных | 58 MB | 58 MB |
+| Bloat-коэффициент | ×750 | ×1.1 |
+| UPDATE-ов на reconcile | 30,000/проект | 0 |
+| INSERT-ов (нормализованная) | — | ~5000/проект (однократно) |
+
+Затронутые файлы: `models_library/message_stats.py`, `crud/message_stats/` (write, sync, reconcile, charts, summary, users, helpers)
+
+---
+
+## 10. Каскадные ре-рендеры (React)
+
+> **Критичность:** HIGH при 100+ элементах в списке. Medium при <20.
+
+**Что искать (5 признаков):**
+
+| # | Признак | Как обнаружить |
+|---|---|---|
+| 1 | **useCallback с изменяющимися deps** | `useCallback(() => ..., [data.length, currentId, list])` — массив содержит часто меняющиеся значения |
+| 2 | **React.memo без стабильных callback-пропсов** | Компонент обёрнут в `React.memo`, но получает `onClick`, `onLoad` и др. функции без useCallback |
+| 3 | **setState merge без проверки изменений** | `setState(prev => prev.map(x => ({...x, ...update})))` — ВСЕГДА новый массив, даже при идентичных данных |
+| 4 | **Промежуточный компонент без React.memo** | Компонент между хуком и конечным списком не мемоизирован → каскад |
+| 5 | **setIsLoading(false) в finally после async** | Фоновая операция (проверка свежести, prefetch) завершается — лишний setState |
+
+**Как считать:**
+```
+Рендеров = (state_changes × cascade_depth × 2_StrictMode)
+StoriesTable кейс: (3 setState × 2 каскад × 2 StrictMode) + mount = 28+
+После фикса: 3 реальных + 3 StrictMode = 6
+```
+
+**Как обнаруживать автоматически:**
+
+Вставить в подозрительный React.memo компонент:
+```tsx
+const prevPropsRef = useRef<Record<string, any>>({});
+useEffect(() => {
+    if (import.meta.env.DEV) {
+        const prev = prevPropsRef.current;
+        const changes: string[] = [];
+        for (const key of Object.keys(props)) {
+            if (prev[key] !== (props as any)[key]) {
+                changes.push(typeof (props as any)[key] === 'function' ? `⚡${key}` : key);
+            }
+        }
+        if (changes.length > 0) console.log(`[RERENDER]:`, changes.join(', '));
+        prevPropsRef.current = { ...props };
+    }
+});
+```
+
+- `⚡functionName` → нестабильный useCallback (причина #1)
+- `data: [object]→[object]` → setState merge создаёт новый массив (причина #3)
+- Рендер без видимых изменений → промежуточный компонент без memo (причина #4)
+
+**Как исправлять (пошагово):**
+
+1. **Стабилизировать функции:** useCallback([], ...) + useRef для всех данных-зависимостей
+2. **React.memo на промежуточных уровнях:** каждый компонент между хуком и списком
+3. **Мемоизировать внутренние обработчики:** handleMouseEnter, toggle, onClick внутри memo-компонента
+4. **setState merge с hasChanges:** сравнить ТОЛЬКО примитивные поля (string/number/boolean), вернуть `prev` по ссылке если нет изменений
+5. **Убрать лишние setState:** setIsLoading(false) → после показа данных, не в finally
+6. **Атомарная загрузка батчей:** собрать все страницы в локальную переменную → один setState
+
+### Реальный кейс из проекта (март 2026 — StoriesTable)
+
+| Метрика | До | После |
+|---|---|---|
+| Рендеров StoriesTable (120 историй) | 28+ | 6 |
+| Рендеров (1 история) | — | 4 |
+| Нестабильных функций-пропсов | 5 (⚡) | 0 |
+| React.memo обёртки | 1 (только таблица) | 3 (таблица + view + dashboard) |
+
+**7 корневых причин:** loadMoreStories с [stories.length], setIsLoading в finally, StoriesStatsView без memo, loadDashboardStats с [projectId], mergeStories без hasChanges, mergeStories сравнивал ссылки на объекты, все хендлеры updater с нестабильными closure.
+
+**Затронутые файлы:** `features/automations/stories-automation/hooks/` (useStoriesLoader, useStoriesUpdater, useStoriesDashboard), `features/automations/stories-automation/components/` (StoriesTable, StoriesStatsView)
+
+Подробный reference: [docs/architecture/references/react_rerender_prevention.md](../../../docs/architecture/references/react_rerender_prevention.md)

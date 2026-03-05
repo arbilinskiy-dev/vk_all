@@ -51,9 +51,9 @@ export interface ReleaseUpdate {
 import { ReleaseUpdate } from './updatesData';
 
 export const releaseXData: ReleaseUpdate = {
-    date: 'хх.хх.хххх',        // Для нового релиза (in-progress) — 'хх.хх.хххх', при публикации заменить на реальную дату
+    date: 'хх.хх.хххх',        // Для нового релиза — ВСЕГДА 'хх.хх.хххх'. Дата выставляется автоматически при деплое фронтенда
     summary: 'Краткое описание релиза одной строкой',
-    status: 'in-progress',       // При финализации → 'published' + реальная дата
+    status: 'in-progress',       // При финализации → 'published' (дата заполняется при деплое)
     entries: [
         {
             id: 'уникальный-slug',

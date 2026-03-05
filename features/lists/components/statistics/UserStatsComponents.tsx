@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { StatsPeriod, StatsGroupBy, FilterCanWrite } from '../../types';
+import { AnimatedNumber } from '../../../../shared/hooks/useCountAnimation';
 
 // --- Компоненты UI ---
 
@@ -10,10 +11,10 @@ export const ProgressBar: React.FC<{ label: string; value: number; total: number
         <div className="mb-2">
             <div className="flex justify-between text-xs mb-1">
                 <span className="text-gray-600 font-medium">{label}</span>
-                <span className="text-gray-800">{value} ({percent}%)</span>
+                <span className="text-gray-800"><AnimatedNumber value={value} /> ({percent}%)</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-1.5">
-                <div className={`h-1.5 rounded-full ${color}`} style={{ width: `${percent}%` }}></div>
+            <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                <div className={`h-1.5 rounded-full ${color} transition-all duration-[800ms] ease-out`} style={{ width: `${percent}%` }}></div>
             </div>
         </div>
     );
@@ -35,7 +36,7 @@ export const getPercent = (value: number, total: number) => {
 
 export const ValueWithPercent: React.FC<{ value: number; total: number; className?: string }> = ({ value, total, className = "" }) => (
     <span className={`font-bold ${className}`}>
-        {value} <span className="text-xs font-normal opacity-70">({getPercent(value, total)})</span>
+        <AnimatedNumber value={value} /> <span className="text-xs font-normal opacity-70">({getPercent(value, total)})</span>
     </span>
 );
 

@@ -96,6 +96,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         if (sessionData.full_name) {
                             parsed.full_name = sessionData.full_name;
                         }
+                        // Обновляем флаг системного администратора
+                        parsed.is_system_admin = sessionData.is_system_admin === true;
                         setUser(parsed);
                         sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(parsed));
                         resetInactivityTimer();
@@ -136,7 +138,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 role: response.role as 'admin' | 'user',
                 full_name: response.full_name || undefined,
                 vk_user_id: undefined,
-                photo_url: undefined
+                photo_url: undefined,
+                is_system_admin: response.is_system_admin === true,
             };
             
             // Сохраняем серверный session_token

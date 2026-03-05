@@ -69,6 +69,7 @@ class SystemListHistoryItem(ListMemberBase):
     id: Any
     project_id: str
     event_date: datetime
+    event_type: Optional[str] = None
     source: str
 
     @field_validator('id', mode='before')

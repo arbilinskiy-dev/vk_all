@@ -222,6 +222,28 @@ def refresh_subscribers_task(task_id: str, project_id: str, user_token: str):
                 try:
                     crud.bulk_add_subscribers(db_batch, new_subscribers_data)
                     crud.bulk_add_history_join(db_batch, new_history_join_data)
+                    
+                    # Запись в user_membership_history (с дедупликацией по callback)
+                    # Проверяем последнее действие каждого пользователя:
+                    # если callback уже записал 'join' — не дублируем
+                    batch_vk_ids = [item['vk_user_id'] for item in new_history_join_data]
+                    last_actions = crud.get_last_membership_actions_bulk(db_batch, project_id, batch_vk_ids)
+                    
+                    history_records = []
+                    for vk_id in batch_vk_ids:
+                        last_action = last_actions.get(vk_id)
+                        if last_action != 'join':
+                            # Callback не фиксировал вступление — записываем из sync
+                            history_records.append({
+                                'project_id': project_id,
+                                'vk_user_id': vk_id,
+                                'action': 'join',
+                                'action_date': datetime.now(timezone.utc),
+                                'source': 'sync',
+                            })
+                    
+                    if history_records:
+                        crud.bulk_add_membership_history(db_batch, history_records)
                 finally:
                     db_batch.close()
 
@@ -259,6 +281,29 @@ def refresh_subscribers_task(task_id: str, project_id: str, user_token: str):
                     
                     if new_history_leave_data:
                         crud.bulk_add_history_leave(db_batch, new_history_leave_data)
+                    
+                    # Запись в user_membership_history (с дедупликацией по callback)
+                    # Проверяем последнее действие каждого пользователя:
+                    # если callback уже записал 'leave' — не дублируем
+                    leave_vk_ids = [item['vk_user_id'] for item in new_history_leave_data]
+                    if leave_vk_ids:
+                        last_actions = crud.get_last_membership_actions_bulk(db_batch, project_id, leave_vk_ids)
+                        
+                        history_records = []
+                        for vk_id in leave_vk_ids:
+                            last_action = last_actions.get(vk_id)
+                            if last_action != 'leave':
+                                # Callback не фиксировал выход — записываем из sync
+                                history_records.append({
+                                    'project_id': project_id,
+                                    'vk_user_id': vk_id,
+                                    'action': 'leave',
+                                    'action_date': datetime.now(timezone.utc),
+                                    'source': 'sync',
+                                })
+                        
+                        if history_records:
+                            crud.bulk_add_membership_history(db_batch, history_records)
 
                     crud.bulk_delete_subscribers(db_batch, project_id, batch_ids)
                 finally:

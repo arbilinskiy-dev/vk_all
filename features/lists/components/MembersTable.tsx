@@ -4,6 +4,130 @@ import { SystemListSubscriber, SystemListAuthor, SystemListMailingItem } from '.
 import { ImagePreviewModal } from '../../../shared/components/modals/ImagePreviewModal';
 import { ListType } from '../types';
 
+// --- Чистые хелперы вынесены за пределы компонента (не пересоздаются при ре-рендере) ---
+
+const formatSex = (sex: number | null | undefined) => {
+    if (sex === 1) return 'Жен.';
+    if (sex === 2) return 'Муж.';
+    return '—';
+};
+
+const formatLastSeen = (lastSeen: number | null | undefined) => {
+    if (!lastSeen) return '—';
+    return new Date(lastSeen * 1000).toLocaleString('ru-RU', {
+        day: '2-digit', 
+        month: '2-digit', 
+        year: '2-digit', 
+        hour: '2-digit', 
+        minute: '2-digit'
+    });
+};
+
+const formatAddedDate = (dateString: string | undefined) => {
+    if (!dateString || dateString.startsWith('1970')) return '—';
+    return new Date(dateString).toLocaleString('ru-RU', {
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric', 
+        hour: '2-digit', 
+        minute: '2-digit'
+    });
+};
+
+const BADGE_BASE = "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ml-2";
+
+const getPlatformBadge = (platform: number | undefined | null) => {
+    if (!platform) return null;
+    switch (platform) {
+        case 1:
+            return <span className={`${BADGE_BASE} bg-orange-50 text-orange-700 border-orange-100`}>m.vk</span>;
+        case 2:
+        case 3:
+            return <span className={`${BADGE_BASE} bg-slate-100 text-slate-700 border-slate-200`}>iOS</span>;
+        case 4:
+            return <span className={`${BADGE_BASE} bg-emerald-50 text-emerald-700 border-emerald-100`}>Android</span>;
+        case 6:
+        case 7:
+            return <span className={`${BADGE_BASE} bg-blue-50 text-blue-700 border-blue-100`}>Web</span>;
+        default:
+            return <span className={`${BADGE_BASE} bg-gray-50 text-gray-600 border-gray-200`}>Mob</span>;
+    }
+};
+
+const getSourceBadge = (source: string) => {
+    switch (source) {
+        case 'manual':
+            return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200">Ручной</span>;
+        case 'callback':
+            return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">Callback</span>;
+        case 'conversation':
+            return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-50 text-cyan-700 border border-cyan-100">Диалог</span>;
+        case 'posts_sync':
+            return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-violet-50 text-violet-700 border border-violet-100">Посты</span>;
+        default:
+            return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-50 text-gray-500">{source}</span>;
+    }
+};
+
+const getEventTypeBadge = (item: any) => {
+    const eventType = item.event_type;
+    if (eventType === 'join') {
+        return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Вступил
+        </span>;
+    }
+    if (eventType === 'leave') {
+        return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-700 border border-red-200">
+            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>Вышел
+        </span>;
+    }
+    return <span className="text-gray-400">—</span>;
+};
+
+const getDateField = (item: SystemListSubscriber | SystemListAuthor | SystemListMailingItem, listType?: ListType) => {
+    if (listType === 'mailing') {
+        return (item as any).last_message_date;
+    }
+    if (listType === 'authors' || listType?.startsWith('history')) {
+        return (item as any).event_date || (item as SystemListSubscriber).added_at;
+    }
+    return (item as SystemListSubscriber).added_at;
+};
+
+const getFirstContactData = (item: SystemListMailingItem) => {
+    const fromId = item.first_message_from_id;
+    let initiator = null;
+    
+    if (fromId) {
+        if (fromId < 0) {
+            initiator = (
+                <span title="Инициатор: Сообщество (Мы)" className="cursor-help inline-flex items-center justify-center w-5 h-5 text-indigo-600">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                </span>
+            );
+        } else {
+            initiator = (
+                <span title="Инициатор: Пользователь" className="cursor-help inline-flex items-center justify-center w-5 h-5 text-gray-600">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                </span>
+            );
+        }
+    } else {
+        initiator = <span className="text-gray-300">—</span>;
+    }
+    
+    return {
+        date: formatAddedDate(item.first_message_date),
+        initiator
+    };
+};
+
+// --- Компонент ---
+
 interface MembersTableProps {
     items: (SystemListSubscriber | SystemListAuthor | SystemListMailingItem)[];
     isLoading: boolean;
@@ -12,7 +136,7 @@ interface MembersTableProps {
     isFetchingMore?: boolean;
 }
 
-export const MembersTable: React.FC<MembersTableProps> = ({ items, isLoading, listType, onLoadMore, isFetchingMore }) => {
+export const MembersTable: React.FC<MembersTableProps> = React.memo(({ items, isLoading, listType, onLoadMore, isFetchingMore }) => {
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const observerTarget = useRef<HTMLDivElement>(null);
 
@@ -40,10 +164,37 @@ export const MembersTable: React.FC<MembersTableProps> = ({ items, isLoading, li
     }, [onLoadMore]);
 
     if (isLoading) {
+        // Адаптируем скелетон под тип списка: mailing (ЛС, FC, Init, LC, Дата сбора), timeline (Событие)
+        const headerWidths = listType === 'mailing'
+            ? [40, 160, 50, 50, 80, 120, 70, 30, 80, 30, 80, 80, 60]
+            : listType === 'history_timeline'
+            ? [40, 160, 50, 50, 80, 120, 70, 70, 100, 60]
+            : [40, 160, 50, 50, 80, 120, 70, 100, 60];
+        const rowWidths = listType === 'mailing'
+            ? [140, 35, 45, 70, 110, 65, 25, 70, 25, 70, 70, 50]
+            : listType === 'history_timeline'
+            ? [140, 35, 45, 70, 110, 65, 60, 80, 50]
+            : [140, 35, 45, 70, 110, 65, 80];
+
         return (
-            <div className="p-8 text-center text-gray-500">
-                <div className="loader h-8 w-8 mx-auto mb-4 border-t-indigo-500"></div>
-                <p>Загрузка участников...</p>
+            <div className="overflow-hidden bg-white rounded-lg shadow border border-gray-200">
+                {/* Скелетон заголовка таблицы */}
+                <div className="bg-gray-50 border-b border-gray-200 px-4 py-3 flex gap-6">
+                    {headerWidths.map((w, i) => (
+                        <div key={i} className="h-3 bg-gray-200 rounded animate-pulse" style={{ width: w }} />
+                    ))}
+                </div>
+                {/* Скелетон строк таблицы */}
+                {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-4 px-4 py-3 border-b border-gray-50">
+                        <div className="w-10 h-10 rounded-full bg-gray-200 animate-pulse flex-shrink-0" style={{ animationDelay: `${i * 60}ms` }} />
+                        <div className="flex-1 flex gap-6">
+                            {rowWidths.map((w, j) => (
+                                <div key={j} className="h-3 bg-gray-100 rounded animate-pulse" style={{ width: w, animationDelay: `${i * 60 + j * 30}ms` }} />
+                            ))}
+                        </div>
+                    </div>
+                ))}
             </div>
         );
     }
@@ -55,101 +206,6 @@ export const MembersTable: React.FC<MembersTableProps> = ({ items, isLoading, li
             </div>
         );
     }
-
-    const formatSex = (sex: number | null | undefined) => {
-        if (sex === 1) return 'Жен.';
-        if (sex === 2) return 'Муж.';
-        return '—';
-    };
-
-    const formatLastSeen = (lastSeen: number | null | undefined) => {
-        if (!lastSeen) return '—';
-        return new Date(lastSeen * 1000).toLocaleString('ru-RU', {
-            day: '2-digit', 
-            month: '2-digit', 
-            year: '2-digit', 
-            hour: '2-digit', 
-            minute: '2-digit'
-        });
-    };
-
-    const formatAddedDate = (dateString: string | undefined) => {
-        if (!dateString || dateString.startsWith('1970')) return '—'; // Обработка заглушки
-        return new Date(dateString).toLocaleString('ru-RU', {
-            day: '2-digit', 
-            month: '2-digit', 
-            year: 'numeric', 
-            hour: '2-digit', 
-            minute: '2-digit'
-        });
-    };
-    
-    const getPlatformBadge = (platform: number | undefined | null) => {
-        if (!platform) return null;
-        // 1 - m.vk, 2 - iPhone, 3 - iPad, 4 - Android, 5 - WP, 6 - Win10, 7 - Web
-        
-        const badgeBase = "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ml-2";
-        
-        switch (platform) {
-            case 1: // Mobile Web
-                return <span className={`${badgeBase} bg-orange-50 text-orange-700 border-orange-100`}>m.vk</span>;
-            case 2: // iPhone
-            case 3: // iPad
-                return <span className={`${badgeBase} bg-slate-100 text-slate-700 border-slate-200`}>iOS</span>;
-            case 4: // Android
-                return <span className={`${badgeBase} bg-emerald-50 text-emerald-700 border-emerald-100`}>Android</span>;
-            case 6: // Windows App
-            case 7: // Desktop Web
-                return <span className={`${badgeBase} bg-blue-50 text-blue-700 border-blue-100`}>Web</span>;
-            default:
-                return <span className={`${badgeBase} bg-gray-50 text-gray-600 border-gray-200`}>Mob</span>;
-        }
-    };
-    
-    const getSourceBadge = (source: string) => {
-        switch (source) {
-            case 'manual':
-                return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200">Ручной</span>;
-            case 'callback':
-                return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">Callback</span>;
-            case 'conversation':
-                return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-50 text-cyan-700 border border-cyan-100">Диалог</span>;
-            case 'posts_sync':
-                return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-violet-50 text-violet-700 border border-violet-100">Посты</span>;
-            default:
-                return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-50 text-gray-500">{source}</span>;
-        }
-    };
-    
-    const getDateField = (item: SystemListSubscriber | SystemListAuthor | SystemListMailingItem) => {
-        if (listType === 'mailing') {
-             return (item as any).last_message_date;
-        }
-        if (listType === 'authors' || listType?.startsWith('history')) {
-            return (item as any).event_date;
-        }
-        return (item as SystemListSubscriber).added_at;
-    };
-    
-    const getFirstContactData = (item: SystemListMailingItem) => {
-         const fromId = item.first_message_from_id;
-         let initiator = null;
-         
-         if (fromId) {
-             if (fromId < 0) {
-                 initiator = <span title="Инициатор: Сообщество (Мы)" className="cursor-help text-lg">🏢</span>;
-             } else {
-                 initiator = <span title="Инициатор: Пользователь" className="cursor-help text-lg">👤</span>;
-             }
-         } else {
-             initiator = <span className="text-gray-300">-</span>;
-         }
-         
-         return {
-             date: formatAddedDate(item.first_message_date),
-             initiator
-         };
-    };
 
     return (
         <>
@@ -164,6 +220,9 @@ export const MembersTable: React.FC<MembersTableProps> = ({ items, isLoading, li
                             <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Город</th>
                             <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Онлайн / Платформа</th>
                             <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Статус</th>
+                            {listType === 'history_timeline' && (
+                                <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider bg-gray-50">Событие</th>
+                            )}
                             {listType === 'mailing' && (
                                 <>
                                     <th className="px-4 py-3 text-center font-medium text-gray-500 uppercase tracking-wider bg-gray-50" title="Разрешено писать сообщения">ЛС</th>
@@ -174,7 +233,11 @@ export const MembersTable: React.FC<MembersTableProps> = ({ items, isLoading, li
                             )}
                             {listType !== 'mailing' && (
                                 <th className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
-                                    Дата события
+                                    {listType === 'history_join' ? 'Дата вступления'
+                                        : listType === 'history_leave' ? 'Дата выхода'
+                                        : listType === 'history_timeline' ? 'Дата события'
+                                        : listType === 'authors' ? 'Дата публикации'
+                                        : 'Дата добавления'}
                                 </th>
                             )}
                             
@@ -198,6 +261,7 @@ export const MembersTable: React.FC<MembersTableProps> = ({ items, isLoading, li
                                         <img 
                                             src={item.photo_url} 
                                             alt="" 
+                                            loading="lazy"
                                             className="w-10 h-10 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity shadow-sm" 
                                             onClick={() => setPreviewImage(item.photo_url!)}
                                         />
@@ -254,13 +318,26 @@ export const MembersTable: React.FC<MembersTableProps> = ({ items, isLoading, li
                                         </span>
                                     )}
                                 </td>
+                                {listType === 'history_timeline' && (
+                                    <td className="px-4 py-2">
+                                        {getEventTypeBadge(item)}
+                                    </td>
+                                )}
                                 {listType === 'mailing' && (
                                     <>
                                         <td className="px-4 py-2 text-center">
                                             {(item as any).can_access_closed ? (
-                                                <span title="Разрешено писать">✅</span>
+                                                <span title="Разрешено писать" className="inline-flex items-center justify-center w-5 h-5 text-green-600">
+                                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                    </svg>
+                                                </span>
                                             ) : (
-                                                <span title="Запрещено писать">🚫</span>
+                                                <span title="Запрещено писать" className="inline-flex items-center justify-center w-5 h-5 text-red-500">
+                                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                    </svg>
+                                                </span>
                                             )}
                                         </td>
                                         <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">
@@ -270,13 +347,13 @@ export const MembersTable: React.FC<MembersTableProps> = ({ items, isLoading, li
                                             {fcData.initiator}
                                         </td>
                                         <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">
-                                            {formatAddedDate(String(getDateField(item)))}
+                                            {formatAddedDate(String(getDateField(item, listType)))}
                                         </td>
                                     </>
                                 )}
                                 {listType !== 'mailing' && (
                                      <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">
-                                        {formatAddedDate(String(getDateField(item)))}
+                                        {formatAddedDate(String(getDateField(item, listType)))}
                                     </td>
                                 )}
 
@@ -310,4 +387,4 @@ export const MembersTable: React.FC<MembersTableProps> = ({ items, isLoading, li
             )}
         </>
     );
-};
+});

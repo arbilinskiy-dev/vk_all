@@ -395,6 +395,42 @@ def job_enrich_stub_profiles():
 
 
 # ===============================================================
+#   СИНХРОНИЗАЦИЯ DLVRY СТАТИСТИКИ (раз в сутки, 02:00 MSK)
+# ===============================================================
+
+def job_sync_dlvry_stats():
+    """
+    Синхронизация агрегированной статистики из DLVRY API для всех проектов.
+    Интервал: 1 раз в сутки в 02:00 MSK (23:00 UTC предыдущего дня).
+    
+    Находит все проекты с настроенным dlvry_affiliate_id,
+    запрашивает дневную статистику через DLVRY API,
+    записывает/обновляет данные в таблице dlvry_daily_stats.
+    """
+    if not _acquire_lock("vk_planner:dlvry_sync_lock", 3600):
+        return
+
+    try:
+        from database import SessionLocal
+        from services.dlvry.stats_sync_service import sync_all_projects
+
+        db = SessionLocal()
+        try:
+            result = sync_all_projects(db)
+            total = result.get('total_projects', 0)
+            synced = result.get('synced', 0)
+            errors = result.get('errors', 0)
+            if total > 0:
+                print(f"SCHEDULER: DLVRY stats sync done — {synced}/{total} projects synced, {errors} errors.")
+            else:
+                print("SCHEDULER: DLVRY stats sync — no projects with DLVRY configured.")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"SCHEDULER ERROR (DLVRY Stats Sync): {e}")
+
+
+# ===============================================================
 #                        ЗАПУСК / ОСТАНОВКА
 # ===============================================================
 
@@ -515,8 +551,18 @@ def start():
         replace_existing=True
     )
 
+    # --- Группа 6: DLVRY (раз в сутки, фиксированное время) ---
+
+    # Синхронизация DLVRY статистики — 02:00 MSK (23:00 UTC предыдущего дня)
+    scheduler.add_job(
+        job_sync_dlvry_stats,
+        CronTrigger(hour=23, minute=0, timezone='UTC'),  # 02:00 MSK = 23:00 UTC
+        id='sync_dlvry_stats',
+        replace_existing=True
+    )
+
     scheduler.start()
-    print("✅ APScheduler started — 13 scheduled jobs registered.")
+    print("✅ APScheduler started — 14 scheduled jobs registered.")
 
 def shutdown():
     """Корректное завершение планировщика."""

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
 export const useLocalStorage = <T,>(key: string, initialValue: T): [T, (value: T | ((val: T) => T)) => void] => {
   const [storedValue, setStoredValue] = useState<T>(() => {
@@ -6,10 +6,21 @@ export const useLocalStorage = <T,>(key: string, initialValue: T): [T, (value: T
       const item = window.localStorage.getItem(key);
       return item ? JSON.parse(item) : initialValue;
     } catch (error) {
-      console.error(`Ошибка чтения ключа localStorage “${key}”:`, error);
+      console.error(`Ошибка чтения ключа localStorage "${key}":`, error);
       return initialValue;
     }
   });
+
+  // При смене ключа (например, per-project) перечитываем значение из localStorage
+  useEffect(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      setStoredValue(item ? JSON.parse(item) : initialValue);
+    } catch (error) {
+      console.error(`Ошибка чтения ключа localStorage "${key}":`, error);
+      setStoredValue(initialValue);
+    }
+  }, [key]);
 
   const setValue = useCallback(
     (value: T | ((val: T) => T)) => {

@@ -1,6 +1,6 @@
 
 import { MarketAlbum, MarketItem, MarketCategory } from '../../shared/types';
-import { callApi } from '../../shared/utils/apiClient';
+import { callApi, getAuthHeaders } from '../../shared/utils/apiClient';
 import { API_BASE_URL } from '../../shared/config';
 
 // Типы для массового AI-подбора
@@ -70,6 +70,7 @@ export const updateMarketItem = async (projectId: string, item: MarketItem, file
     // Здесь мы не используем callApi, так как он заточен под JSON, а нам нужен multipart/form-data
     const response = await fetch(`${API_BASE_URL}/market/updateItem`, {
         method: 'POST',
+        headers: getAuthHeaders(false),
         body: formData,
     });
     if (!response.ok) {
@@ -128,6 +129,7 @@ export const createMarketItem = async (projectId: string, itemData: any, file?: 
     }
     const response = await fetch(`${API_BASE_URL}/market/createItem`, {
         method: 'POST',
+        headers: getAuthHeaders(false),
         body: formData,
     });
     if (!response.ok) {

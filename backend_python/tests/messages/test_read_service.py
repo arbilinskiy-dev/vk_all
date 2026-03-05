@@ -22,6 +22,7 @@ class TestMarkDialogRead:
         assert result["success"] is True
         assert result["unread_count"] == 0
         assert result["last_read_message_id"] == 0
+        assert result["was_unread"] is False
         mock_crud.mark_dialog_as_read.assert_not_called()
 
     @patch("services.messages.read_service._publish_global_unread_count")
@@ -32,17 +33,47 @@ class TestMarkDialogRead:
         from services.messages.read_service import mark_dialog_read
 
         mock_crud.get_max_incoming_message_id.return_value = 5000
+        mock_crud.get_last_read_message_id.return_value = 4000  # были непрочитанные
         mock_crud.mark_dialog_as_read.return_value = MagicMock()
 
         result = mark_dialog_read(mock_db, "proj-1", 12345, "mgr-1")
         assert result["success"] is True
         assert result["last_read_message_id"] == 5000
+        assert result["was_unread"] is True  # max_msg_id(5000) > prev_last_read(4000)
 
         mock_crud.mark_dialog_as_read.assert_called_once_with(
             mock_db, "proj-1", 12345, 5000, "mgr-1"
         )
         mock_sse.assert_called_once()
         mock_global_sse.assert_called_once()
+
+    @patch("services.messages.read_service._publish_global_unread_count")
+    @patch("services.messages.read_service._publish_sse_event")
+    @patch("services.messages.read_service.message_read_crud")
+    def test_mark_read_already_read_returns_was_unread_false(self, mock_crud, mock_sse, mock_global_sse, mock_db):
+        """Повторный вход в уже прочитанный диалог — was_unread=False."""
+        from services.messages.read_service import mark_dialog_read
+
+        mock_crud.get_max_incoming_message_id.return_value = 5000
+        mock_crud.get_last_read_message_id.return_value = 5000  # уже прочитан до этого сообщения
+        mock_crud.mark_dialog_as_read.return_value = MagicMock()
+
+        result = mark_dialog_read(mock_db, "proj-1", 12345, "mgr-1")
+        assert result["was_unread"] is False  # max_msg_id(5000) == prev_last_read(5000)
+
+    @patch("services.messages.read_service._publish_global_unread_count")
+    @patch("services.messages.read_service._publish_sse_event")
+    @patch("services.messages.read_service.message_read_crud")
+    def test_mark_read_first_time_was_unread_true(self, mock_crud, mock_sse, mock_global_sse, mock_db):
+        """Первое прочтение (prev_last_read=0) — was_unread=True."""
+        from services.messages.read_service import mark_dialog_read
+
+        mock_crud.get_max_incoming_message_id.return_value = 3000
+        mock_crud.get_last_read_message_id.return_value = 0  # никогда не читали
+        mock_crud.mark_dialog_as_read.return_value = MagicMock()
+
+        result = mark_dialog_read(mock_db, "proj-1", 99999, "mgr-1")
+        assert result["was_unread"] is True  # max_msg_id(3000) > prev_last_read(0)
 
 
 class TestMarkAllDialogsRead:

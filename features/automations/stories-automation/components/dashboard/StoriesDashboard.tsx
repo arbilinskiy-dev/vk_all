@@ -18,6 +18,8 @@ interface ServerDashboardStats extends DashboardStats {
 }
 
 interface StoriesDashboardProps {
+    /** ID текущего проекта (для перезагрузки при смене проекта без ремаунта) */
+    projectId?: string;
     // Серверная агрегированная статистика
     dashboardStats: ServerDashboardStats | null;
     isLoadingDashboard: boolean;
@@ -25,7 +27,7 @@ interface StoriesDashboardProps {
 }
 
 export const StoriesDashboard: React.FC<StoriesDashboardProps> = ({ 
-    dashboardStats, isLoadingDashboard, loadDashboardStats
+    projectId, dashboardStats, isLoadingDashboard, loadDashboardStats
 }) => {
     const {
         filterType, setFilterType,
@@ -34,7 +36,7 @@ export const StoriesDashboard: React.FC<StoriesDashboardProps> = ({
         customEndDate, setCustomEndDate,
         viewersStats,
         getCardAnimationClass, getCardAnimationStyle,
-    } = useStoriesDashboard({ demographics: dashboardStats?.demographics ?? null, loadDashboardStats });
+    } = useStoriesDashboard({ projectId, demographics: dashboardStats?.demographics ?? null, loadDashboardStats });
 
     // Используем серверные данные для основной статистики
     const stats: DashboardStats = dashboardStats || {

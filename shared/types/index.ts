@@ -22,6 +22,9 @@ export interface Project {
     vk_confirmation_code?: string;
     
     variables?: string;
+    
+    // DLVRY Integration
+    dlvry_affiliate_id?: string;
 }
 
 export interface User {
@@ -40,6 +43,8 @@ export interface AuthUser {
     // VK авторизация (опционально)
     vk_user_id?: string;
     photo_url?: string;
+    /** Системный администратор из переменных окружения (admin_username/admin_password) */
+    is_system_admin?: boolean;
 }
 
 // Данные опроса для создания через VK API (polls.create)

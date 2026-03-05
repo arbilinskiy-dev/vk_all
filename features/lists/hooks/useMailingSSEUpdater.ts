@@ -94,6 +94,10 @@ export function useMailingSSEUpdater({
                 clearTimeout(debounceRef.current);
             }
             debounceRef.current = setTimeout(() => {
+                // M5 fix: Повторная проверка activeList после debounce —
+                // за 500мс пользователь мог переключить таб
+                if (activeListRef.current !== 'mailing') return;
+                
                 console.log('[Lists SSE] mailing_user_updated → перезагрузка таблицы и статистики');
                 // Полная перезагрузка данных через HTTP — надёжно обновляет таблицу
                 fetchItemsRef.current(1, searchQueryRef.current, true);

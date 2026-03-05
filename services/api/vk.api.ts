@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../../shared/config';
+import { getAuthHeaders } from '../../shared/utils/apiClient';
 
 export interface VkCallbackLog {
     id: number;
@@ -72,7 +73,7 @@ export interface CallbackCurrentStateResponse {
 export const setupCallbackAuto = async (request: CallbackSetupRequest): Promise<CallbackSetupResponse> => {
     const response = await fetch(`${API_BASE_URL}/vk/setup-callback`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(request),
     });
     if (!response.ok) {
@@ -86,7 +87,9 @@ export const setupCallbackAuto = async (request: CallbackSetupRequest): Promise<
  * Проверяет, запущен ли ngrok на локальной машине.
  */
 export const detectNgrok = async (): Promise<NgrokDetectResponse> => {
-    const response = await fetch(`${API_BASE_URL}/vk/detect-ngrok`);
+    const response = await fetch(`${API_BASE_URL}/vk/detect-ngrok`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         throw new Error('Не удалось проверить ngrok');
     }
@@ -97,7 +100,9 @@ export const detectNgrok = async (): Promise<NgrokDetectResponse> => {
  * Проверяет, активен ли SSH reverse tunnel на VM.
  */
 export const detectTunnel = async (): Promise<TunnelDetectResponse> => {
-    const response = await fetch(`${API_BASE_URL}/vk/detect-tunnel`);
+    const response = await fetch(`${API_BASE_URL}/vk/detect-tunnel`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         throw new Error('Не удалось проверить SSH tunnel');
     }
@@ -108,7 +113,9 @@ export const detectTunnel = async (): Promise<TunnelDetectResponse> => {
  * Получает список Callback-серверов проекта из VK.
  */
 export const getCallbackServers = async (projectId: string): Promise<CallbackServer[]> => {
-    const response = await fetch(`${API_BASE_URL}/vk/callback-servers/${projectId}`);
+    const response = await fetch(`${API_BASE_URL}/vk/callback-servers/${projectId}`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         throw new Error('Не удалось получить список серверов');
     }
@@ -121,7 +128,9 @@ export const getCallbackServers = async (projectId: string): Promise<CallbackSer
  * какой сервер настроен (smmit/smmitloc) и на какие события подписан.
  */
 export const getCurrentCallbackState = async (projectId: string, isLocal: boolean = false): Promise<CallbackCurrentStateResponse> => {
-    const response = await fetch(`${API_BASE_URL}/vk/callback-current/${projectId}?is_local=${isLocal}`);
+    const response = await fetch(`${API_BASE_URL}/vk/callback-current/${projectId}?is_local=${isLocal}`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         throw new Error('Не удалось получить текущие настройки callback');
     }
@@ -135,7 +144,9 @@ export interface CallbackLogsResponse {
 }
 
 export const getCallbackLogs = async (limit: number = 50, offset: number = 0): Promise<CallbackLogsResponse | VkCallbackLog[]> => {
-    const response = await fetch(`${API_BASE_URL}/vk/logs?limit=${limit}&offset=${offset}`);
+    const response = await fetch(`${API_BASE_URL}/vk/logs?limit=${limit}&offset=${offset}`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         throw new Error('Failed to fetch callback logs');
     }
@@ -143,7 +154,7 @@ export const getCallbackLogs = async (limit: number = 50, offset: number = 0): P
 };
 
 export const deleteAllCallbackLogs = async (): Promise<{ deleted: number }> => {
-    const response = await fetch(`${API_BASE_URL}/vk/logs`, { method: 'DELETE' });
+    const response = await fetch(`${API_BASE_URL}/vk/logs`, { method: 'DELETE', headers: getAuthHeaders(false) });
     if (!response.ok) {
         throw new Error('Failed to delete all logs');
     }
@@ -151,7 +162,7 @@ export const deleteAllCallbackLogs = async (): Promise<{ deleted: number }> => {
 };
 
 export const deleteCallbackLog = async (logId: number): Promise<{ deleted: number }> => {
-    const response = await fetch(`${API_BASE_URL}/vk/logs/${logId}`, { method: 'DELETE' });
+    const response = await fetch(`${API_BASE_URL}/vk/logs/${logId}`, { method: 'DELETE', headers: getAuthHeaders(false) });
     if (!response.ok) {
         throw new Error('Failed to delete log');
     }
@@ -161,7 +172,7 @@ export const deleteCallbackLog = async (logId: number): Promise<{ deleted: numbe
 export const deleteBatchCallbackLogs = async (ids: number[]): Promise<{ deleted: number }> => {
     const response = await fetch(`${API_BASE_URL}/vk/logs/delete-batch`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(ids)
     });
     if (!response.ok) {

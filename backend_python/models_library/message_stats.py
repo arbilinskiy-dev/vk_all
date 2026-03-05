@@ -9,7 +9,7 @@
 4. MessageSubscription — история подписок/отписок (message_allow / message_deny)
 """
 
-from sqlalchemy import Column, String, Integer, Float, Index
+from sqlalchemy import Column, String, Integer, Float, SmallInteger, Index
 from database import Base
 
 
@@ -69,6 +69,19 @@ class MessageStatsHourly(Base):
     # JSON-массив уникальных vk_user_id — получателей исходящих сообщений за этот час
     outgoing_users_json = Column(String, nullable=True, default="[]")
     
+    # --- Счётчики уникальных пользователей (замена JSON-массивов) ---
+    # Кол-во уникальных текстовых юзеров (набрали сообщение руками)
+    unique_text_users_count = Column(Integer, nullable=False, default=0)
+    
+    # Кол-во уникальных payload-юзеров (нажали кнопку/бота)
+    unique_payload_users_count = Column(Integer, nullable=False, default=0)
+    
+    # Кол-во уникальных получателей исходящих сообщений
+    outgoing_users_count = Column(Integer, nullable=False, default=0)
+    
+    # Кол-во уникальных входящих юзеров (text ∪ payload)
+    incoming_users_count = Column(Integer, nullable=False, default=0)
+    
     # Кол-во уникальных диалогов (project_id×vk_user_id пар) за этот час
     # В рамках одного проекта = unique_users_count, но используется для кросс-проектного подсчёта
     unique_dialogs_count = Column(Integer, nullable=False, default=0)
@@ -79,6 +92,29 @@ class MessageStatsHourly(Base):
 
     __table_args__ = (
         Index("ix_msg_stats_hourly_project_hour", "project_id", "hour_slot"),
+    )
+
+
+class MessageStatsHourlyUsers(Base):
+    """
+    Нормализованная таблица: какие пользователи были активны в каком часовом слоте.
+    Заменяет JSON-массивы в MessageStatsHourly.
+    
+    user_type: 1=text (набрал сообщение), 2=payload (кнопка/бот), 3=outgoing (получатель)
+    
+    INSERT-only + ON CONFLICT DO NOTHING → нет UPDATE, нет TOAST-блоата.
+    """
+    __tablename__ = "message_stats_hourly_users"
+    
+    # Составной PK: (project_id, hour_slot, vk_user_id, user_type)
+    project_id = Column(String, primary_key=True)
+    hour_slot = Column(String, primary_key=True)
+    vk_user_id = Column(Integer, primary_key=True)
+    user_type = Column(SmallInteger, primary_key=True)
+    
+    __table_args__ = (
+        Index("ix_mshu_project_slot", "project_id", "hour_slot"),
+        Index("ix_mshu_project_user", "project_id", "vk_user_id"),
     )
 
 

@@ -7,8 +7,8 @@
 export type PeriodType = 'today' | 'yesterday' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'all' | 'custom';
 export type DirectionFilter = 'all' | 'incoming' | 'outgoing';
 
-/** Вкладка аналитики: входящие, исходящие или подписки */
-export type StatsTab = 'incoming' | 'outgoing' | 'subscriptions';
+/** Вкладка аналитики: входящие, исходящие, подписки или диалоги сотрудников */
+export type StatsTab = 'incoming' | 'outgoing' | 'subscriptions' | 'employees';
 
 /** Суб-фильтр входящих: все / реальные набранные (text) / кнопочные (payload) */
 export type IncomingSubFilter = 'all' | 'text' | 'payload';
@@ -17,6 +17,7 @@ export const STATS_TAB_OPTIONS: { value: StatsTab; label: string; color: string 
     { value: 'incoming', label: 'Входящие', color: 'green' },
     { value: 'outgoing', label: 'Исходящие', color: 'orange' },
     { value: 'subscriptions', label: 'Подписки', color: 'blue' },
+    { value: 'employees', label: 'Сотрудники', color: 'purple' },
 ];
 
 export const PERIOD_OPTIONS: { value: PeriodType; label: string }[] = [
@@ -43,7 +44,13 @@ function getMonday(date: Date): Date {
 /** Вычисляет dateFrom/dateTo по типу периода */
 export function computeDateRange(period: PeriodType, customFrom: string, customTo: string): { dateFrom: string; dateTo: string } {
     const today = new Date();
-    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    // Используем локальную дату, не UTC (toISOString сдвигает дату в часовых поясах восточнее UTC)
+    const fmt = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+    };
 
     switch (period) {
         case 'today':

@@ -1,5 +1,5 @@
 
-export type ListType = 'subscribers' | 'history_join' | 'history_leave' | 'posts' | 'likes' | 'comments' | 'reposts' | 'mailing' | 'reviews_winners' | 'reviews_participants' | 'reviews_posts' | 'authors';
+export type ListType = 'subscribers' | 'history_join' | 'history_leave' | 'history_timeline' | 'posts' | 'likes' | 'comments' | 'reposts' | 'mailing' | 'reviews_winners' | 'reviews_participants' | 'reviews_posts' | 'authors';
 export type ListGroup = 'subscribers' | 'activities' | 'automations' | 'other';
 
 export type FilterQuality = 'all' | 'active' | 'banned' | 'deleted';
@@ -19,3 +19,19 @@ export interface RefreshState {
     isRefreshing: boolean;
     label: string | null;
 }
+
+/**
+ * Группа layout-а для дашборда статистики.
+ * Списки с одинаковой структурой дашборда (карточки + графики) 
+ * объединены в одну группу — при переключении между ними 
+ * React НЕ перемонтирует DOM (нет скелетона, только opacity-overlay).
+ */
+export const getStatsLayoutGroup = (listType: ListType): string => {
+    // Подписчики / Вступившие / Вышедшие / Хронология — одинаковая структура:
+    // 4 карточки (Quality, Geo, Demographics, Platforms/Online) + 2 графика (Age, Birthday)
+    if (['subscribers', 'history_join', 'history_leave', 'history_timeline'].includes(listType)) {
+        return 'user_stats_default';
+    }
+    // Остальные списки — уникальный ключ (полный перемонт при переключении)
+    return listType;
+};

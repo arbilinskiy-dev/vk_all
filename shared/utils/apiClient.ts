@@ -4,6 +4,23 @@ import { API_BASE_URL } from '../config';
 // Re-export for use in other modules
 export { API_BASE_URL };
 
+/**
+ * Возвращает заголовки с X-Session-Token для API-запросов.
+ * Используется в файлах, где fetch вызывается напрямую (не через callApi).
+ * @param includeContentType — добавить Content-Type: application/json (false для FormData)
+ */
+export function getAuthHeaders(includeContentType: boolean = true): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (includeContentType) {
+        headers['Content-Type'] = 'application/json';
+    }
+    const sessionToken = sessionStorage.getItem('vk-planner-session-token');
+    if (sessionToken) {
+        headers['X-Session-Token'] = sessionToken;
+    }
+    return headers;
+}
+
 // The FastAPI backend might return validation errors in this format
 interface FastApiErrorDetail {
     loc: (string | number)[];

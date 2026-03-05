@@ -19,6 +19,7 @@ import { EmojiPicker } from '../../../emoji/components/EmojiPicker';
 import { useChatInputLogic } from '../../hooks/chat/useChatInputLogic';
 import { MAX_MESSAGE_LENGTH } from './chatInputConstants';
 import { ChatInputVariablesBar } from './ChatInputVariablesBar';
+import { ChatInputTemplatesBar } from './ChatInputTemplatesBar';
 import { ChatInputAttachments } from './ChatInputAttachments';
 import { ChatInputToolbar } from './ChatInputToolbar';
 
@@ -130,18 +131,50 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                         onInsertVariable={actions.handleInsertVariable}
                     />
 
+                    {/* Аккордеон шаблонов — раскрывается над тулбаром */}
+                    <ChatInputTemplatesBar
+                        isTemplatesOpen={state.isTemplatesOpen}
+                        templates={state.templates}
+                        isLoading={state.isLoadingTemplates}
+                        userName={userName}
+                        currentUserId={currentUserId}
+                        onPreview={state.previewTemplate}
+                        onInsertTemplate={(text) => {
+                            // Вставить в конец текущего текста
+                            const currentText = state.text;
+                            const separator = currentText && !currentText.endsWith('\n') && !currentText.endsWith(' ') ? '\n' : '';
+                            actions.setText(currentText + separator + text);
+                        }}
+                        onReplaceTemplate={(text) => {
+                            actions.setText(text);
+                        }}
+                    />
+
                     {/* Тулбар (📎, 🔗, 😊, Переменные, undo/redo) — кнопка переменных здесь, всегда на месте */}
                     <ChatInputToolbar
                         disabled={disabled}
                         isEmojiPickerOpen={state.isEmojiPickerOpen}
                         isVariablesOpen={state.isVariablesOpen}
+                        isTemplatesOpen={state.isTemplatesOpen}
                         hasProject={!!projectId}
+                        hasTemplates={state.templates.length > 0}
                         canUndo={state.canUndo}
                         canRedo={state.canRedo}
                         onFileSelect={actions.handleFileSelect}
                         onLink={actions.handleLink}
                         onToggleEmoji={() => actions.setIsEmojiPickerOpen(prev => !prev)}
-                        onToggleVariables={() => actions.setIsVariablesOpen(prev => !prev)}
+                        onToggleVariables={() => {
+                            actions.setIsVariablesOpen(prev => {
+                                if (!prev) actions.setIsTemplatesOpen(false);
+                                return !prev;
+                            });
+                        }}
+                        onToggleTemplates={() => {
+                            actions.setIsTemplatesOpen(prev => {
+                                if (!prev) actions.setIsVariablesOpen(false);
+                                return !prev;
+                            });
+                        }}
                         onUndo={actions.undo}
                         onRedo={actions.redo}
                     />
@@ -153,6 +186,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                         onChange={e => { actions.setText(e.target.value); actions.notifyVkTyping(); }}
                         onFocus={actions.notifyVkTyping}
                         onKeyDown={actions.handleKeyDown}
+                        onPaste={actions.handlePaste}
                         rows={state.isEmojiPickerOpen ? 3 : 4}
                         className="w-full p-2.5 text-sm text-gray-800 bg-white resize-y border-0 outline-none focus:ring-0 focus:outline-none custom-scrollbar"
                         placeholder="Написать сообщение..."

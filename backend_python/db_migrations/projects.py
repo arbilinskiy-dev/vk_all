@@ -43,6 +43,9 @@ def migrate(engine: Engine):
     
     # Миграция 48b: Перенос данных из team в teams
     _migrate_team_to_teams(engine)
+    
+    # Миграция 50: DLVRY — ID филиала для привязки заказов к проекту
+    check_and_add_column(engine, 'projects', 'dlvry_affiliate_id', 'VARCHAR')
 
     # Миграция 36 (Project Context): Создание таблиц
     if not inspector.has_table("project_context_fields"):

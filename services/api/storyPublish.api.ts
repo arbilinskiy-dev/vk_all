@@ -4,6 +4,7 @@
  */
 
 import { API_BASE_URL } from '../../shared/config';
+import { getAuthHeaders } from '../../shared/utils/apiClient';
 
 export interface DirectStoryResult {
     status: string;
@@ -44,6 +45,7 @@ export const publishDirectStory = async (
 
     const response = await fetch(url, {
         method: 'POST',
+        headers: getAuthHeaders(false),
         body: formData,
         // НЕ устанавливаем Content-Type — браузер сам выставит multipart/form-data с boundary
     });
@@ -84,6 +86,7 @@ export const publishDirectStoryMulti = async (
 
     const response = await fetch(url, {
         method: 'POST',
+        headers: getAuthHeaders(false),
         body: formData,
     });
 

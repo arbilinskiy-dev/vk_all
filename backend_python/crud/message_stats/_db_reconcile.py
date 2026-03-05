@@ -1,22 +1,25 @@
 """
 DB-обновление статистики через MAX()-подход.
 
-Идемпотентные функции:
-- reconcile_hourly: обновляет message_stats_hourly (MAX + union множеств)
-- reconcile_user: обновляет message_stats_user (MAX для счётчиков + min/max для дат)
+Нормализованная архитектура:
+- Пользователи записываются в message_stats_hourly_users (INSERT ON CONFLICT DO NOTHING)
+- Счётчики сообщений обновляются через MAX()
+- Счётчики пользователей пересчитываются bulk-запросом ПОСЛЕ всех INSERT (в _project_worker)
+- JSON-поля больше не используются
 
-Все функции принимают DB-сессию и работают с ORM-объектами.
-Коммит — ответственность вызывающего (батч-коммит в _project_worker).
+Идемпотентные функции:
+- reconcile_hourly: MAX для счётчиков + INSERT юзеров в нормализованную таблицу
+- reconcile_user: MAX для счётчиков + min/max для дат
 """
 
-import json
 import time
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Set
 
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from models_library.message_stats import MessageStatsHourly, MessageStatsUser
+from models_library.message_stats import MessageStatsHourly, MessageStatsUser, MessageStatsHourlyUsers
 
 logger = logging.getLogger("crud.message_stats.reconcile")
 
@@ -29,12 +32,11 @@ def reconcile_hourly(
 ) -> int:
     """
     Обновляет message_stats_hourly через MAX()-подход.
-    Если реальное значение > текущего — перезаписываем.
-    Возвращает количество корректировок.
+    INSERT юзеров в нормализованную таблицу (ON CONFLICT DO NOTHING).
+    Счётчики юзеров НЕ обновляются здесь — это делается bulk-запросом
+    в _project_worker после обработки всех юзеров проекта.
     
-    hourly_cache: кэш ORM-объектов на уровне проекта.
-    Решает проблему autoflush=False: без кэша db.query() не видит pending db.add(),
-    что приводит к дубликатам и UNIQUE constraint failed при commit.
+    Возвращает количество корректировок.
     """
     if hourly_cache is None:
         hourly_cache = {}
@@ -45,6 +47,8 @@ def reconcile_hourly(
         real_in = data.get("incoming", 0)
         real_out = data.get("outgoing", 0)
         real_users: set = data.get("users", set())
+        real_incoming_users: set = data.get("incoming_users", set())
+        real_outgoing_users: set = data.get("outgoing_users", set())
 
         # Сначала проверяем кэш (pending объекты невидимы для db.query при autoflush=False)
         existing = hourly_cache.get(row_id)
@@ -54,111 +58,87 @@ def reconcile_hourly(
                 hourly_cache[row_id] = existing
 
         if existing:
-            changed = _update_existing_hourly(existing, data, real_in, real_out, real_users)
+            changed = False
+            
+            # MAX для входящих
+            if real_in > (existing.incoming_count or 0):
+                existing.incoming_count = real_in
+                existing.incoming_text_count = max(
+                    existing.incoming_text_count or 0,
+                    real_in - (existing.incoming_payload_count or 0),
+                )
+                changed = True
+
+            # MAX для исходящих
+            if real_out > (existing.outgoing_count or 0):
+                existing.outgoing_count = real_out
+                changed = True
+
+            # INSERT юзеров в нормализованную таблицу
+            if real_users:
+                users_inserted = _insert_hourly_users_batch(
+                    db, project_id, hour_slot,
+                    real_incoming_users, real_outgoing_users,
+                )
+                if users_inserted:
+                    changed = True
+
             if changed:
                 existing.updated_at = time.time()
                 corrections += 1
         else:
-            new_row = _create_new_hourly(project_id, hour_slot, row_id, data, real_in, real_out, real_users)
+            # Создаём новую hourly-запись
+            new_row = _create_new_hourly(
+                project_id, hour_slot, row_id, data,
+                real_in, real_out, real_users,
+            )
             db.add(new_row)
-            hourly_cache[row_id] = new_row  # Кэшируем для следующих юзеров
+            hourly_cache[row_id] = new_row
+
+            # INSERT юзеров в нормализованную таблицу
+            _insert_hourly_users_batch(
+                db, project_id, hour_slot,
+                real_incoming_users, real_outgoing_users,
+            )
             corrections += 1
 
     return corrections
 
 
-def _update_existing_hourly(
-    existing: MessageStatsHourly,
-    data: Dict[str, Any],
-    real_in: int,
-    real_out: int,
-    real_users: set,
+def _insert_hourly_users_batch(
+    db: Session,
+    project_id: str,
+    hour_slot: str,
+    incoming_users: Set[int],
+    outgoing_users: Set[int],
 ) -> bool:
     """
-    Обновляет существующую hourly-запись через MAX()-подход.
-    Возвращает True если были изменения.
+    Batch INSERT юзеров в нормализованную таблицу.
+    Входящие юзеры из VK API reconcile не различают text/payload → пишем как type=1 (text).
+    
+    Возвращает True если были новые вставки.
     """
-    changed = False
-
-    # MAX для входящих
-    if real_in > (existing.incoming_count or 0):
-        existing.incoming_count = real_in
-        # Дозаписываем text_count как разницу (из истории нет info о payload)
-        existing.incoming_text_count = max(
-            existing.incoming_text_count or 0,
-            real_in - (existing.incoming_payload_count or 0),
-        )
-        changed = True
-
-    # MAX для исходящих
-    if real_out > (existing.outgoing_count or 0):
-        existing.outgoing_count = real_out
-        changed = True
-
-    # Обновляем уникальных пользователей (union множеств)
-    if real_users:
-        changed |= _merge_users_json(existing, real_users)
-        changed |= _merge_incoming_users(existing, data)
-        changed |= _merge_outgoing_users(existing, data)
-
-    return changed
-
-
-def _merge_users_json(existing: MessageStatsHourly, real_users: set) -> bool:
-    """Мержит unique_users_json (union множеств). Возвращает True если были изменения."""
-    try:
-        existing_set = set(json.loads(existing.unique_users_json or "[]"))
-    except (json.JSONDecodeError, TypeError):
-        existing_set = set()
-    merged = existing_set | real_users
-    if len(merged) > len(existing_set):
-        existing.unique_users_json = json.dumps(list(merged))
-        existing.unique_users_count = len(merged)
-        existing.unique_dialogs_count = len(merged)
-        return True
-    return False
-
-
-def _merge_incoming_users(existing: MessageStatsHourly, data: Dict[str, Any]) -> bool:
-    """Дозаписывает новых ВХОДЯЩИХ юзеров из VK API в text_users."""
-    real_incoming_users: set = data.get("incoming_users", set())
-    if not real_incoming_users:
+    values = []
+    # Входящие юзеры → text (type=1). VK API не различает text/payload в истории
+    for uid in incoming_users:
+        values.append({
+            "project_id": project_id, "hour_slot": hour_slot,
+            "vk_user_id": uid, "user_type": 1,
+        })
+    # Исходящие юзеры → outgoing (type=3)
+    for uid in outgoing_users:
+        values.append({
+            "project_id": project_id, "hour_slot": hour_slot,
+            "vk_user_id": uid, "user_type": 3,
+        })
+    
+    if not values:
         return False
-
-    try:
-        existing_text = set(json.loads(existing.unique_text_users_json or "[]"))
-    except (json.JSONDecodeError, TypeError):
-        existing_text = set()
-    try:
-        existing_payload = set(json.loads(existing.unique_payload_users_json or "[]"))
-    except (json.JSONDecodeError, TypeError):
-        existing_payload = set()
-
-    # Входящие юзеры из VK API, которые ещё не в text и не в payload → считаем текстовыми
-    new_text_users = real_incoming_users - existing_text - existing_payload
-    if new_text_users:
-        merged_text = existing_text | new_text_users
-        existing.unique_text_users_json = json.dumps(list(merged_text))
-        return True
-    return False
-
-
-def _merge_outgoing_users(existing: MessageStatsHourly, data: Dict[str, Any]) -> bool:
-    """Дозаписывает outgoing юзеров."""
-    real_outgoing_users: set = data.get("outgoing_users", set())
-    if not real_outgoing_users:
-        return False
-
-    try:
-        existing_out = set(json.loads(existing.outgoing_users_json or "[]"))
-    except (json.JSONDecodeError, TypeError):
-        existing_out = set()
-    new_out = real_outgoing_users - existing_out
-    if new_out:
-        merged_out = existing_out | real_outgoing_users
-        existing.outgoing_users_json = json.dumps(list(merged_out))
-        return True
-    return False
+    
+    result = db.execute(
+        pg_insert(MessageStatsHourlyUsers.__table__).values(values).on_conflict_do_nothing()
+    )
+    return result.rowcount > 0
 
 
 def _create_new_hourly(
@@ -170,10 +150,11 @@ def _create_new_hourly(
     real_out: int,
     real_users: set,
 ) -> MessageStatsHourly:
-    """Создаёт новую hourly-запись (данных в статистике не было вообще)."""
+    """
+    Создаёт новую hourly-запись.
+    Счётчики юзеров = 0 — будут пересчитаны bulk-запросом в _project_worker.
+    """
     now = time.time()
-    users_list = list(real_users) if real_users else []
-    outgoing_users = data.get("outgoing_users", set())
 
     return MessageStatsHourly(
         id=row_id,
@@ -185,12 +166,17 @@ def _create_new_hourly(
         incoming_text_count=real_in,  # Из истории нет info о payload → считаем живыми
         outgoing_system_count=0,
         outgoing_bot_count=real_out,  # Из истории нет info о sender → считаем ботом
-        unique_users_count=len(users_list),
-        unique_users_json=json.dumps(users_list),
-        unique_text_users_json=json.dumps(list(real_users - outgoing_users) if real_in > 0 else []),
+        unique_users_count=len(real_users),
+        unique_text_users_count=0,  # Будет пересчитан bulk
+        unique_payload_users_count=0,
+        outgoing_users_count=0,
+        incoming_users_count=0,
+        unique_dialogs_count=len(real_users),
+        # JSON поля (deprecated — пустые)
+        unique_users_json="[]",
+        unique_text_users_json="[]",
         unique_payload_users_json="[]",
-        outgoing_users_json=json.dumps(list(outgoing_users)) if real_out > 0 else "[]",
-        unique_dialogs_count=len(users_list),
+        outgoing_users_json="[]",
         created_at=now,
         updated_at=now,
     )
@@ -205,9 +191,6 @@ def reconcile_user(
     """
     Обновляет message_stats_user через MAX()-подход.
     Возвращает 1 если была корректировка, 0 если нет.
-    
-    Защита от пустых данных: если user_totals пустой или без ключей,
-    безопасно извлекает значения с дефолтами.
     """
     row_id = f"{project_id}_{vk_user_id}"
     real_in = user_totals.get("incoming", 0)
@@ -233,7 +216,6 @@ def reconcile_user(
             changed = True
         return 1 if changed else 0
     else:
-        # Создаём — пользователя в статистике вообще не было
         db.add(MessageStatsUser(
             id=row_id,
             project_id=project_id,

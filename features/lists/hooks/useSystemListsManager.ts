@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { Project } from '../../../shared/types';
 import * as api from '../../../services/api';
 import { RefreshProgress } from '../../../services/api/lists.api';
-import { ListType, ListGroup, FilterCanWrite } from '../types';
+import { ListType, ListGroup, FilterCanWrite, getStatsLayoutGroup } from '../types';
 
 import { useListState } from './useListState';
 import { useListFetching } from './useListFetching';
@@ -18,7 +18,7 @@ interface UseSystemListsManagerProps {
 
 // Вспомогательная функция для определения группы по типу списка
 const getGroupForList = (listType: ListType): ListGroup | null => {
-    if (['subscribers', 'mailing', 'history_join', 'history_leave'].includes(listType)) return 'subscribers';
+    if (['subscribers', 'mailing', 'history_join', 'history_leave', 'history_timeline'].includes(listType)) return 'subscribers';
     if (['likes', 'comments', 'reposts'].includes(listType)) return 'activities';
     if (['reviews_winners', 'reviews_participants', 'reviews_posts'].includes(listType)) return 'automations';
     if (['posts', 'authors'].includes(listType)) return 'other';
@@ -56,46 +56,26 @@ export const useSystemListsManager = ({ project, activeListGroup, onActiveListGr
         pollers.checkActiveTasks();
     }, [project.id]);
 
-    // Сброс состояния при смене проекта (но НЕ сбрасываем activeList)
+    // Сброс состояния при смене проекта (activeList — сквозной, не зависит от проекта)
+    // UX: НЕ обнуляем данные (items/posts/interactions/stats) — оставляем старые
+    // под overlay, чтобы не мигать скелетонами. Новые данные заменят
+    // атомарно при получении ответа от API (fetchItems с isReset=true).
     useEffect(() => {
-        fetchers.fetchMeta();
-        // setters.setActiveList(null); // УБРАНО: Сохраняем активный список при переключении
-        setters.setItems([]);
-        setters.setPosts([]);
-        setters.setInteractions([]);
-        setters.setStats(null);
-        setters.setIsListLoaded(false); // Это заставит сработать эффект загрузки данных
-        setters.setSearchQuery('');
-        setters.setPage(1);
-        setters.setFilterQuality('all');
-        setters.setFilterSex('all');
-        setters.setFilterOnline('any');
-        setters.setFilterCanWrite('all');
-        setters.setFilterBdateMonth('any'); // Reset new
-        setters.setFilterPlatform('any'); // Reset new
-        setters.setFilterAge('any'); // Reset new
-        setters.setStatsPeriod('all'); // Reset stats period
-        setters.setStatsGroupBy('month'); // Reset stats grouping
-        setters.setStatsDateFrom('');
-        setters.setStatsDateTo('');
-        setters.setTotalItemsCount(0);
-        setters.setRefreshStates({
-            subscribers: { isRefreshing: false, label: null },
-            history_join: { isRefreshing: false, label: null },
-            history_leave: { isRefreshing: false, label: null },
-            mailing: { isRefreshing: false, label: null },
-            posts: { isRefreshing: false, label: null },
-            likes: { isRefreshing: false, label: null },
-            comments: { isRefreshing: false, label: null },
-            reposts: { isRefreshing: false, label: null },
-            reviews_winners: { isRefreshing: false, label: null },
-            reviews_participants: { isRefreshing: false, label: null },
-            reviews_posts: { isRefreshing: false, label: null },
-            authors: { isRefreshing: false, label: null },
-        });
+        // Сброс сервисных состояний
+        setters.resetFilters();
+        setters.resetStatsParams();
+        setters.setRefreshStates(setters.DEFAULT_REFRESH_STATES);
         setters.setIsRefreshingSubscriberDetails(false);
         setters.setIsSyncModalOpen(false);
         setters.setInteractionSyncType(null);
+        setters.setSearchQuery('');
+        setters.setPage(1);
+        setters.setTotalItemsCount(0);
+        setters.setHasMore(false);
+
+        // isListLoaded=false → покажет overlay поверх старых данных (не скелетон!)
+        // Loading effect [activeList, isListLoaded] подхватит и загрузит данные
+        setters.setIsListLoaded(false);
     }, [project.id]);
 
     // 1. Синхронизация Группы с Активным списком (Список -> Группа)
@@ -148,50 +128,63 @@ export const useSystemListsManager = ({ project, activeListGroup, onActiveListGr
         }
     }, [state.statsPeriod, state.statsGroupBy, state.statsDateFrom, state.statsDateTo, state.filterCanWrite]);
 
-    // Загрузка данных при переключении активной вкладки (таба)
+    // Загрузка данных при переключении активной вкладки (таба) или при смене проекта
     useEffect(() => {
-        if (state.activeList && !state.isListLoaded) {
-            fetchers.fetchItems(1, '', true);
-            fetchers.fetchStats(state.activeList);
+        if (!state.isListLoaded) {
+            if (state.activeList) {
+                // Есть активный список — загружаем таблицу + статистику
+                // (fetchItems также возвращает meta для бейджей навигации — M4)
+                fetchers.fetchItems(1, '', true);
+                fetchers.fetchStats(state.activeList);
+            } else {
+                // Нет выбранного списка (первое посещение проекта) —
+                // загружаем meta для бейджей карточек навигации
+                fetchers.fetchMeta();
+                setters.setIsListLoaded(true);
+            }
         }
     }, [state.activeList, state.isListLoaded]);
 
     // Debounce поиска
+    // M1 fix: Убран isListLoaded из deps — его изменение false→true после загрузки таба
+    // вызывало повторный fetchItems (дубль). Guard внутри эффекта достаточен.
     useEffect(() => {
         if (!state.isListLoaded || !state.activeList) return;
         const timerId = setTimeout(() => {
             fetchers.fetchItems(1, state.searchQuery, true);
         }, 500);
         return () => clearTimeout(timerId);
-    }, [state.searchQuery, state.activeList, state.isListLoaded]);
+    }, [state.searchQuery, state.activeList]);
 
 
     // --- Обработчики действий (Actions) ---
 
     const handleTabChange = (type: ListType) => {
         if (state.activeList === type) return;
+        
+        // Определяем, одинаковая ли структура дашборда у прошлого и нового списка.
+        // Если layout-группа совпадает — НЕ сбрасываем stats (нет скелетона),
+        // данные обновятся внутри карточек с opacity-overlay.
+        const prevGroup = state.activeList ? getStatsLayoutGroup(state.activeList) : null;
+        const nextGroup = getStatsLayoutGroup(type);
+        const sameLayout = prevGroup === nextGroup;
+        
         setters.setActiveList(type);
         setters.setIsListLoaded(false);
-        setters.setStats(null);
-        setters.setItems([]);
-        setters.setPosts([]);
-        setters.setInteractions([]);
+        
+        if (!sameLayout) {
+            // Другая структура дашборда — полный сброс, покажем скелетон
+            setters.setStats(null);
+        }
+        // Если sameLayout — stats сохраняется, UserStatsView покажет opacity-60 overlay
+        
+        // НЕ очищаем items/posts/interactions — старые данные остаются под overlay,
+        // новые загрузятся через fetchItems(isReset=true) и заменят атомарно
         setters.setTotalItemsCount(0);
         setters.setSearchQuery('');
         setters.setPage(1);
-        setters.setFilterQuality('all');
-        setters.setFilterSex('all');
-        setters.setFilterOnline('any');
-        setters.setFilterCanWrite('all');
-        setters.setFilterBdateMonth('any');
-        setters.setFilterPlatform('any');
-        setters.setFilterAge('any');
-        
-        // Сброс настроек статистики к дефолтным для удобства
-        setters.setStatsPeriod('all');
-        setters.setStatsGroupBy('month');
-        setters.setStatsDateFrom('');
-        setters.setStatsDateTo('');
+        setters.resetFilters();
+        setters.resetStatsParams();
     };
 
     const handleLoadMore = () => {
@@ -201,14 +194,8 @@ export const useSystemListsManager = ({ project, activeListGroup, onActiveListGr
     };
     
     const handleResetFilters = () => {
+        setters.resetFilters();
         setters.setSearchQuery('');
-        setters.setFilterQuality('all');
-        setters.setFilterSex('all');
-        setters.setFilterOnline('any');
-        setters.setFilterCanWrite('all');
-        setters.setFilterBdateMonth('any');
-        setters.setFilterPlatform('any');
-        setters.setFilterAge('any');
     };
 
     // Новый метод для специфичного обновления постов
@@ -236,10 +223,15 @@ export const useSystemListsManager = ({ project, activeListGroup, onActiveListGr
             await api.refreshPostsStream(project.id, onProgress, limit);
 
             if (state.activeProjectIdRef.current === project.id) {
-                await fetchers.fetchMeta();
+                // M4: fetchItems уже возвращает meta — отдельный fetchMeta не нужен
                 if (state.activeList === listType) {
-                    await fetchers.fetchItems(1, state.searchQuery, true);
-                    await fetchers.fetchStats(listType);
+                    await Promise.all([
+                        fetchers.fetchItems(1, state.searchQuery, true),
+                        fetchers.fetchStats(listType),
+                    ]);
+                } else {
+                    // Активный список другой — обновляем только счётчики карточек
+                    await fetchers.fetchMeta();
                 }
             }
         } catch (e) {
@@ -318,11 +310,14 @@ export const useSystemListsManager = ({ project, activeListGroup, onActiveListGr
             }
 
             if (state.activeProjectIdRef.current === project.id) {
-                await fetchers.fetchMeta();
-                // Если мы обновляли детали, нужно обновить список
+                // M4: fetchItems уже возвращает meta
                 if (state.activeList === targetKey) {
-                    await fetchers.fetchItems(1, state.searchQuery, true);
-                    await fetchers.fetchStats(targetKey as any);
+                    await Promise.all([
+                        fetchers.fetchItems(1, state.searchQuery, true),
+                        fetchers.fetchStats(targetKey as any),
+                    ]);
+                } else {
+                    await fetchers.fetchMeta();
                 }
             }
         } catch (e) {
@@ -370,10 +365,14 @@ export const useSystemListsManager = ({ project, activeListGroup, onActiveListGr
             await api.refreshInteractionsStream(project.id, dateFrom, dateTo, typeToSync, onProgress);
             
             if (state.activeProjectIdRef.current === project.id) {
-                await fetchers.fetchMeta();
+                // M4: fetchItems уже возвращает meta
                 if (state.activeList && ['likes', 'comments', 'reposts'].includes(state.activeList)) {
-                    await fetchers.fetchItems(1, state.searchQuery, true);
-                    await fetchers.fetchStats(state.activeList);
+                    await Promise.all([
+                        fetchers.fetchItems(1, state.searchQuery, true),
+                        fetchers.fetchStats(state.activeList),
+                    ]);
+                } else {
+                    await fetchers.fetchMeta();
                 }
             }
 
@@ -414,8 +413,11 @@ export const useSystemListsManager = ({ project, activeListGroup, onActiveListGr
             await api.refreshInteractionUsersStream(project.id, listType as 'likes' | 'comments' | 'reposts', onProgress);
             
             if (state.activeProjectIdRef.current === project.id) {
-                await fetchers.fetchItems(1, state.searchQuery, true);
-                await fetchers.fetchStats(listType);
+                // M3: Параллельная загрузка
+                await Promise.all([
+                    fetchers.fetchItems(1, state.searchQuery, true),
+                    fetchers.fetchStats(listType),
+                ]);
                 window.showAppToast?.("Данные пользователей обновлены.", 'success');
             }
             
@@ -441,14 +443,46 @@ export const useSystemListsManager = ({ project, activeListGroup, onActiveListGr
             await api.refreshSubscriberDetailsStream(project.id, onProgress);
             
             if (state.activeProjectIdRef.current === project.id) {
-                await fetchers.fetchItems(1, state.searchQuery, true);
-                await fetchers.fetchStats('subscribers');
+                // M3: Параллельная загрузка
+                await Promise.all([
+                    fetchers.fetchItems(1, state.searchQuery, true),
+                    fetchers.fetchStats('subscribers'),
+                ]);
                 window.showAppToast?.("Данные подписчиков (статус, онлайн, город) обновлены.", 'success');
             }
         } catch (e) {
             window.showAppToast?.("Ошибка обновления деталей: " + (e instanceof Error ? e.message : String(e)), 'error');
         } finally {
             setters.setIsRefreshingSubscriberDetails(false);
+        }
+    };
+
+    // Очистка базы списка — мягкий сброс без перезагрузки страницы
+    const handleClearList = async (listType: string): Promise<void> => {
+        await api.clearListData(project.id, listType);
+        
+        if (state.activeProjectIdRef.current === project.id) {
+            // Мягкий сброс: очищаем локальные данные и перезагружаем с сервера
+            setters.setItems([]);
+            setters.setPosts([]);
+            setters.setInteractions([]);
+            setters.setStats(null);
+            setters.setTotalItemsCount(0);
+            setters.setPage(1);
+            setters.setSearchQuery('');
+            setters.setHasMore(false);
+            
+            // M4: fetchItems уже возвращает meta
+            if (state.activeList === listType) {
+                await Promise.all([
+                    fetchers.fetchItems(1, '', true),
+                    fetchers.fetchStats(state.activeList),
+                ]);
+            } else {
+                await fetchers.fetchMeta();
+            }
+            
+            window.showAppToast?.('База списка успешно очищена', 'success');
         }
     };
 
@@ -476,7 +510,8 @@ export const useSystemListsManager = ({ project, activeListGroup, onActiveListGr
             handleRefreshSubscriberDetails,
             handleResetFilters,
             handleTabChange,
-            handleLoadMore
+            handleLoadMore,
+            handleClearList
         }
     };
 };

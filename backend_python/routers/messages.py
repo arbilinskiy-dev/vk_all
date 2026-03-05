@@ -320,27 +320,59 @@ async def messages_sse_stream(
 def mark_dialog_as_read(
     body: MarkReadRequest,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
-    """Помечает диалог как прочитанный."""
-    return read_service.mark_dialog_read(db, body.project_id, body.user_id, body.manager_id)
+    """Помечает диалог как прочитанный (локально + в VK API)."""
+    # Получаем токены проекта для VK API
+    try:
+        _project, community_tokens, group_id_int = get_project_and_tokens(db, body.project_id)
+    except Exception:
+        community_tokens, group_id_int = [], 0
+    result = read_service.mark_dialog_read(
+        db, body.project_id, body.user_id, body.manager_id,
+        community_tokens=community_tokens, group_id_int=group_id_int,
+    )
+    was_unread = result.get("was_unread", False)
+    # Трекаем вход в диалог (всегда)
+    track(db, current_user, "message_dialog_read", "messages",
+          entity_type="dialog", entity_id=str(body.user_id),
+          project_id=body.project_id,
+          metadata={"vk_user_id": body.user_id, "was_unread": was_unread})
+    # Трекаем прочтение непрочитанного диалога (только если был непрочитанный)
+    if was_unread:
+        track(db, current_user, "message_unread_dialog_read", "messages",
+              entity_type="dialog", entity_id=str(body.user_id),
+              project_id=body.project_id,
+              metadata={"vk_user_id": body.user_id})
+    return result
 
 
 @router.put("/mark-all-read")
 def mark_all_dialogs_as_read(
     body: MarkAllReadRequest,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Помечает ВСЕ диалоги проекта как прочитанные."""
-    return read_service.mark_all_dialogs_read(db, body.project_id, body.manager_id)
+    result = read_service.mark_all_dialogs_read(db, body.project_id, body.manager_id)
+    track(db, current_user, "message_mark_all_read", "messages",
+          entity_type="project", project_id=body.project_id)
+    return result
 
 
 @router.put("/mark-unread")
 def mark_dialog_as_unread(
     body: MarkUnreadRequest,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Помечает диалог как непрочитанный."""
-    return read_service.mark_dialog_unread(db, body.project_id, body.user_id, body.manager_id)
+    result = read_service.mark_dialog_unread(db, body.project_id, body.user_id, body.manager_id)
+    track(db, current_user, "message_mark_unread", "messages",
+          entity_type="dialog", entity_id=str(body.user_id),
+          project_id=body.project_id,
+          metadata={"vk_user_id": body.user_id})
+    return result
 
 
 # =============================================================================
@@ -471,6 +503,7 @@ def conversations_init(
 def toggle_important(
     body: ToggleImportantRequest,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """
     Переключить пометку «Важное» для диалога.
@@ -499,6 +532,10 @@ def toggle_important(
         f"TOGGLE_IMPORTANT: project={body.project_id}, user={body.vk_user_id}, "
         f"is_important={body.is_important}"
     )
+    track(db, current_user, "message_toggle_important", "messages",
+          entity_type="dialog", entity_id=str(body.vk_user_id),
+          project_id=body.project_id,
+          metadata={"vk_user_id": body.vk_user_id, "is_important": body.is_important})
     return {"success": True, "is_important": body.is_important}
 
 

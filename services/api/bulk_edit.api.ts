@@ -3,7 +3,7 @@
  */
 
 import { PhotoAttachment, Attachment } from '../../shared/types';
-import { callApi } from '../../shared/utils/apiClient';
+import { callApi, getAuthHeaders } from '../../shared/utils/apiClient';
 import { API_BASE_URL } from '../../shared/config';
 
 // ===============================================
@@ -183,7 +183,9 @@ export const getBulkEditStatus = async (
     taskId: string
 ): Promise<BulkEditTaskStatus> => {
     console.log(`[BULK_EDIT_API] → GET /bulkEdit/status/${taskId}`);
-    const response = await fetch(`${API_BASE_URL}/bulkEdit/status/${taskId}`);
+    const response = await fetch(`${API_BASE_URL}/bulkEdit/status/${taskId}`, {
+        headers: getAuthHeaders(),
+    });
     if (!response.ok) {
         const errorText = await response.text();
         console.error(`[BULK_EDIT_API] ← /bulkEdit/status/${taskId} FAIL: ${response.status} ${response.statusText}`, errorText);

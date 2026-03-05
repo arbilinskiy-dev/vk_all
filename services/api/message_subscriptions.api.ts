@@ -4,6 +4,7 @@
  */
 
 import { API_BASE_URL } from '../../shared/config';
+import { getAuthHeaders } from '../../shared/utils/apiClient';
 
 // =============================================================================
 // Типы ответов API
@@ -96,7 +97,7 @@ export async function fetchSubscriptionsSummary(params?: {
     if (params?.dateTo) sp.set('date_to', params.dateTo);
     const qs = sp.toString();
     const url = `${API_BASE_URL}/messages/subscriptions/summary${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки сводки подписок: ${res.status}`);
     return res.json();
 }
@@ -113,7 +114,7 @@ export async function fetchSubscriptionsChart(params?: {
     if (params?.dateTo) sp.set('date_to', params.dateTo);
     const qs = sp.toString();
     const url = `${API_BASE_URL}/messages/subscriptions/chart${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки графика подписок: ${res.status}`);
     return res.json();
 }
@@ -128,7 +129,7 @@ export async function fetchSubscriptionsProjects(params?: {
     if (params?.dateTo) sp.set('date_to', params.dateTo);
     const qs = sp.toString();
     const url = `${API_BASE_URL}/messages/subscriptions/projects${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки проектов подписок: ${res.status}`);
     return res.json();
 }
@@ -152,7 +153,7 @@ export async function fetchSubscriptionsProjectUsers(
     if (params?.offset) sp.set('offset', params.offset.toString());
     const qs = sp.toString();
     const url = `${API_BASE_URL}/messages/subscriptions/project/${projectId}/users${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки пользователей подписок: ${res.status}`);
     return res.json();
 }
@@ -175,7 +176,7 @@ export async function fetchSubscriptionsEvents(params?: {
     if (params?.offset) sp.set('offset', params.offset.toString());
     const qs = sp.toString();
     const url = `${API_BASE_URL}/messages/subscriptions/events${qs ? `?${qs}` : ''}`;
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка загрузки событий подписок: ${res.status}`);
     return res.json();
 }

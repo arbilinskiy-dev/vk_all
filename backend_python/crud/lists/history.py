@@ -1,6 +1,7 @@
 
 from sqlalchemy.orm import Session
 from typing import List, Dict, Set
+from datetime import datetime, timedelta, timezone
 import models
 from models_library.vk_profiles import VkProfile
 from models_library.members import MemberEvent
@@ -33,16 +34,43 @@ def _bulk_add_events(db: Session, items: List[Dict], event_type: str):
     Общая логика добавления событий (join/leave) в member_events.
     
     1. Upsert VK-профилей в vk_profiles (батчами через _ensure_vk_profiles)
-    2. Вставка событий в member_events
+    2. Дедупликация: фильтруем пользователей, у которых уже есть такое событие за последний час
+    3. Вставка событий в member_events
     """
     # 1. Обеспечиваем VK-профили
     vk_to_profile_id = _ensure_vk_profiles(db, items)
     
-    # 2. Формируем записи MemberEvent
+    # 2. Дедупликация: находим profile_ids, у которых уже есть такое событие за последний час
+    all_profile_ids = set(vk_to_profile_id.values())
+    project_ids = set(item['project_id'] for item in items)
+    already_recorded: Set[tuple] = set()
+    
+    if all_profile_ids and project_ids:
+        threshold = datetime.now(timezone.utc) - timedelta(hours=1)
+        CHUNK = 500
+        profile_list = list(all_profile_ids)
+        for i in range(0, len(profile_list), CHUNK):
+            chunk_pids = profile_list[i:i + CHUNK]
+            rows = db.query(
+                MemberEvent.project_id, MemberEvent.vk_profile_id
+            ).filter(
+                MemberEvent.event_type == event_type,
+                MemberEvent.vk_profile_id.in_(chunk_pids),
+                MemberEvent.project_id.in_(project_ids),
+                MemberEvent.event_date >= threshold,
+            ).all()
+            for row in rows:
+                already_recorded.add((row.project_id, row.vk_profile_id))
+    
+    # 3. Формируем записи MemberEvent (только новые)
     events = []
+    skipped = 0
     for item in items:
         profile_id = vk_to_profile_id.get(item['vk_user_id'])
         if not profile_id:
+            continue
+        if (item['project_id'], profile_id) in already_recorded:
+            skipped += 1
             continue
         events.append({
             'project_id': item['project_id'],
@@ -51,6 +79,12 @@ def _bulk_add_events(db: Session, items: List[Dict], event_type: str):
             'event_date': item.get('event_date'),
             'source': item.get('source', 'sync'),
         })
+    
+    if skipped > 0:
+        import logging
+        logging.getLogger('crud.lists.history').info(
+            f"_bulk_add_events({event_type}): пропущено {skipped} дубликатов (уже записаны callback-ом)"
+        )
     
     if events:
         def insert_chunk(chunk: List[Dict]):

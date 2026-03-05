@@ -65,18 +65,22 @@ export const useListPolling = (
             await api.pollTask(taskId, onProgress);
             
              if (state.activeProjectIdRef.current === project.id) {
-                await fetchers.fetchMeta();
                 if (state.activeList) {
                     if ((listType === 'subscriber_details' && state.activeList === 'subscribers') ||
                         (listType === 'interactions' && ['likes', 'comments', 'reposts'].includes(state.activeList)) ||
                         (listType === 'author_details' && state.activeList === 'authors') ||
                         (listType === 'mailing_analysis' && state.activeList === 'mailing') ||
                         (listType === state.activeList)) {
-                            
-                        await fetchers.fetchItems(1, state.searchQuery, true);
-                        // Теперь всегда обновляем статистику, так как для постов она тоже есть
-                        await fetchers.fetchStats(state.activeList);
+                        // M3+M4: Параллельная загрузка, fetchItems уже возвращает meta
+                        await Promise.all([
+                            fetchers.fetchItems(1, state.searchQuery, true),
+                            fetchers.fetchStats(state.activeList),
+                        ]);
+                    } else {
+                        await fetchers.fetchMeta();
                     }
+                } else {
+                    await fetchers.fetchMeta();
                 }
             }
         } catch (e) {
@@ -111,7 +115,8 @@ export const useListPolling = (
                 }
             }
         }
-    }, [project.id, state.activeList, state.searchQuery, fetchers]);
+    // m5: Используем отдельные стабильные ссылки вместо нестабильного объекта fetchers
+    }, [project.id, state.activeList, state.searchQuery, fetchers.fetchMeta, fetchers.fetchItems, fetchers.fetchStats]);
 
     const checkActiveTasks = useCallback(async () => {
         try {

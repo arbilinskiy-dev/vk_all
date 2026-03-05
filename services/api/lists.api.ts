@@ -1,7 +1,7 @@
 
 
 import { ProjectListMeta, SystemListSubscriber, SystemListPost, SystemListInteraction } from '../../shared/types';
-import { callApi } from '../../shared/utils/apiClient';
+import { callApi, getAuthHeaders } from '../../shared/utils/apiClient';
 import { API_BASE_URL } from '../../shared/config';
 
 export interface PostChartData {
@@ -286,7 +286,8 @@ export const deleteAllTasks = async (): Promise<{ success: boolean }> => {
  */
 export const getTaskStatus = async (taskId: string): Promise<RefreshProgress> => {
     const response = await fetch(`${API_BASE_URL}/lists/system/getTaskStatus/${taskId}`, {
-        cache: 'no-store'
+        cache: 'no-store',
+        headers: getAuthHeaders(),
     });
     return response.json();
 };
@@ -308,7 +309,8 @@ export const pollTask = async (
         const intervalId = setInterval(async () => {
             try {
                 const response = await fetch(`${API_BASE_URL}/lists/system/getTaskStatus/${taskId}`, {
-                    cache: 'no-store'
+                    cache: 'no-store',
+                    headers: getAuthHeaders(),
                 });
                 const data = await response.json();
                 

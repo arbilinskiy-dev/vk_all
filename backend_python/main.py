@@ -84,7 +84,7 @@ import services.scheduler_service as scheduler_service
 # Старый импорт трекера убираем из использования в startup, но оставляем импорт если он нужен где-то еще
 import services.post_tracker_service as post_tracker_service
 
-from routers import projects, posts, ai, media, notes, management, tags, system_posts, auth, auth_logs, users, ai_presets, global_variables, market, market_ai, lists, system_accounts, project_context, ai_tokens, automations, automations_ai, automations_general, stories_automation, vk_test_auth, vk_callback, contest_v2, bulk_edit, sandbox, batch, messages, messages_stats, message_subscriptions, message_templates, active_sessions, promo_lists, dialog_labels, user_activity, roles
+from routers import projects, posts, ai, media, notes, management, tags, system_posts, auth, auth_logs, users, ai_presets, global_variables, market, market_ai, lists, system_accounts, project_context, ai_tokens, automations, automations_ai, automations_general, stories_automation, vk_test_auth, vk_callback, contest_v2, bulk_edit, sandbox, batch, messages, messages_stats, message_subscriptions, message_templates, active_sessions, promo_lists, dialog_labels, user_activity, roles, message_actions, dlvry
 
 # Версия бэкенда - обновляй при каждом деплое!
 BACKEND_VERSION = "v1.0.51_bulk_ai_fix"
@@ -518,5 +518,7 @@ app.include_router(message_subscriptions.router, prefix="/api", tags=["Message S
 app.include_router(message_templates.router, prefix="/api/message-templates", tags=["Message Templates"])
 app.include_router(promo_lists.router, prefix="/api/promo-lists", tags=["Promo Lists"])
 app.include_router(dialog_labels.router, prefix="/api", tags=["Dialog Labels"])
+app.include_router(message_actions.router, prefix="/api", tags=["AM Analysis"])
+app.include_router(dlvry.router, prefix="/api/dlvry", tags=["DLVRY Orders"])
 app.include_router(vk_test_auth.router)
 app.include_router(sandbox.router)

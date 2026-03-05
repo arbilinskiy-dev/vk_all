@@ -33,7 +33,8 @@ export const useStoriesUpdater = (
 
     /** Обновление статистики историй */
     const handleUpdateStats = useCallback(async (mode: 'single' | 'last_n' | 'period', params: any = {}) => {
-        if (!projectIdRef.current) return;
+        const targetPid = projectIdRef.current;
+        if (!targetPid) return;
 
         setUpdatingStatsId(getLoadingId('', mode, params));
 
@@ -48,7 +49,7 @@ export const useStoriesUpdater = (
                     stats_updated_at: string;
                 }>;
             }>('updateStoriesStats', {
-                projectId: projectIdRef.current,
+                projectId: targetPid,
                 mode,
                 ...params
             });
@@ -63,22 +64,29 @@ export const useStoriesUpdater = (
 
                 // Локально обновляем только изменённые истории вместо перезагрузки всего списка
                 if (res.updated_stories && res.updated_stories.length > 0 && setStoriesRef.current) {
-                    setStoriesRef.current(prev => prev.map(story => {
-                        const updated = res.updated_stories?.find(
-                            u => u.log_id === story.log_id || u.vk_story_id === story.vk_story_id
-                        );
-                        if (updated) {
-                            return {
-                                ...story,
-                                detailed_stats: updated.detailed_stats,
-                                stats_updated_at: updated.stats_updated_at
-                            };
-                        }
-                        return story;
-                    }));
+                    setStoriesRef.current(prev => {
+                        // Если проект сменился — не патчим данные нового проекта ответами старого
+                        if (projectIdRef.current !== targetPid) return prev;
+                        let changed = false;
+                        const result = prev.map(story => {
+                            const updated = res.updated_stories?.find(
+                                u => u.log_id === story.log_id || u.vk_story_id === story.vk_story_id
+                            );
+                            if (updated) {
+                                changed = true;
+                                return {
+                                    ...story,
+                                    detailed_stats: updated.detailed_stats,
+                                    stats_updated_at: updated.stats_updated_at
+                                };
+                            }
+                            return story;
+                        });
+                        return changed ? result : prev; // сохраняем ссылку если ничего не изменилось
+                    });
                 }
                 // Перезагружаем дашборд с актуальными данными
-                onSuccessRef.current?.();
+                if (projectIdRef.current === targetPid) onSuccessRef.current?.();
             }
         } catch (error) {
             console.error(error);
@@ -90,7 +98,8 @@ export const useStoriesUpdater = (
 
     /** Обновление зрителей */
     const handleUpdateViewers = useCallback(async (mode: 'single' | 'last_n' | 'period', params: any = {}) => {
-        if (!projectIdRef.current) return;
+        const targetPid = projectIdRef.current;
+        if (!targetPid) return;
 
         setUpdatingStatsId(getLoadingId('viewers_', mode, params));
 
@@ -105,7 +114,7 @@ export const useStoriesUpdater = (
                     viewers_updated_at: string;
                 }>;
             }>('updateStoriesViewers', {
-                projectId: projectIdRef.current,
+                projectId: targetPid,
                 mode,
                 ...params
             });
@@ -119,22 +128,28 @@ export const useStoriesUpdater = (
 
                 // Локально обновляем только изменённые истории
                 if (res.updated_stories && res.updated_stories.length > 0 && setStoriesRef.current) {
-                    setStoriesRef.current(prev => prev.map(story => {
-                        const updated = res.updated_stories?.find(
-                            u => u.log_id === story.log_id || u.vk_story_id === story.vk_story_id
-                        );
-                        if (updated) {
-                            return {
-                                ...story,
-                                viewers: updated.viewers,
-                                viewers_updated_at: updated.viewers_updated_at
-                            };
-                        }
-                        return story;
-                    }));
+                    setStoriesRef.current(prev => {
+                        if (projectIdRef.current !== targetPid) return prev;
+                        let changed = false;
+                        const result = prev.map(story => {
+                            const updated = res.updated_stories?.find(
+                                u => u.log_id === story.log_id || u.vk_story_id === story.vk_story_id
+                            );
+                            if (updated) {
+                                changed = true;
+                                return {
+                                    ...story,
+                                    viewers: updated.viewers,
+                                    viewers_updated_at: updated.viewers_updated_at
+                                };
+                            }
+                            return story;
+                        });
+                        return changed ? result : prev;
+                    });
                 }
                 // Перезагружаем дашборд с актуальными данными
-                onSuccessRef.current?.();
+                if (projectIdRef.current === targetPid) onSuccessRef.current?.();
             }
         } catch (error) {
             console.error(error);
@@ -146,7 +161,8 @@ export const useStoriesUpdater = (
 
     /** Обновление всего (статистика + зрители) */
     const handleUpdateAll = useCallback(async (mode: 'single' | 'last_n' | 'period', params: any = {}) => {
-        if (!projectIdRef.current) return;
+        const targetPid = projectIdRef.current;
+        if (!targetPid) return;
 
         setUpdatingStatsId(getLoadingId('all_', mode, params));
 
@@ -163,7 +179,7 @@ export const useStoriesUpdater = (
                     viewers_updated_at?: string;
                 }>;
             }>('updateStoriesAll', {
-                projectId: projectIdRef.current,
+                projectId: targetPid,
                 mode,
                 ...params
             });
@@ -177,24 +193,30 @@ export const useStoriesUpdater = (
 
                 // Локально обновляем только изменённые истории, затем рефрешим дашборд
                 if (res.updated_stories && res.updated_stories.length > 0 && setStoriesRef.current) {
-                    setStoriesRef.current(prev => prev.map(story => {
-                        const updated = res.updated_stories?.find(
-                            u => u.log_id === story.log_id || u.vk_story_id === story.vk_story_id
-                        );
-                        if (updated) {
-                            return {
-                                ...story,
-                                ...(updated.detailed_stats && { detailed_stats: updated.detailed_stats }),
-                                ...(updated.stats_updated_at && { stats_updated_at: updated.stats_updated_at }),
-                                ...(updated.viewers && { viewers: updated.viewers }),
-                                ...(updated.viewers_updated_at && { viewers_updated_at: updated.viewers_updated_at })
-                            };
-                        }
-                        return story;
-                    }));
+                    setStoriesRef.current(prev => {
+                        if (projectIdRef.current !== targetPid) return prev;
+                        let changed = false;
+                        const result = prev.map(story => {
+                            const updated = res.updated_stories?.find(
+                                u => u.log_id === story.log_id || u.vk_story_id === story.vk_story_id
+                            );
+                            if (updated) {
+                                changed = true;
+                                return {
+                                    ...story,
+                                    ...(updated.detailed_stats && { detailed_stats: updated.detailed_stats }),
+                                    ...(updated.stats_updated_at && { stats_updated_at: updated.stats_updated_at }),
+                                    ...(updated.viewers && { viewers: updated.viewers }),
+                                    ...(updated.viewers_updated_at && { viewers_updated_at: updated.viewers_updated_at })
+                                };
+                            }
+                            return story;
+                        });
+                        return changed ? result : prev;
+                    });
                 }
                 // Перезагружаем дашборд с актуальными данными
-                onSuccessRef.current?.();
+                if (projectIdRef.current === targetPid) onSuccessRef.current?.();
             }
         } catch (error) {
             console.error(error);

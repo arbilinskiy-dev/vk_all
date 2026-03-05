@@ -9,6 +9,8 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 from database import get_db
+from services.auth_middleware import get_current_user, CurrentUser
+from services.action_tracker import track
 from schemas.models.promo_lists import (
     PromoList,
     PromoListCreate,
@@ -82,21 +84,32 @@ def list_promo_lists(payload: ListPromoListsPayload, db: Session = Depends(get_d
 
 
 @router.post("/create", response_model=PromoList)
-def create_promo_list(payload: CreatePromoListPayload, db: Session = Depends(get_db)):
+def create_promo_list(payload: CreatePromoListPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Создать новый список промокодов."""
-    return promo_list_service.create_list(db, payload.projectId, payload.data)
+    result = promo_list_service.create_list(db, payload.projectId, payload.data)
+    track(db, current_user, "promo_list_create", "messages",
+          entity_type="promo_list", entity_id=result.id if hasattr(result, 'id') else None,
+          project_id=payload.projectId,
+          metadata={"name": payload.data.name if hasattr(payload.data, 'name') else None})
+    return result
 
 
 @router.post("/update", response_model=PromoList)
-def update_promo_list(payload: UpdatePromoListPayload, db: Session = Depends(get_db)):
+def update_promo_list(payload: UpdatePromoListPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Обновить список промокодов."""
-    return promo_list_service.update_list(db, payload.listId, payload.data)
+    result = promo_list_service.update_list(db, payload.listId, payload.data)
+    track(db, current_user, "promo_list_update", "messages",
+          entity_type="promo_list", entity_id=payload.listId)
+    return result
 
 
 @router.post("/delete")
-def delete_promo_list(payload: DeletePromoListPayload, db: Session = Depends(get_db)):
+def delete_promo_list(payload: DeletePromoListPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Удалить список промокодов."""
-    return promo_list_service.delete_list(db, payload.listId)
+    result = promo_list_service.delete_list(db, payload.listId)
+    track(db, current_user, "promo_list_delete", "messages",
+          entity_type="promo_list", entity_id=payload.listId)
+    return result
 
 
 # --- Эндпоинты: Промокоды ---
@@ -108,21 +121,31 @@ def list_codes(payload: ListCodesPayload, db: Session = Depends(get_db)):
 
 
 @router.post("/codes/add")
-def add_codes(payload: AddCodesPayload, db: Session = Depends(get_db)):
+def add_codes(payload: AddCodesPayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Добавить промокоды в список (bulk)."""
-    return promo_list_service.add_codes(db, payload.promoListId, payload.codes)
+    result = promo_list_service.add_codes(db, payload.promoListId, payload.codes)
+    track(db, current_user, "promo_codes_add", "messages",
+          entity_type="promo_list", entity_id=payload.promoListId,
+          metadata={"codes_count": len(payload.codes)})
+    return result
 
 
 @router.post("/codes/delete")
-def delete_code(payload: DeleteCodePayload, db: Session = Depends(get_db)):
+def delete_code(payload: DeleteCodePayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Удалить один промокод (только свободный)."""
-    return promo_list_service.delete_code(db, payload.codeId)
+    result = promo_list_service.delete_code(db, payload.codeId)
+    track(db, current_user, "promo_code_delete", "messages",
+          entity_type="promo_code", entity_id=payload.codeId)
+    return result
 
 
 @router.post("/codes/delete-all-free")
-def delete_all_free(payload: DeleteAllFreePayload, db: Session = Depends(get_db)):
+def delete_all_free(payload: DeleteAllFreePayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Удалить все свободные промокоды в списке."""
-    return promo_list_service.delete_all_free(db, payload.promoListId)
+    result = promo_list_service.delete_all_free(db, payload.promoListId)
+    track(db, current_user, "promo_codes_delete_all_free", "messages",
+          entity_type="promo_list", entity_id=payload.promoListId)
+    return result
 
 
 # --- Эндпоинты: Переменные ---

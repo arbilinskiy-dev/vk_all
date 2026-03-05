@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from crud import dialog_label_crud
+from services.auth_middleware import get_current_user, CurrentUser
+from services.action_tracker import track
 from schemas.dialog_label_schemas import (
     DialogLabelCreate,
     DialogLabelUpdate,
@@ -55,6 +57,7 @@ def list_labels(
 def create_label(
     body: DialogLabelCreate,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Создать метку в проекте."""
     if not body.name.strip():
@@ -63,6 +66,10 @@ def create_label(
     label = dialog_label_crud.create_label(
         db, body.project_id, body.name, body.color,
     )
+    track(db, current_user, "dialog_label_create", "messages",
+          entity_type="dialog_label", entity_id=label.id,
+          project_id=body.project_id,
+          metadata={"name": body.name, "color": body.color})
     return {
         "success": True,
         "label": {
@@ -82,6 +89,7 @@ def update_label(
     label_id: str,
     body: DialogLabelUpdate,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Обновить метку."""
     label = dialog_label_crud.update_label(
@@ -93,6 +101,10 @@ def update_label(
     if not label:
         raise HTTPException(status_code=404, detail="Метка не найдена")
 
+    track(db, current_user, "dialog_label_update", "messages",
+          entity_type="dialog_label", entity_id=label_id,
+          project_id=label.project_id,
+          metadata={"name": body.name, "color": body.color})
     return {
         "success": True,
         "label": {
@@ -109,12 +121,17 @@ def update_label(
 @router.delete("/{label_id}")
 def delete_label(
     label_id: str,
+    project_id: str = Query(..., description="ID проекта"),
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Удалить метку (каскадно снимает со всех диалогов)."""
     ok = dialog_label_crud.delete_label(db, label_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Метка не найдена")
+    track(db, current_user, "dialog_label_delete", "messages",
+          entity_type="dialog_label", entity_id=label_id,
+          project_id=project_id)
     return {"success": True}
 
 
@@ -126,11 +143,16 @@ def delete_label(
 def assign_label(
     body: DialogLabelAssignRequest,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Прикрепить метку к диалогу."""
     created = dialog_label_crud.assign_label(
         db, body.project_id, body.vk_user_id, body.label_id,
     )
+    track(db, current_user, "dialog_label_assign", "messages",
+          entity_type="dialog_label", entity_id=body.label_id,
+          project_id=body.project_id,
+          metadata={"vk_user_id": body.vk_user_id})
     return {"success": True, "created": created}
 
 
@@ -138,11 +160,16 @@ def assign_label(
 def unassign_label(
     body: DialogLabelAssignRequest,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Открепить метку от диалога."""
     removed = dialog_label_crud.unassign_label(
         db, body.project_id, body.vk_user_id, body.label_id,
     )
+    track(db, current_user, "dialog_label_unassign", "messages",
+          entity_type="dialog_label", entity_id=body.label_id,
+          project_id=body.project_id,
+          metadata={"vk_user_id": body.vk_user_id})
     return {"success": True, "removed": removed}
 
 
@@ -150,11 +177,15 @@ def unassign_label(
 def set_dialog_labels(
     body: DialogLabelBulkAssignRequest,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ):
     """Заменить все метки диалога на указанный набор."""
     label_ids = dialog_label_crud.set_dialog_labels(
         db, body.project_id, body.vk_user_id, body.label_ids,
     )
+    track(db, current_user, "dialog_label_set", "messages",
+          entity_type="dialog_label", project_id=body.project_id,
+          metadata={"vk_user_id": body.vk_user_id, "label_ids": body.label_ids})
     return {"success": True, "label_ids": label_ids}
 
 

@@ -27,29 +27,34 @@ const IconButton: React.FC<IconButtonProps> = ({ label, isActive, children, ...p
 
 interface PrimarySidebarProps {
     userRole: 'admin' | 'user';
+    isSystemAdmin?: boolean;
     activeModule: AppModule | null;
     activeView: AppView;
     onSelectModule: (module: AppModule) => void;
     onSelectView: (view: AppView) => void;
     onSelectListsView: (view: AppView) => void;
     onSelectMessagesView: (view: AppView) => void;
+    onSelectStatsView: (view: AppView) => void;
     onSelectGlobalView: (view: AppView) => void;
 }
 
 export const PrimarySidebar: React.FC<PrimarySidebarProps> = ({
     userRole,
+    isSystemAdmin,
     activeModule,
     activeView,
     onSelectModule,
     onSelectView,
     onSelectListsView,
     onSelectMessagesView,
+    onSelectStatsView,
     onSelectGlobalView,
 }) => {
     const { logout } = useAuth();
     const isKmActive = activeModule === 'km';
     const isListsActive = activeModule === 'lists';
     const isMessagesActive = activeModule === 'am';
+    const isStatsActive = activeModule === 'stats';
     
     // Состояние сворачивания сайдбара (восстанавливается из localStorage)
     const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -105,7 +110,7 @@ export const PrimarySidebar: React.FC<PrimarySidebarProps> = ({
                 {/* Верхняя группа: Модули */}
                 <div className="space-y-4">
                     {/* Кнопка «Развернуть меню» — видна только когда сайдбар свёрнут и есть активный модуль */}
-                    {isCollapsed && (isKmActive || isListsActive || isMessagesActive) && (
+                    {isCollapsed && (isKmActive || isListsActive || isMessagesActive || isStatsActive) && (
                         <button
                             onClick={toggleCollapsed}
                             title="Развернуть меню"
@@ -126,7 +131,7 @@ export const PrimarySidebar: React.FC<PrimarySidebarProps> = ({
                     <IconButton label="Работа с сообщениями" isActive={isMessagesActive} onClick={() => onSelectModule('am')}>
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
                     </IconButton>
-                    <IconButton label="Статистика (в разработке)" isActive={activeModule === 'stats'} onClick={() => onSelectModule('stats')}>
+                    <IconButton label="Статистика" isActive={activeModule === 'stats'} onClick={() => onSelectModule('stats')}>
                          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
                     </IconButton>
                 </div>
@@ -184,13 +189,13 @@ export const PrimarySidebar: React.FC<PrimarySidebarProps> = ({
             <div className={`flex-shrink-0 border-l border-gray-200 transition-all duration-300 ease-in-out overflow-hidden ${
                 isCollapsed 
                     ? 'max-w-0' 
-                    : (isKmActive || isListsActive || isMessagesActive) ? 'max-w-xs' : 'max-w-0'
+                    : (isKmActive || isListsActive || isMessagesActive || isStatsActive) ? 'max-w-xs' : 'max-w-0'
             }`}>
                 {/* Внутренний контейнер с заголовком и кнопкой сворачивания */}
                  <div className="py-4 px-2 flex flex-col h-full w-40">
 
                     {/* Кнопка сворачивания — в верхней части подменю, всегда видна */}
-                    {(isKmActive || isListsActive || isMessagesActive) && (
+                    {(isKmActive || isListsActive || isMessagesActive || isStatsActive) && (
                         <button
                             onClick={toggleCollapsed}
                             title="Свернуть меню"
@@ -307,6 +312,80 @@ export const PrimarySidebar: React.FC<PrimarySidebarProps> = ({
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                     </svg>
                                     Мониторинг
+                                </button>
+                                {isSystemAdmin && (
+                                    <button onClick={() => onSelectMessagesView('messages-am-analysis')} title="АМ Анализ" className={`w-full text-left p-2 rounded-md text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${activeView === 'messages-am-analysis' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}>
+                                        <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                        </svg>
+                                        АМ Анализ
+                                    </button>
+                                )}
+                            </div>
+                        </>
+                    )}
+
+                    {/* Под-меню для Статистики */}
+                    {isStatsActive && (
+                        <>
+                            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-4 whitespace-nowrap">Статистика</p>
+                            <div className="space-y-2 w-full">
+                                {/* DB Agency */}
+                                <button onClick={() => onSelectStatsView('stats-db-agency')} title="DB Agency" className={`w-full text-left p-2 rounded-md text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${activeView === 'stats-db-agency' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}>
+                                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                                    </svg>
+                                    DB Agency
+                                </button>
+                                {/* DB Project */}
+                                <button onClick={() => onSelectStatsView('stats-db-project')} title="DB Project" className={`w-full text-left p-2 rounded-md text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${activeView === 'stats-db-project' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}>
+                                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4M4 12c0 2.21 3.582 4 8 4s8-1.79 8-4" />
+                                    </svg>
+                                    DB Project
+                                </button>
+                                {/* DLVRY */}
+                                <button onClick={() => onSelectStatsView('stats-dlvry')} title="DLVRY" className={`w-full text-left p-2 rounded-md text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${activeView === 'stats-dlvry' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}>
+                                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                                    </svg>
+                                    DLVRY
+                                </button>
+                                {/* CRM */}
+                                <button onClick={() => onSelectStatsView('stats-crm')} title="CRM" className={`w-full text-left p-2 rounded-md text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${activeView === 'stats-crm' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}>
+                                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                    </svg>
+                                    CRM
+                                </button>
+                                {/* VK Ads */}
+                                <button onClick={() => onSelectStatsView('stats-vk-ads')} title="VK Реклама" className={`w-full text-left p-2 rounded-md text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${activeView === 'stats-vk-ads' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}>
+                                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                                    </svg>
+                                    VK Ads
+                                </button>
+                                {/* VK Mass */}
+                                <button onClick={() => onSelectStatsView('stats-vk-mass')} title="VK Mass" className={`w-full text-left p-2 rounded-md text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${activeView === 'stats-vk-mass' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}>
+                                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                    </svg>
+                                    VK Mass
+                                </button>
+                                {/* VK Group */}
+                                <button onClick={() => onSelectStatsView('stats-vk-group')} title="VK Сообщество" className={`w-full text-left p-2 rounded-md text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${activeView === 'stats-vk-group' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}>
+                                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                    </svg>
+                                    VK Group
+                                </button>
+                                {/* VK Content */}
+                                <button onClick={() => onSelectStatsView('stats-vk-content')} title="VK Content" className={`w-full text-left p-2 rounded-md text-sm transition-colors whitespace-nowrap flex items-center gap-2 ${activeView === 'stats-vk-content' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-gray-500 hover:bg-gray-100'}`}>
+                                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    VK Content
                                 </button>
                             </div>
                         </>

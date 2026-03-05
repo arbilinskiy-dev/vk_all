@@ -84,6 +84,14 @@ def resolve(list_type: str) -> ListModels:
             meta_date_field='history_leave_last_updated',
             type_filter=(models.MemberEvent.event_type, 'leave'),
         )
+    elif list_type == 'history_timeline':
+        # Объединённая хронология: ВСЕ события (join + leave) без фильтра по типу
+        return ListModels(
+            models.MemberEvent, models.VkProfile,
+            models.MemberEvent.event_date,
+            needs_join=True,
+            # Мета-поля не нужны — счётчик вычисляется на фронте как join + leave
+        )
     
     # ── Фаза 3: interactions → PostInteraction + VkProfile ───────
     elif list_type == 'likes':

@@ -389,9 +389,23 @@ def finalize_contest(db: Session, project_id: str) -> dict:
     promo.issued_to_user_id = winner.user_vk_id
     promo.issued_to_user_name = winner.user_name
     
+    # Все НЕ-победители из валидных → 'used'
     other_valid = [p for p in valid_participants if p.id != winner.id]
     for p in other_valid:
         p.status = 'used'
+    
+    # FIX: Заблокированные участники (в чёрном списке) тоже переводятся в 'used'.
+    # Ранее они оставались 'commented', что раздувало current_processed_count
+    # и блокировало присвоение номеров новым записям при лимите (count/mixed).
+    blacklisted_participants = [p for p in all_participants if p.user_vk_id in blacklisted_ids]
+    for p in blacklisted_participants:
+        p.status = 'used'
+    
+    contest_log(project_id, "STATUS_UPDATES", data={
+        "winner_id": winner.user_vk_id,
+        "valid_used": len(other_valid),
+        "blacklisted_used": len(blacklisted_participants)
+    })
     
     try:
         db.commit()

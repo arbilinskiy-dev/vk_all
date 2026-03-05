@@ -447,6 +447,14 @@ const handleToggle = () => {
 | Нет `overflow: hidden` при анимации высоты | Обязательно `overflow-hidden` / встроено в `animate-expand-down` |
 | Слишком долгая анимация (>0.5s) | Максимум `0.35s` для появления, `0.25s` для исчезновения |
 | Нет `opacity-0` начального состояния для `animate-fade-in-up` | Добавить `opacity-0` в className |
+| Голые числа `{stats.total}` в дашборде | Обернуть в `<AnimatedNumber value={stats.total} />` |
+| `{count.toLocaleString('ru-RU')}` без анимации | `<AnimatedNumber value={count} format />` |
+| Серый overlay `bg-white/60` при обновлении данных | Убрать overlay, использовать «тихую замену» + AnimatedNumber |
+| `opacity-60` на контейнере при загрузке | Контейнер всегда opacity-100, числа анимируются через AnimatedNumber |
+| SVG-линия графика появляется мгновенно | Использовать `AnimatedPolyline` (stroke-dashoffset 1.2s) |
+| Pie chart без анимации входа | `className="animate-pie-chart"` + стаггер секторов |
+| Bar chart с `duration-300` | Увеличить до `duration-[800ms] ease-out` для плавности |
+| Progress bar без transition | Добавить `transition-all duration-[800ms] ease-out` на ширину |
 
 ---
 
@@ -484,7 +492,7 @@ const handleToggle = () => {
 | Параметр | Описание | Дефолт |
 |---|---|---|
 | `target` | Целевое число | — |
-| `duration` | Длительность анимации | `1200ms` |
+| `duration` | Длительность анимации | `1500ms` |
 | `delay` | Задержка перед стартом (для синхронизации с появлением карточки) | `0ms` |
 
 **Критические принципы:**
@@ -524,9 +532,54 @@ const handleToggle = () => {
 // 2.7% → внутри анимирует 27, отображает (27/10).toFixed(1) = "2.7"
 ```
 
-### 8.3. Компонент `AnimatedCounter` — обёртка над хуком
+### 8.3. Компонент `AnimatedCounter` / `AnimatedNumber` — обёртки над хуком
 
-**Файл:** `AnimatedCounter.tsx`
+#### Модуль-специфичная версия: `AnimatedCounter`
+
+**Файл:** `features/automations/stories-automation/components/dashboard/AnimatedCounter.tsx`
+
+Исходная версия для дашбордов stories-automation.
+
+#### Универсальная shared-версия: `AnimatedNumber`
+
+**Файл:** `shared/hooks/useCountAnimation.tsx`
+
+**Это ОСНОВНОЙ компонент для ВСЕХ модулей.** Экспортирует и хук `useCountAnimation`, и компонент `AnimatedNumber` из одного файла.
+
+```tsx
+import { AnimatedNumber } from '../../shared/hooks/useCountAnimation';
+
+// Простое число
+<AnimatedNumber value={stats.total_users} />
+
+// С разделителями тысяч (12 345)
+<AnimatedNumber value={count} format />
+
+// С суффиксом и десятичными
+<AnimatedNumber value={stats.ctr} decimals={1} suffix="%" />
+
+// С кастомной длительностью и CSS-классом
+<AnimatedNumber value={revenue} duration={1500} suffix=" ₽" className="text-2xl font-bold" />
+```
+
+**Расширенные props `AnimatedNumber`:**
+
+| Prop | Тип | Дефолт | Описание |
+|---|---|---|---|
+| `value` | `number` | — | Целевое число |
+| `duration` | `number` | `1500` | Длительность анимации (ms) |
+| `delay` | `number` | `0` | Задержка перед стартом (ms) |
+| `suffix` | `string` | `''` | Суффикс после числа (%, ₽, шт.) |
+| `prefix` | `string` | `''` | Префикс перед числом |
+| `decimals` | `number` | `0` | Количество десятичных знаков |
+| `className` | `string` | — | CSS-класс для `<span>` |
+| `format` | `boolean` | `false` | `toLocaleString('ru-RU')` — разделители тысяч |
+
+> **Правило:** При создании НОВОГО модуля всегда использовать `AnimatedNumber` из `shared/hooks/useCountAnimation.tsx`. `AnimatedCounter` — legacy для stories-automation.
+
+---
+
+#### Legacy: `AnimatedCounter.tsx`
 
 ```tsx
 export const AnimatedCounter: React.FC<{
@@ -681,16 +734,171 @@ const getCardAnimationStyle = (delay: number) => {
 
 При создании нового дашборда со статистикой — проверить:
 
-- [ ] Все числовые показатели обёрнуты в `AnimatedCounter`
+- [ ] Все числовые показатели обёрнуты в `AnimatedNumber` (из `shared/hooks/useCountAnimation.tsx`) или `AnimatedCounter`
 - [ ] Hero-метрика (главная цифра) имеет `duration={1500}`
 - [ ] Проценты и дроби используют `decimals={1}` или `decimals={2}`
 - [ ] Карточки имеют stagger-анимацию при первом монтировании
 - [ ] Повторная загрузка данных НЕ перезапускает входную анимацию карточек
 - [ ] Графики (Sparkline) анимируются один раз при появлении, при обновлении данных — только перерисовка path
-- [ ] Прогресс-бары имеют `transition-all duration-700`
+- [ ] **SVG-линии графиков** имеют draw-анимацию (stroke-dashoffset) — см. 8.11
+- [ ] **Области под линиями** имеют fade-in (animate-chart-area) — см. 8.11
+- [ ] **Pie/Donut-диаграммы** имеют scale+rotate входную анимацию — см. 8.11
+- [ ] **Bar-чарты** (столбцы) имеют `transition-all duration-[800ms] ease-out` на высоте/ширине
+- [ ] Прогресс-бары имеют `transition-all duration-[800ms] ease-out`
 - [ ] Бэкенд возвращает все данные одним ответом (не 5 запросов → 5 рендеров)
 - [ ] DonutChart реагирует на изменение value без анимации opacity (только strokeDashoffset)
-- [ ] Числа с `toLocaleString()` (разделители тысяч)
+- [ ] Числа с `toLocaleString('ru-RU')` (разделители тысяч) — prop `format` в AnimatedNumber
+- [ ] **Нет серых оверлеев** (bg-white/60, opacity-60) при обновлении данных — данные заменяются тихо
+- [ ] **Нет мигания** при переключении контекста (проект, фильтр) — стейт не сбрасывается до прихода новых данных
+
+### 8.11. SVG Chart Animations — Анимации полноразмерных графиков
+
+Раздел описывает анимации для **полноразмерных SVG-графиков** (Line Chart, Pie Chart, Bar Chart) — в отличие от мини-спарклайнов из 8.4.
+
+**Эталонные реализации:**
+- Line Chart: `features/lists/components/statistics/Chart.tsx` (`AnimatedPolyline`)
+- Pie Chart: `features/lists/components/statistics/PieChart.tsx`
+- Bar Chart: `features/lists/components/statistics/sections/UserStatsCards.tsx` (AgeCard, BirthdayCard)
+- CSS-анимации: `index.css` (@keyframes chart-area-fade, pie-spin-in)
+
+#### 8.11.1. Line Chart — Анимация «рисования» линии (stroke-dashoffset)
+
+**Принцип:** Линия графика «рисуется» слева направо через SVG stroke-dashoffset.
+
+```tsx
+const AnimatedPolyline: React.FC<{ points: string; stroke: string }> = ({ points, stroke }) => {
+    const ref = useRef<SVGPolylineElement>(null);
+    const [style, setStyle] = useState<React.CSSProperties>({});
+
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        const len = el.getTotalLength();
+        // Начальное состояние: линия полностью скрыта
+        setStyle({
+            strokeDasharray: len,
+            strokeDashoffset: len,
+            transition: 'none',
+        });
+        // Через кадр — запуск анимации
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                setStyle({
+                    strokeDasharray: len,
+                    strokeDashoffset: 0,
+                    transition: 'stroke-dashoffset 1.2s ease-out',
+                });
+            });
+        });
+    }, [points]);
+
+    return (
+        <polyline ref={ref} points={points} fill="none" stroke={stroke}
+                  strokeWidth={2} strokeLinejoin="round" style={style} />
+    );
+};
+```
+
+**Правила:**
+- `getTotalLength()` измеряет реальную длину SVG-пути
+- Двойной `requestAnimationFrame` гарантирует, что browser отрисовал начальное состояние
+- Длительность: **1.2s ease-out** — неторопливое рисование
+- `points` в deps — при смене данных линия перерисовывается с анимацией
+
+#### 8.11.2. Area под линией — Fade-in
+
+Область заливки под линией появляется через CSS-анимацию:
+
+```css
+/* index.css */
+@keyframes chart-area-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+.animate-chart-area {
+    animation: chart-area-fade 1.2s ease-out forwards;
+}
+```
+
+```tsx
+<path d={areaPath} fill={color} fillOpacity={0.1} className="animate-chart-area" />
+```
+
+#### 8.11.3. Pie Chart — Scale + Rotate вход
+
+Круговая диаграмма появляется с эффектом "вращения и масштабирования":
+
+```css
+/* index.css */
+@keyframes pie-spin-in {
+    from {
+        opacity: 0;
+        transform: scale(0.7) rotate(-90deg);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) rotate(-90deg);
+    }
+}
+.animate-pie-chart {
+    animation: pie-spin-in 0.8s ease-out forwards;
+    transform-origin: center;
+}
+```
+
+**Стаггер секторов:** каждый сектор появляется с нарастающей задержкой:
+```tsx
+<path
+    d={sectorPath}
+    fill={color}
+    style={{
+        opacity: 0,
+        animation: `chart-area-fade 0.5s ease-out ${i * 0.1}s forwards`
+    }}
+/>
+```
+- Задержка: `i * 0.1s` — каждый следующий сектор через 100ms
+- Анимация: `chart-area-fade` (переиспользуем fade для секторов)
+
+#### 8.11.4. Bar Chart — Transition на высоте/ширине
+
+Столбцы (вертикальные или горизонтальные) анимируются через CSS transition:
+
+```tsx
+<div
+    className="bg-indigo-500 rounded-t transition-all duration-[800ms] ease-out"
+    style={{ height: `${percent}%` }}
+/>
+```
+
+**Правила:**
+- `transition-all duration-[800ms] ease-out` — медленнее стандартного 300ms
+- Для горизонтальных баров — `style={{ width: '${percent}%' }}`
+- Для прогресс-баров — тот же паттерн: `transition-all duration-[800ms] ease-out`
+
+### 8.12. Запрет серых оверлеев при обновлении данных
+
+**Правило:** При обновлении данных (смена проекта, фильтра, подгрузка) ЗАПРЕЩЕНО показывать полупрозрачный серый оверлей поверх текущих данных.
+
+| ❌ Запрещено | ✅ Правильно |
+|---|---|
+| `<div className="bg-white/60 absolute inset-0">` + спиннер | Данные заменяются тихо, `AnimatedNumber` анимирует переход |
+| `className={isLoading ? 'opacity-60 pointer-events-none' : ''}` | Контейнер всегда `opacity-100`, числа анимируются от старых к новым |
+| Серый backdrop на время загрузки таблицы | Таблица показывает старые данные, затем React обновляет строки |
+
+**Почему:** серый оверлей создаёт ощущение "тормозящего" интерфейса. Плавная замена чисел без мигания — ощущение мгновенного отклика.
+
+**Исключение:** Первая загрузка (данных ещё нет) — показать скелетон. Но НЕ оверлей поверх скелетона.
+
+**Паттерн «тихая замена»:**
+```tsx
+// При переключении проекта:
+// 1. НЕ вызывать resetData() перед запросом
+// 2. НЕ показывать спиннер поверх текущих данных
+// 3. Когда новые данные пришли — setState(newData) → React обновит компоненты
+// 4. AnimatedNumber автоматически анимирует от старого к новому значению
+// 5. Таблицы обновляются через React reconciliation (key={item.id})
+```
 
 ---
 
@@ -705,6 +913,16 @@ const getCardAnimationStyle = (delay: number) => {
 
 // Пустота при загрузке — НЕТ
 {isLoading ? null : <Table data={data} />}
+
+// Серый оверлей при обновлении данных — НЕТ
+{isLoading && <div className="absolute inset-0 bg-white/60"><Spinner /></div>}
+
+// Снижение opacity при загрузке — НЕТ
+<div className={isLoading ? 'opacity-60' : ''}>...</div>
+
+// Голые числа без анимации — НЕТ
+<span>{stats.total_users}</span>
+<span>{count.toLocaleString('ru-RU')}</span>
 ```
 
 ## ✅ ПРАВИЛЬНЫЕ паттерны
@@ -735,4 +953,19 @@ const getCardAnimationStyle = (delay: number) => {
     }
     return <ItemSkeleton key={`skel-${i}`} index={i} />;
 })}
+
+// Анимированные числа — ДА
+<AnimatedNumber value={stats.total} />
+<AnimatedNumber value={count} format />
+
+// Тихая замена данных при обновлении — ДА
+// (данные обновляются через setState, числа анимируются через AnimatedNumber)
+// (НЕТ overlay, НЕТ opacity-60, НЕТ спиннера поверх контента)
+
+// SVG-линия с draw-анимацией — ДА
+<AnimatedPolyline points={pointsStr} stroke={color} />
+
+// Bar chart с transition — ДА
+<div className="bg-indigo-500 transition-all duration-[800ms] ease-out"
+     style={{ height: `${percent}%` }} />
 ```

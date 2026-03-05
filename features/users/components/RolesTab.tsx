@@ -14,20 +14,44 @@ import {
     UserRole,
     UserWithRole,
 } from '../../../services/api/roles.api';
+import { ConfirmationModal } from '../../../shared/components/modals/ConfirmationModal';
+import { plural } from '../../../shared/utils/plural';
+import showAppToast from '../../../shared/toastBridge';
 
-// Предустановленные цвета ролей
-const ROLE_COLORS = [
-    '#6366f1', // индиго
-    '#8b5cf6', // фиолетовый
-    '#ec4899', // розовый
-    '#ef4444', // красный
-    '#f97316', // оранжевый
-    '#eab308', // жёлтый
-    '#22c55e', // зелёный
-    '#14b8a6', // бирюзовый
-    '#3b82f6', // синий
-    '#6b7280', // серый
+/**
+ * Предустановленные цвета ролей.
+ * hex — хранится в БД и используется для динамических inline-стилей (бейджи пользователей).
+ * tw — Tailwind-класс для статических элементов палитры (кнопки выбора цвета).
+ */
+interface RoleColor {
+    hex: string;
+    tw: string;
+    label: string;
+}
+
+const ROLE_COLORS: RoleColor[] = [
+    { hex: '#6366f1', tw: 'bg-indigo-500', label: 'Индиго' },
+    { hex: '#8b5cf6', tw: 'bg-violet-500', label: 'Фиолетовый' },
+    { hex: '#ec4899', tw: 'bg-pink-500', label: 'Розовый' },
+    { hex: '#ef4444', tw: 'bg-red-500', label: 'Красный' },
+    { hex: '#f97316', tw: 'bg-orange-500', label: 'Оранжевый' },
+    { hex: '#eab308', tw: 'bg-yellow-500', label: 'Жёлтый' },
+    { hex: '#22c55e', tw: 'bg-green-500', label: 'Зелёный' },
+    { hex: '#14b8a6', tw: 'bg-teal-500', label: 'Бирюзовый' },
+    { hex: '#3b82f6', tw: 'bg-blue-500', label: 'Синий' },
+    { hex: '#6b7280', tw: 'bg-gray-500', label: 'Серый' },
 ];
+
+/** Маппинг hex → Tailwind-класс для отображения динамических цветов из БД */
+const HEX_TO_TW: Record<string, string> = Object.fromEntries(
+    ROLE_COLORS.map((c) => [c.hex, c.tw])
+);
+
+/** Получить Tailwind bg-класс по hex-значению, или fallback bg-gray-500 */
+const getTwBg = (hex: string | null | undefined): string => {
+    if (!hex) return 'bg-gray-500';
+    return HEX_TO_TW[hex] ?? 'bg-gray-500';
+};
 
 export const RolesTab: React.FC = () => {
     // --- Состояния ---
@@ -39,7 +63,7 @@ export const RolesTab: React.FC = () => {
     // Форма создания роли
     const [newRoleName, setNewRoleName] = useState('');
     const [newRoleDescription, setNewRoleDescription] = useState('');
-    const [newRoleColor, setNewRoleColor] = useState(ROLE_COLORS[0]);
+    const [newRoleColor, setNewRoleColor] = useState(ROLE_COLORS[0].hex);
     const [isCreating, setIsCreating] = useState(false);
 
     // Редактирование роли
@@ -48,9 +72,12 @@ export const RolesTab: React.FC = () => {
     const [editDescription, setEditDescription] = useState('');
     const [editColor, setEditColor] = useState('');
 
+    // Модалка подтверждения удаления (вместо confirm())
+    const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
+
     // --- Загрузка данных ---
     const loadData = useCallback(async () => {
-        setIsLoading(true);
         setError(null);
         try {
             const [rolesRes, usersRes] = await Promise.all([
@@ -83,7 +110,8 @@ export const RolesTab: React.FC = () => {
             });
             setNewRoleName('');
             setNewRoleDescription('');
-            setNewRoleColor(ROLE_COLORS[0]);
+            setNewRoleColor(ROLE_COLORS[0].hex);
+            showAppToast('Роль создана', 'success');
             await loadData();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Ошибка создания роли');
@@ -110,6 +138,7 @@ export const RolesTab: React.FC = () => {
                 color: editColor,
             });
             setEditingRoleId(null);
+            showAppToast('Роль обновлена', 'success');
             await loadData();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Ошибка обновления роли');
@@ -120,14 +149,19 @@ export const RolesTab: React.FC = () => {
         setEditingRoleId(null);
     };
 
-    // --- Удаление роли ---
-    const handleDeleteRole = async (roleId: string, roleName: string) => {
-        if (!confirm(`Удалить роль "${roleName}"? У пользователей с этой ролью она будет сброшена.`)) return;
+    // --- Удаление роли (через ConfirmationModal) ---
+    const handleConfirmDelete = async () => {
+        if (!deleteTarget) return;
+        setIsDeleting(true);
         try {
-            await deleteRole(roleId);
+            await deleteRole(deleteTarget.id);
+            showAppToast('Роль удалена', 'success');
+            setDeleteTarget(null);
             await loadData();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Ошибка удаления роли');
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -135,6 +169,7 @@ export const RolesTab: React.FC = () => {
     const handleAssignRole = async (userId: string, roleId: string | null) => {
         try {
             await assignRole(userId, roleId);
+            showAppToast('Роль назначена', 'success');
             await loadData();
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Ошибка назначения роли');
@@ -142,21 +177,11 @@ export const RolesTab: React.FC = () => {
     };
 
     // --- Рендер ---
-    if (isLoading) {
-        return (
-            <div className="space-y-4 animate-pulse">
-                <div className="h-8 bg-gray-200 rounded w-1/3" />
-                <div className="h-32 bg-gray-200 rounded" />
-                <div className="h-64 bg-gray-200 rounded" />
-            </div>
-        );
-    }
-
     return (
         <div className="space-y-6">
-            {/* Ошибка */}
+            {/* Ошибка — плавное появление */}
             {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm animate-fade-in-up">
                     {error}
                     <button
                         onClick={() => setError(null)}
@@ -182,7 +207,7 @@ export const RolesTab: React.FC = () => {
                             value={newRoleName}
                             onChange={(e) => setNewRoleName(e.target.value)}
                             placeholder="SMM-менеджер"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                         />
                     </div>
                     <div className="flex-1 min-w-[160px]">
@@ -192,7 +217,7 @@ export const RolesTab: React.FC = () => {
                             value={newRoleDescription}
                             onChange={(e) => setNewRoleDescription(e.target.value)}
                             placeholder="Необязательно"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                         />
                     </div>
                     <div>
@@ -200,13 +225,12 @@ export const RolesTab: React.FC = () => {
                         <div className="flex gap-1">
                             {ROLE_COLORS.map((c) => (
                                 <button
-                                    key={c}
-                                    onClick={() => setNewRoleColor(c)}
-                                    className={`h-8 w-8 rounded-full border-2 transition-all ${
-                                        newRoleColor === c ? 'border-gray-800 scale-110' : 'border-transparent'
+                                    key={c.hex}
+                                    onClick={() => setNewRoleColor(c.hex)}
+                                    className={`h-8 w-8 rounded-full border-2 transition-all ${c.tw} ${
+                                        newRoleColor === c.hex ? 'border-gray-800 scale-110' : 'border-transparent'
                                     }`}
-                                    style={{ backgroundColor: c }}
-                                    title={c}
+                                    title={c.label}
                                 />
                             ))}
                         </div>
@@ -214,7 +238,7 @@ export const RolesTab: React.FC = () => {
                     <button
                         onClick={handleCreateRole}
                         disabled={!newRoleName.trim() || isCreating}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
+                        className="bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 text-sm font-medium rounded-md transition-colors whitespace-nowrap"
                     >
                         {isCreating ? 'Создание...' : 'Создать роль'}
                     </button>
@@ -225,40 +249,40 @@ export const RolesTab: React.FC = () => {
                     <p className="text-sm text-gray-500 italic">Роли ещё не созданы</p>
                 ) : (
                     <div className="space-y-2">
-                        {roles.map((role) => (
+                        {roles.map((role, index) => (
                             <div
                                 key={role.id}
-                                className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100"
+                                className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-md border border-gray-100 opacity-0 animate-fade-in-up"
+                                style={{ animationDelay: `${index * 30}ms` }}
                             >
                                 {editingRoleId === role.id ? (
                                     /* Режим редактирования */
                                     <>
                                         <div
-                                            className="h-4 w-4 rounded-full flex-shrink-0"
-                                            style={{ backgroundColor: editColor }}
+                                            className={`h-4 w-4 rounded-full flex-shrink-0 ${getTwBg(editColor)}`}
                                         />
                                         <input
                                             type="text"
                                             value={editName}
                                             onChange={(e) => setEditName(e.target.value)}
-                                            className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                                            className="flex-1 px-2 py-1 border border-gray-300 rounded-md text-sm"
                                         />
                                         <input
                                             type="text"
                                             value={editDescription}
                                             onChange={(e) => setEditDescription(e.target.value)}
                                             placeholder="Описание"
-                                            className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                                            className="flex-1 px-2 py-1 border border-gray-300 rounded-md text-sm"
                                         />
                                         <div className="flex gap-1">
                                             {ROLE_COLORS.map((c) => (
                                                 <button
-                                                    key={c}
-                                                    onClick={() => setEditColor(c)}
-                                                    className={`h-5 w-5 rounded-full border-2 transition-all ${
-                                                        editColor === c ? 'border-gray-800 scale-110' : 'border-transparent'
+                                                    key={c.hex}
+                                                    onClick={() => setEditColor(c.hex)}
+                                                    className={`h-5 w-5 rounded-full border-2 transition-all ${c.tw} ${
+                                                        editColor === c.hex ? 'border-gray-800 scale-110' : 'border-transparent'
                                                     }`}
-                                                    style={{ backgroundColor: c }}
+                                                    title={c.label}
                                                 />
                                             ))}
                                         </div>
@@ -279,15 +303,14 @@ export const RolesTab: React.FC = () => {
                                     /* Режим просмотра */
                                     <>
                                         <div
-                                            className="h-4 w-4 rounded-full flex-shrink-0"
-                                            style={{ backgroundColor: role.color }}
+                                            className={`h-4 w-4 rounded-full flex-shrink-0 ${getTwBg(role.color)}`}
                                         />
                                         <span className="text-sm font-medium text-gray-900">{role.name}</span>
                                         {role.description && (
                                             <span className="text-sm text-gray-500">— {role.description}</span>
                                         )}
                                         <span className="text-xs text-gray-400 ml-auto">
-                                            {users.filter((u) => u.role_id === role.id).length} чел.
+                                            {plural(users.filter((u) => u.role_id === role.id).length, ['человек', 'человека', 'человек'])}
                                         </span>
                                         <button
                                             onClick={() => handleStartEdit(role)}
@@ -296,7 +319,7 @@ export const RolesTab: React.FC = () => {
                                             Изменить
                                         </button>
                                         <button
-                                            onClick={() => handleDeleteRole(role.id, role.name)}
+                                            onClick={() => setDeleteTarget({ id: role.id, name: role.name })}
                                             className="text-xs text-red-500 hover:text-red-700"
                                         >
                                             Удалить
@@ -340,7 +363,8 @@ export const RolesTab: React.FC = () => {
                                 {users.map((user, index) => (
                                     <tr
                                         key={user.user_id}
-                                        className="border-b border-gray-50 last:border-b-0"
+                                        className="border-b border-gray-50 last:border-b-0 opacity-0 animate-fade-in-up"
+                                        style={{ animationDelay: `${index * 20}ms` }}
                                     >
                                         <td className="px-4 py-2 text-sm text-gray-900">
                                             {user.full_name || '—'}
@@ -351,8 +375,7 @@ export const RolesTab: React.FC = () => {
                                         <td className="px-4 py-2">
                                             {user.role_name ? (
                                                 <span
-                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium text-white"
-                                                    style={{ backgroundColor: user.role_color || '#6b7280' }}
+                                                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium text-white ${getTwBg(user.role_color)}`}
                                                 >
                                                     {user.role_name}
                                                 </span>
@@ -369,7 +392,7 @@ export const RolesTab: React.FC = () => {
                                                         e.target.value || null
                                                     )
                                                 }
-                                                className="text-sm border border-gray-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                className="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                             >
                                                 <option value="">Без роли</option>
                                                 {roles.map((r) => (
@@ -386,6 +409,20 @@ export const RolesTab: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {/* Модалка подтверждения удаления — вместо нативного confirm() */}
+            {deleteTarget && (
+                <ConfirmationModal
+                    title="Удалить роль?"
+                    message={`Роль «${deleteTarget.name}» будет удалена. У пользователей с этой ролью она будет сброшена.`}
+                    onConfirm={handleConfirmDelete}
+                    onCancel={() => setDeleteTarget(null)}
+                    confirmText="Да, удалить"
+                    cancelText="Отмена"
+                    isConfirming={isDeleting}
+                    confirmButtonVariant="danger"
+                />
+            )}
         </div>
     );
 };

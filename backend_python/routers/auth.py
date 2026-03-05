@@ -79,4 +79,5 @@ def check_session(current_user: CurrentUser = Depends(get_current_user), db: Ses
         "username": current_user.username,
         "role": current_user.role,
         "full_name": full_name,
+        "is_system_admin": current_user.user_id == "admin",
     }

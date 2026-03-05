@@ -11,6 +11,8 @@ interface ServerDashboardStats extends DashboardStats {
 }
 
 interface StoriesStatsViewProps {
+    /** ID текущего проекта (для реактивной перезагрузки дашборда без ремаунта) */
+    projectId?: string;
     handleUpdateStats: (mode: 'single' | 'last_n' | 'period', params: any) => void;
     handleUpdateViewers: (mode: 'single' | 'last_n' | 'period', params: any) => void;
     handleUpdateAll: (mode: 'single' | 'last_n' | 'period', params: any) => void;
@@ -30,6 +32,7 @@ interface StoriesStatsViewProps {
 }
 
 const StoriesStatsViewInner: React.FC<StoriesStatsViewProps> = ({
+    projectId,
     handleUpdateStats, handleUpdateViewers, handleUpdateAll, updatingStatsId,
     loadStories, isLoadingStories,
     stories,
@@ -53,6 +56,7 @@ const StoriesStatsViewInner: React.FC<StoriesStatsViewProps> = ({
     return (
         <div className="space-y-6">
             <StoriesDashboard 
+                projectId={projectId}
                 dashboardStats={dashboardStats}
                 isLoadingDashboard={isLoadingDashboard}
                 loadDashboardStats={loadDashboardStats}

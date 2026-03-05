@@ -17,7 +17,7 @@ interface ListsNavigationProps {
     activeView: AppView; // New Prop
 }
 
-export const ListsNavigation: React.FC<ListsNavigationProps> = ({
+export const ListsNavigation: React.FC<ListsNavigationProps> = React.memo(({
     activeGroup,
     activeList,
     meta,
@@ -81,8 +81,14 @@ export const ListsNavigation: React.FC<ListsNavigationProps> = ({
                         <div className="w-40">
                             <ListCard title="Вышедшие (История)" count={meta?.history_leave_count || 0} lastUpdated={meta?.history_leave_last_updated}
                                 isActive={activeList === 'history_leave'} onClick={() => onTabChange('history_leave')} colorClass="bg-orange-500"
-                                icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 20a6 6 0 01-6-6v-1h12v1a6 6 0 01-6 6z" /></svg>}
+                                icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7a4 4 0 11-8 0 4 4 0 018 0zM9 14a6 6 0 00-6 6v1h12v-1a6 6 0 00-6-6z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12h-6" /></svg>}
                                 onRefresh={() => onRefreshList('history_leave')} isRefreshing={refreshStates['history_leave'].isRefreshing} loadingLabel={refreshStates['history_leave'].label}
+                            />
+                        </div>
+                        <div className="w-40">
+                            <ListCard title="Хронология" count={(meta?.history_join_count || 0) + (meta?.history_leave_count || 0)} lastUpdated={(() => { const j = meta?.history_join_last_updated; const l = meta?.history_leave_last_updated; if (!j) return l; if (!l) return j; return j > l ? j : l; })()}
+                                isActive={activeList === 'history_timeline'} onClick={() => onTabChange('history_timeline')} colorClass="bg-violet-500"
+                                icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}
                             />
                         </div>
                     </>
@@ -185,4 +191,4 @@ export const ListsNavigation: React.FC<ListsNavigationProps> = ({
             </div>
         </div>
     );
-};
+});

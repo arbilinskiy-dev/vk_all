@@ -72,7 +72,7 @@ def get_list_stats(payload: schemas.SystemListPayload, db: Session = Depends(get
         filter_can_write=payload.filterCanWrite or 'all'
     )
 
-@router.post("/lists/system/getSubscribers", response_model=Union[schemas.SystemListSubscribersResponse, schemas.SystemListPostsResponse, schemas.SystemListHistoryResponse, schemas.SystemListAuthorsResponse, schemas.SystemListMailingResponse])
+@router.post("/lists/system/getSubscribers", response_model=Union[schemas.SystemListHistoryResponse, schemas.SystemListAuthorsResponse, schemas.SystemListMailingResponse, schemas.SystemListSubscribersResponse, schemas.SystemListPostsResponse])
 def get_subscribers(payload: schemas.SystemListPayload, db: Session = Depends(get_db)):
     return system_list_service.get_subscribers(
         db, 

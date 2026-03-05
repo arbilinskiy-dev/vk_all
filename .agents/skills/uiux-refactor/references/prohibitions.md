@@ -28,9 +28,11 @@
 | 20 | Точечный фикс: исправление только упомянутого вхождения без grep по файлу на аналогичные | После ЛЮБОГО исправления — grep по всему файлу на тот же паттерн. Если исправил `w-4.5`→`w-5` в одном месте, найди ВСЕ `w-4.5` в файле | 21 — Полнота фикса |
 | 21 | `onBlur={handleSave}` на input, рядом с которым есть кнопки (палитра цветов, иконки) | `onBlur` ДОЛЖЕН проверять `e.relatedTarget`: `onBlur={e => { if (container.contains(e.relatedTarget)) return; save(); }}` | 22 — Blur race condition |
 | 22 | Радикальная смена layout-модели вместо минимального фикса (scroll→wrap, flex→grid) | Предпочитать изменение 1-2 CSS-свойств. Не переписывать layout целиком для исправления точечного бага | 23 — Минимальный diff |
-| 23 | Отдельная `<rect>` hover-зона на КАЖДУЮ точку SVG-графика (`normalized.map` → `<rect onMouseMove>`) | Один `<rect>` на всю область + бинарный поиск ближайшей точки по X-координате. Сокращает DOM-элементы с N×4 до ~N+10 | 24 — SVG performance |
-| 24 | `Math.min(...array)` / `Math.max(...array)` со spread на массивах >10K элементов (stack overflow) | Цикл `for` с отслеживанием min/max. Безопасно для любого размера массива | 24 — SVG performance |
-| 25 | SVG-график без downsampling при >200 точках данных | `downsamplePoints(data, 200)` — группировка соседних точек с суммированием метрик. Авто-гранулярность `hours→days` при >168 часовых точках | 24 — SVG performance |
+| 23 | Серый overlay `bg-white/60` или `bg-black/20` поверх контента при обновлении данных | Данные заменяются «тихо»: старые значения видны до прихода новых, AnimatedNumber анимирует переход. Оверлей — только в модалках/попапах | 13 — Анимации |
+| 24 | `opacity-60` / `pointer-events-none` на контейнере при isLoading | Контейнер всегда `opacity-100`. Числа анимируются через AnimatedNumber. Скелетон — только при ПЕРВОЙ загрузке (данных нет вообще) | 13 — Анимации |
+| 25 | Голые числа `{stats.total}` или `{count.toLocaleString()}` в дашбордах и карточках | `<AnimatedNumber value={stats.total} />` или `<AnimatedNumber value={count} format />` из `shared/hooks/useCountAnimation.tsx` | 13 — Анимации |
+
+> **Запреты 23–25 (SVG performance)** перенесены в скилл **`arch-review`** (пункт #11 чеклиста, reference: `svg_chart_performance.md`). Это проверки производительности, а не визуального соответствия дизайн-системе.
 
 ## Как использовать при аудите
 
@@ -55,9 +57,8 @@ onRefresh.*setIsLoading(true)  → запрет 17 (проверить что re
 w-4\.5|h-4\.5|w-5\.5|h-5\.5|p-4\.5|m-4\.5|gap-4\.5  → запрет 18 (несуществующие классы)
 absolute.*-top-|-right-|-bottom-|-left-  → запрет 19 (проверить overflow предков)
 onBlur={handle     → запрет 21 (проверить наличие relatedTarget guard)
-normalized\.map.*<rect.*onMouseMove  → запрет 23 (hover-зона на каждую точку)
-normalized\.map.*<circle             → запрет 23 (circle на каждую точку)
-Math\.min\(\.\.\.                    → запрет 24 (spread min на большом массиве)
-Math\.max\(\.\.\.                    → запрет 24 (spread max на большом массиве)
-fillGaps.*(?!.*downsample)          → запрет 25 (fillGaps без downsampling)
+bg-white/60|bg-white/50|bg-black/20  → запрет 23 (серый overlay при загрузке)
+opacity-60.*isLoading|isLoading.*opacity  → запрет 24 (dimming при загрузке)
+{stats\.|{count\.|\.toLocaleString  → запрет 25 (проверить обёрнуто ли в AnimatedNumber)
+# SVG performance (26-28) — проверяется скиллом arch-review (пункт #11)
 ```

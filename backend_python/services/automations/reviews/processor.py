@@ -27,13 +27,15 @@ def process_new_participants(db: Session, project_id: str) -> dict:
     active_statuses = ['commented']
 
     # 1. Получаем текущее количество УЖЕ обработанных участников в ТЕКУЩЕМ раунде
+    # Считаем ТОЛЬКО 'commented' — после финализации (commented → used/winner) счётчик сбрасывается для нового раунда.
     current_processed_count = db.query(models.ReviewContestEntry).filter(
         models.ReviewContestEntry.contest_id == contest.id,
         models.ReviewContestEntry.status.in_(active_statuses)
     ).count()
 
-    # 2. Получаем текущий максимальный номер СРЕДИ АКТИВНЫХ (чтобы продолжать нумерацию или начать с 1)
-    # Если активных нет (все прошлые стали winner/used), вернется 0, и нумерация начнется заново.
+    # 2. Получаем максимальный номер среди АКТИВНЫХ записей текущего раунда.
+    # После финализации (commented → used/winner) max_number = 0, и нумерация
+    # начинается заново с 1 — каждый цикл розыгрыша имеет свою нумерацию.
     max_number = db.query(func.max(models.ReviewContestEntry.entry_number)).filter(
         models.ReviewContestEntry.contest_id == contest.id,
         models.ReviewContestEntry.status.in_(active_statuses)

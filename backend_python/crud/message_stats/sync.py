@@ -2,6 +2,11 @@
 СИНХРОНИЗАЦИЯ: заполнение статистики из существующих callback-логов.
 Вызывается через POST /messages/stats/sync-from-logs как фоновая задача.
 
+Нормализованная архитектура:
+- Пользователи записываются в message_stats_hourly_users (INSERT ON CONFLICT DO NOTHING)
+- Счётчики пересчитываются bulk-запросом после всех INSERT
+- JSON-поля больше не используются
+
 Оптимизирована для больших объёмов (20-30к+ логов):
 - Стримовое чтение из БД (yield_per) — не загружает все логи в память
 - Bulk pre-fetch существующих записей — один запрос вместо N SELECT'ов
@@ -9,15 +14,16 @@
 - Прогресс через task_monitor
 """
 
-import json
 import time
 import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Callable
 from sqlalchemy.orm import Session
 from sqlalchemy import func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from models_library.message_stats import MessageStatsHourly, MessageStatsUser
+from models_library.message_stats import MessageStatsHourly, MessageStatsUser, MessageStatsHourlyUsers
+from crud.message_stats._helpers import _bulk_recount_hourly_users
 
 logger = logging.getLogger("crud.message_stats")
 
@@ -268,10 +274,13 @@ def sync_from_callback_logs_with_progress(
         f"{len(existing_users)}/{len(user_keys)} user записей уже есть"
     )
     
-    # 5. UPSERT hourly с батч-коммитами
+    # 5. UPSERT hourly с батч-коммитами + INSERT в нормализованную таблицу
     now = time.time()
     upsert_count = 0
     total_upserts = len(hourly_agg) + len(user_agg)
+    
+    # Собираем ВСЕ строки для нормализованной таблицы (batch INSERT в конце)
+    all_user_rows = []
     
     for row_id, h in hourly_agg.items():
         upsert_count += 1
@@ -285,43 +294,9 @@ def sync_from_callback_logs_with_progress(
             existing.incoming_text_count = max(existing.incoming_text_count or 0, h["incoming_text"])
             existing.outgoing_system_count = max(existing.outgoing_system_count or 0, h["outgoing_system"])
             existing.outgoing_bot_count = max(existing.outgoing_bot_count or 0, h["outgoing_bot"])
-            # UNION: объединяем множества пользователей
-            try:
-                old_users = set(json.loads(existing.unique_users_json or "[]"))
-            except (json.JSONDecodeError, TypeError):
-                old_users = set()
-            merged_users = old_users | h["users_set"]
-            existing.unique_users_json = json.dumps(list(merged_users))
-            existing.unique_users_count = len(merged_users)
-            # UNION: text users
-            try:
-                old_text_users = set(json.loads(existing.unique_text_users_json or "[]"))
-            except (json.JSONDecodeError, TypeError):
-                old_text_users = set()
-            merged_text_users = old_text_users | h["text_users_set"]
-            existing.unique_text_users_json = json.dumps(list(merged_text_users))
-            # UNION: payload users
-            try:
-                old_payload_users = set(json.loads(existing.unique_payload_users_json or "[]"))
-            except (json.JSONDecodeError, TypeError):
-                old_payload_users = set()
-            merged_payload_users = old_payload_users | h["payload_users_set"]
-            existing.unique_payload_users_json = json.dumps(list(merged_payload_users))
-            # UNION: outgoing users
-            try:
-                old_out_users = set(json.loads(existing.outgoing_users_json or "[]"))
-            except (json.JSONDecodeError, TypeError):
-                old_out_users = set()
-            merged_out_users = old_out_users | h["outgoing_users_set"]
-            existing.outgoing_users_json = json.dumps(list(merged_out_users))
-            # unique_dialogs_count: MAX
             existing.unique_dialogs_count = max(existing.unique_dialogs_count or 0, len(h["users_set"]))
             existing.updated_at = now
         else:
-            users_list = list(h["users_set"])
-            text_users_list = list(h["text_users_set"])
-            payload_users_list = list(h["payload_users_set"])
-            outgoing_users_list = list(h["outgoing_users_set"])
             db.add(MessageStatsHourly(
                 id=row_id,
                 project_id=h["project_id"],
@@ -332,15 +307,30 @@ def sync_from_callback_logs_with_progress(
                 incoming_text_count=h["incoming_text"],
                 outgoing_system_count=h["outgoing_system"],
                 outgoing_bot_count=h["outgoing_bot"],
-                unique_users_count=len(users_list),
-                unique_users_json=json.dumps(users_list),
-                unique_text_users_json=json.dumps(text_users_list),
-                unique_payload_users_json=json.dumps(payload_users_list),
-                outgoing_users_json=json.dumps(outgoing_users_list),
-                unique_dialogs_count=len(users_list),
+                unique_users_count=len(h["users_set"]),
+                unique_text_users_count=0,  # Будет пересчитан bulk
+                unique_payload_users_count=0,
+                outgoing_users_count=0,
+                incoming_users_count=0,
+                unique_dialogs_count=len(h["users_set"]),
+                # JSON поля (deprecated — пустые)
+                unique_users_json="[]",
+                unique_text_users_json="[]",
+                unique_payload_users_json="[]",
+                outgoing_users_json="[]",
                 created_at=now,
                 updated_at=now,
             ))
+        
+        # Собираем строки для нормализованной таблицы
+        pid = h["project_id"]
+        slot = h["hour_slot"]
+        for uid in h["text_users_set"]:
+            all_user_rows.append({"project_id": pid, "hour_slot": slot, "vk_user_id": uid, "user_type": 1})
+        for uid in h["payload_users_set"]:
+            all_user_rows.append({"project_id": pid, "hour_slot": slot, "vk_user_id": uid, "user_type": 2})
+        for uid in h["outgoing_users_set"]:
+            all_user_rows.append({"project_id": pid, "hour_slot": slot, "vk_user_id": uid, "user_type": 3})
         
         # Батч-коммит
         if upsert_count % UPSERT_BATCH_SIZE == 0:
@@ -392,7 +382,7 @@ def sync_from_callback_logs_with_progress(
                 "phase": "user",
             }
     
-    # 7. Финальный коммит оставшихся изменений
+    # 7. Финальный коммит оставшихся ORM-изменений
     try:
         db.commit()
     except Exception as e:
@@ -401,6 +391,31 @@ def sync_from_callback_logs_with_progress(
         result = {"synced": 0, "skipped": skipped, "errors": errors + synced, "details": f"Ошибка сохранения: {e}"}
         yield {"type": "error", "result": result}
         return
+    
+    # 8. Batch INSERT юзеров в нормализованную таблицу
+    if all_user_rows:
+        logger.info(f"SYNC FROM LOGS: inserting {len(all_user_rows)} user rows into normalized table...")
+        NORM_CHUNK = 5000
+        for i in range(0, len(all_user_rows), NORM_CHUNK):
+            chunk = all_user_rows[i:i+NORM_CHUNK]
+            try:
+                db.execute(
+                    pg_insert(MessageStatsHourlyUsers.__table__).values(chunk).on_conflict_do_nothing()
+                )
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                logger.error(f"SYNC FROM LOGS: ошибка INSERT normalized chunk: {e}")
+    
+    # 9. Bulk-пересчёт счётчиков юзеров для всех затронутых проектов
+    all_projects = set(h["project_id"] for h in hourly_agg.values())
+    for pid in all_projects:
+        try:
+            _bulk_recount_hourly_users(db, pid)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.error(f"SYNC FROM LOGS: ошибка bulk recount проекта {pid}: {e}")
     
     details = (
         f"Обработано {total_logs} логов: {synced} синхронизировано, "

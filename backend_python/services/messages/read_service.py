@@ -48,24 +48,64 @@ def _publish_global_unread_count(db: Session, project_id: str, context: str):
         logger.warning(f"GLOBAL SSE publish error ({context}): {e}")
 
 
+def _mark_as_read_in_vk(
+    project_id: str,
+    user_id: int,
+    community_tokens: Optional[List[str]] = None,
+    group_id_int: int = 0,
+):
+    """
+    Сбрасывает статус непрочитанности диалога в VK через messages.markAsRead.
+    Ошибки логируются, но не бросаются — это не критичная операция.
+    """
+    if not community_tokens or group_id_int <= 0:
+        logger.debug(f"VK MARK-READ: пропущено — нет токенов (project={project_id}, user={user_id})")
+        return
+
+    try:
+        from services.vk_api.token_manager import call_vk_api_for_group
+        call_vk_api_for_group(
+            method="messages.markAsRead",
+            params={
+                "peer_id": user_id,
+                "mark_conversation_as_read": 1,
+            },
+            group_id=group_id_int,
+            community_tokens=community_tokens,
+            project_id=project_id,
+        )
+        logger.info(f"VK MARK-READ: диалог с user_id={user_id} помечен как прочитанный в VK (project={project_id})")
+    except Exception as e:
+        logger.warning(f"VK MARK-READ: ошибка при вызове messages.markAsRead (user={user_id}): {e}")
+
+
 def mark_dialog_read(
     db: Session,
     project_id: str,
     user_id: int,
     manager_id: Optional[str] = None,
+    community_tokens: Optional[List[str]] = None,
+    group_id_int: int = 0,
 ) -> Dict[str, Any]:
-    """Помечает диалог как прочитанный."""
+    """Помечает диалог как прочитанный. Возвращает was_unread=True если диалог был непрочитанным."""
     max_msg_id = message_read_crud.get_max_incoming_message_id(
         db, project_id, user_id
     )
 
     if max_msg_id <= 0:
-        return {"success": True, "unread_count": 0, "last_read_message_id": 0}
+        return {"success": True, "unread_count": 0, "last_read_message_id": 0, "was_unread": False}
+
+    # Проверяем, был ли диалог непрочитанным ДО mark-read
+    prev_last_read = message_read_crud.get_last_read_message_id(db, project_id, user_id)
+    was_unread = max_msg_id > prev_last_read  # есть новые входящие после последнего прочтения
 
     # Помечаем как прочитанное
     status = message_read_crud.mark_dialog_as_read(
         db, project_id, user_id, max_msg_id, manager_id
     )
+
+    # Сбрасываем статус непрочитанности в VK (messages.markAsRead)
+    _mark_as_read_in_vk(project_id, user_id, community_tokens, group_id_int)
 
     # SSE-событие "message_read" для остальных менеджеров
     _publish_sse_event("message_read", project_id, {
@@ -82,6 +122,7 @@ def mark_dialog_read(
         "success": True,
         "unread_count": 0,
         "last_read_message_id": max_msg_id,
+        "was_unread": was_unread,
     }
 
 

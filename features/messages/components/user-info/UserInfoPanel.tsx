@@ -206,17 +206,19 @@ export const UserInfoPanel: React.FC<UserInfoPanelProps> = ({
     }
 
     return (
-        <div className="flex-1 h-full flex flex-col bg-white overflow-y-auto custom-scrollbar">
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col bg-white overflow-hidden">
 
             {/* Шапка — аватар, имя, ссылка на VK */}
-            <UserInfoPanelHeader userInfo={userInfo} user={user} />
+            <div className="flex-shrink-0">
+                <UserInfoPanelHeader userInfo={userInfo} user={user} />
+            </div>
 
             {/* Переключатель вкладок — underline стиль */}
-            <div className="px-4 pt-2 bg-white border-b border-gray-200">
-                <div className="flex gap-4">
+            <div className="px-4 pt-2 bg-white border-b border-gray-200 flex-shrink-0 overflow-x-auto">
+                <div className="flex gap-2 flex-nowrap min-w-0">
                     <button
                         onClick={() => setActiveTab('profile')}
-                        className={`py-2 px-2 text-sm font-medium border-b-2 transition-colors ${
+                        className={`py-2 px-1.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
                             activeTab === 'profile'
                                 ? 'border-indigo-600 text-indigo-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -226,7 +228,7 @@ export const UserInfoPanel: React.FC<UserInfoPanelProps> = ({
                     </button>
                     <button
                         onClick={() => setActiveTab('posts')}
-                        className={`py-2 px-2 text-sm font-medium border-b-2 transition-colors ${
+                        className={`py-2 px-1.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
                             activeTab === 'posts'
                                 ? 'border-indigo-600 text-indigo-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -236,7 +238,7 @@ export const UserInfoPanel: React.FC<UserInfoPanelProps> = ({
                     </button>
                     <button
                         onClick={() => setActiveTab('attachments')}
-                        className={`py-2 px-2 text-sm font-medium border-b-2 transition-colors ${
+                        className={`py-2 px-1.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
                             activeTab === 'attachments'
                                 ? 'border-indigo-600 text-indigo-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -246,7 +248,7 @@ export const UserInfoPanel: React.FC<UserInfoPanelProps> = ({
                     </button>
                     <button
                         onClick={() => setActiveTab('templates')}
-                        className={`py-2 px-2 text-sm font-medium border-b-2 transition-colors ${
+                        className={`py-2 px-1.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
                             activeTab === 'templates'
                                 ? 'border-indigo-600 text-indigo-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -256,7 +258,7 @@ export const UserInfoPanel: React.FC<UserInfoPanelProps> = ({
                     </button>
                     <button
                         onClick={() => setActiveTab('promocodes')}
-                        className={`py-2 px-2 text-sm font-medium border-b-2 transition-colors ${
+                        className={`py-2 px-1.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap flex-shrink-0 ${
                             activeTab === 'promocodes'
                                 ? 'border-indigo-600 text-indigo-600'
                                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -268,7 +270,7 @@ export const UserInfoPanel: React.FC<UserInfoPanelProps> = ({
             </div>
 
             {/* Контент вкладок — без key, React обновляет DOM in-place без пересоздания */}
-            <div className="flex-1 flex flex-col overflow-y-auto custom-scrollbar">
+            <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-y-auto overflow-x-hidden custom-scrollbar">
                 {activeTab === 'posts' && (
                     <UserPostsTab
                         posts={userPosts}

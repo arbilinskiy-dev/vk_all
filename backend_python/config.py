@@ -32,4 +32,7 @@ class Settings(BaseSettings):
     # Получить: https://vk.com/apps?act=manage → Настройки → Сервисный ключ доступа
     vk_service_key: Optional[str] = None
 
+    # DLVRY — токен для API статистики (affiliate_id настраивается в каждом проекте)
+    dlvry_token: Optional[str] = None
+
 settings = Settings()

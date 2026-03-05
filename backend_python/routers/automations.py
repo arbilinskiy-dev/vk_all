@@ -90,11 +90,18 @@ def collect_reviews_posts(payload: ProjectIdPayload, db: Session = Depends(get_d
     print(f"Collect result: {result}")
     return {"success": True}
 
-@router.post("/reviews/processEntries", response_model=GenericSuccess)
+@router.post("/reviews/processEntries")
 def process_reviews_entries(payload: ProjectIdPayload, db: Session = Depends(get_db)):
     result = contest_service.process_new_participants(db, payload.projectId)
     print(f"Process result: {result}")
-    return {"success": True}
+    # Возвращаем детальный результат, чтобы фронт мог показать фидбэк
+    return {
+        "success": True,
+        "processed": result.get("processed", 0),
+        "errors": result.get("errors", 0),
+        "message": result.get("message", ""),
+        "limit_reached": result.get("limit_reached", False)
+    }
 
 @router.post("/reviews/finalize", response_model=FinalizeContestResponse)
 def finalize_reviews_contest(payload: ProjectIdPayload, db: Session = Depends(get_db)):

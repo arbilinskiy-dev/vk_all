@@ -17,6 +17,7 @@ from queue import Queue
 from models_library.message_stats import MessageStatsHourly
 from crud.message_stats._aggregation import aggregate_messages
 from crud.message_stats._db_reconcile import reconcile_hourly, reconcile_user
+from crud.message_stats._helpers import _bulk_recount_hourly_users
 
 logger = logging.getLogger("crud.message_stats.reconcile")
 
@@ -172,6 +173,18 @@ def process_single_project(
             local_stats["users_errors"] += batch_users_pending
             batch_users_pending = 0
             logger.error(f"Сверка: ошибка финального коммита проекта {pid}: {e}")
+        
+        # Bulk-пересчёт счётчиков юзеров из нормализованной таблицы
+        # Один SQL-запрос на весь проект вместо N пересчётов при каждом юзере
+        try:
+            if thread_db:
+                _bulk_recount_hourly_users(thread_db, pid)
+                thread_db.commit()
+                logger.info(f"Сверка: bulk recount проекта {pid} завершён")
+        except Exception as e:
+            if thread_db:
+                thread_db.rollback()
+            logger.error(f"Сверка: ошибка bulk recount проекта {pid}: {e}")
 
     except Exception as e:
         logger.error(f"Сверка: критическая ошибка проекта {pid}: {e}")

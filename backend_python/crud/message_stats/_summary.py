@@ -1,16 +1,17 @@
 """
 ЧТЕНИЕ: Сводки статистики — глобальная, по проекту, по всем проектам.
+Нормализованная архитектура: чтение из message_stats_hourly_users вместо JSON.
 """
 
-import json
 import logging
 from typing import Optional, List, Dict, Any, Set
+from collections import defaultdict
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
-from models_library.message_stats import MessageStatsHourly, MessageStatsUser
+from models_library.message_stats import MessageStatsHourly, MessageStatsUser, MessageStatsHourlyUsers
 
-from crud.message_stats._helpers import _hourly_date_filter, _collect_unique_users_from_json
+from crud.message_stats._helpers import _hourly_date_filter, _hourly_users_date_filter
 
 logger = logging.getLogger("crud.message_stats")
 
@@ -48,17 +49,73 @@ def get_global_summary(
     
     # Уникальные пользователи
     if date_from or date_to:
-        all_users = _collect_unique_users_from_json(db, MessageStatsHourly.unique_users_json, date_from, date_to)
-        text_users = _collect_unique_users_from_json(db, MessageStatsHourly.unique_text_users_json, date_from, date_to)
-        payload_users = _collect_unique_users_from_json(db, MessageStatsHourly.unique_payload_users_json, date_from, date_to)
-        outgoing_users = _collect_unique_users_from_json(db, MessageStatsHourly.outgoing_users_json, date_from, date_to)
+        # Запрос к нормализованной таблице — один проход для всех типов
+        users_q = db.query(
+            MessageStatsHourlyUsers.project_id,
+            MessageStatsHourlyUsers.hour_slot,
+            MessageStatsHourlyUsers.vk_user_id,
+            MessageStatsHourlyUsers.user_type,
+        )
+        users_q = _hourly_users_date_filter(users_q, date_from, date_to)
+        
+        # Строим множества за один проход
+        all_users: Set[int] = set()
+        text_users: Set[int] = set()
+        payload_users: Set[int] = set()
+        outgoing_users_set: Set[int] = set()
+        # Per-project пары для диалогов
+        all_pairs: Set[str] = set()
+        text_pairs: Set[str] = set()
+        payload_pairs: Set[str] = set()
+        # Per-slot данные для filtered_incoming_text
+        slot_text: Dict[str, Set[int]] = defaultdict(set)  # "pid_slot" → set
+        slot_payload: Dict[str, Set[int]] = defaultdict(set)
+        
+        for pid, slot, uid, utype in users_q.all():
+            all_users.add(uid)
+            all_pairs.add(f"{pid}_{uid}")
+            if utype == 1:
+                text_users.add(uid)
+                text_pairs.add(f"{pid}_{uid}")
+                slot_text[f"{pid}_{slot}"].add(uid)
+            elif utype == 2:
+                payload_users.add(uid)
+                payload_pairs.add(f"{pid}_{uid}")
+                slot_payload[f"{pid}_{slot}"].add(uid)
+            elif utype == 3:
+                outgoing_users_set.add(uid)
+        
         unique_users = len(all_users)
         unique_text_users = len(text_users - payload_users)
         unique_payload_users = len(payload_users)
-        # Входящие юзеры = отправляли текст ∪ нажимали кнопки
         incoming_users_set = text_users | payload_users
         unique_incoming_users = len(incoming_users_set)
-        outgoing_recipients = len(outgoing_users)
+        outgoing_recipients = len(outgoing_users_set)
+        
+        # Диалоги
+        unique_dialogs = len(all_pairs)
+        dialogs_with_text = len(text_pairs - payload_pairs)
+        dialogs_with_payload = len(payload_pairs)
+        incoming_dialog_pairs = text_pairs | payload_pairs
+        incoming_dialogs = len(incoming_dialog_pairs)
+        
+        # Скорректированные текстовые сообщения: incoming_text_count × text_only / text_all
+        hourly_text_q = db.query(
+            MessageStatsHourly.project_id,
+            MessageStatsHourly.hour_slot,
+            MessageStatsHourly.incoming_text_count,
+        )
+        hourly_text_q = _hourly_date_filter(hourly_text_q, date_from, date_to)
+        
+        filtered_incoming_text_sum = 0.0
+        for pid, slot, text_cnt in hourly_text_q.all():
+            key = f"{pid}_{slot}"
+            t_slot = slot_text.get(key, set())
+            p_slot = slot_payload.get(key, set())
+            text_only = t_slot - p_slot
+            if t_slot and text_only and (text_cnt or 0) > 0:
+                filtered_incoming_text_sum += (text_cnt or 0) * len(text_only) / len(t_slot)
+        filtered_incoming_text = round(filtered_incoming_text_sum)
     else:
         unique_users = db.query(func.count(func.distinct(MessageStatsUser.vk_user_id))).scalar() or 0
         # Входящие юзеры — те, у кого incoming_count > 0
@@ -72,58 +129,7 @@ def get_global_summary(
             MessageStatsUser.outgoing_count > 0
         ).scalar() or 0
     
-    # Уникальные диалоги = уникальные пары (project_id × vk_user_id)
-    # + отдельно для payload и text
-    if date_from or date_to:
-        dialogs_q = db.query(
-            MessageStatsHourly.project_id,
-            MessageStatsHourly.unique_users_json,
-            MessageStatsHourly.unique_text_users_json,
-            MessageStatsHourly.unique_payload_users_json,
-            MessageStatsHourly.incoming_text_count,
-        )
-        dialogs_q = _hourly_date_filter(dialogs_q, date_from, date_to)
-        # Считаем уникальные пары по типам
-        all_pairs: Set[str] = set()
-        text_pairs: Set[str] = set()
-        payload_pairs: Set[str] = set()
-        # Скорректированный подсчёт текстовых сообщений (только от text-only юзеров)
-        filtered_incoming_text_sum = 0.0
-        for pid, json_str, text_json, payload_json, slot_text_cnt in dialogs_q.all():
-            if json_str:
-                try:
-                    for uid in json.loads(json_str):
-                        all_pairs.add(f"{pid}_{uid}")
-                except Exception:
-                    pass
-            t_slot_set: Set[int] = set()
-            p_slot_set: Set[int] = set()
-            if text_json:
-                try:
-                    t_slot_set = set(json.loads(text_json))
-                    for uid in t_slot_set:
-                        text_pairs.add(f"{pid}_{uid}")
-                except Exception:
-                    pass
-            if payload_json:
-                try:
-                    p_slot_set = set(json.loads(payload_json))
-                    for uid in p_slot_set:
-                        payload_pairs.add(f"{pid}_{uid}")
-                except Exception:
-                    pass
-            # Пропорциональная коррекция: из incoming_text_count оставляем долю text-only юзеров
-            text_only_slot = t_slot_set - p_slot_set
-            if t_slot_set and text_only_slot and (slot_text_cnt or 0) > 0:
-                filtered_incoming_text_sum += (slot_text_cnt or 0) * len(text_only_slot) / len(t_slot_set)
-        unique_dialogs = len(all_pairs)
-        dialogs_with_text = len(text_pairs - payload_pairs)
-        dialogs_with_payload = len(payload_pairs)
-        filtered_incoming_text = round(filtered_incoming_text_sum)
-        # Входящие диалоги = text_pairs ∪ payload_pairs
-        incoming_dialog_pairs = text_pairs | payload_pairs
-        incoming_dialogs = len(incoming_dialog_pairs)
-    else:
+        # — данные уже посчитаны выше из нормализованной таблицы —
         unique_dialogs = db.query(func.count(MessageStatsUser.id)).scalar() or 0
         # Входящие диалоги — пары (project × user) где incoming > 0
         incoming_dialogs = db.query(func.count(MessageStatsUser.id)).filter(
@@ -224,73 +230,57 @@ def get_projects_summary(
     
     # Уникальные пользователи и диалоги
     if date_from or date_to:
-        rows_q = db.query(
+        # Один запрос к нормализованной таблице — все данные за период
+        users_q = db.query(
+            MessageStatsHourlyUsers.project_id,
+            MessageStatsHourlyUsers.hour_slot,
+            MessageStatsHourlyUsers.vk_user_id,
+            MessageStatsHourlyUsers.user_type,
+        )
+        users_q = _hourly_users_date_filter(users_q, date_from, date_to)
+        
+        # Строим per-project множества + per-slot данные за один проход
+        project_users_sets: Dict[str, set] = defaultdict(set)
+        project_text_users_sets: Dict[str, set] = defaultdict(set)
+        project_payload_users_sets: Dict[str, set] = defaultdict(set)
+        project_outgoing_users_sets: Dict[str, set] = defaultdict(set)
+        # Per-slot per-project для filtered_incoming_text
+        slot_text_map: Dict[str, Dict[str, set]] = defaultdict(lambda: defaultdict(set))
+        slot_payload_map: Dict[str, Dict[str, set]] = defaultdict(lambda: defaultdict(set))
+        
+        for pid, slot, uid, utype in users_q.all():
+            project_users_sets[pid].add(uid)
+            if utype == 1:
+                project_text_users_sets[pid].add(uid)
+                slot_text_map[pid][slot].add(uid)
+            elif utype == 2:
+                project_payload_users_sets[pid].add(uid)
+                slot_payload_map[pid][slot].add(uid)
+            elif utype == 3:
+                project_outgoing_users_sets[pid].add(uid)
+        
+        # Скорректированный подсчёт текстовых сообщений (по проектам)
+        hourly_text_q = db.query(
             MessageStatsHourly.project_id,
-            MessageStatsHourly.unique_users_json,
-            MessageStatsHourly.unique_text_users_json,
-            MessageStatsHourly.unique_payload_users_json,
-            MessageStatsHourly.outgoing_users_json,
+            MessageStatsHourly.hour_slot,
             MessageStatsHourly.incoming_text_count,
         )
-        rows_q = _hourly_date_filter(rows_q, date_from, date_to)
-        project_users_sets: Dict[str, set] = {}
-        project_text_users_sets: Dict[str, set] = {}
-        project_payload_users_sets: Dict[str, set] = {}
-        project_outgoing_users_sets: Dict[str, set] = {}
-        # Скорректированный подсчёт текстовых сообщений (по проектам)
-        project_filtered_text: Dict[str, float] = {}
-        for pid, json_str, text_json_str, payload_json_str, out_json_str, slot_text_cnt in rows_q.all():
-            if json_str:
-                try:
-                    if pid not in project_users_sets:
-                        project_users_sets[pid] = set()
-                    project_users_sets[pid].update(json.loads(json_str))
-                except Exception:
-                    pass
-            if text_json_str:
-                try:
-                    if pid not in project_text_users_sets:
-                        project_text_users_sets[pid] = set()
-                    project_text_users_sets[pid].update(json.loads(text_json_str))
-                except Exception:
-                    pass
-            if payload_json_str:
-                try:
-                    if pid not in project_payload_users_sets:
-                        project_payload_users_sets[pid] = set()
-                    project_payload_users_sets[pid].update(json.loads(payload_json_str))
-                except Exception:
-                    pass
-            if out_json_str:
-                try:
-                    if pid not in project_outgoing_users_sets:
-                        project_outgoing_users_sets[pid] = set()
-                    project_outgoing_users_sets[pid].update(json.loads(out_json_str))
-                except Exception:
-                    pass
-            # Скорректированный подсчёт: incoming_text_count × доля text-only юзеров в слоте
-            t_slot = set()
-            p_slot = set()
-            if text_json_str:
-                try:
-                    t_slot = set(json.loads(text_json_str))
-                except Exception:
-                    pass
-            if payload_json_str:
-                try:
-                    p_slot = set(json.loads(payload_json_str))
-                except Exception:
-                    pass
-            text_only_slot = t_slot - p_slot
-            if t_slot and text_only_slot and (slot_text_cnt or 0) > 0:
-                if pid not in project_filtered_text:
-                    project_filtered_text[pid] = 0.0
-                project_filtered_text[pid] += (slot_text_cnt or 0) * len(text_only_slot) / len(t_slot)
-        users_map = {}
+        hourly_text_q = _hourly_date_filter(hourly_text_q, date_from, date_to)
+        
+        project_filtered_text: Dict[str, float] = defaultdict(float)
+        for pid, slot, text_cnt in hourly_text_q.all():
+            t_slot = slot_text_map.get(pid, {}).get(slot, set())
+            p_slot = slot_payload_map.get(pid, {}).get(slot, set())
+            text_only = t_slot - p_slot
+            if t_slot and text_only and (text_cnt or 0) > 0:
+                project_filtered_text[pid] += (text_cnt or 0) * len(text_only) / len(t_slot)
+        
+        # Формируем users_map
         all_pids = set(
             list(project_users_sets.keys()) + list(project_text_users_sets.keys()) +
             list(project_payload_users_sets.keys()) + list(project_outgoing_users_sets.keys())
         )
+        users_map = {}
         for pid in all_pids:
             u_set = project_users_sets.get(pid, set())
             t_set = project_text_users_sets.get(pid, set())
@@ -300,15 +290,12 @@ def get_projects_summary(
                 "unique_users": len(u_set),
                 "unique_text_users": len(t_set - p_set),
                 "unique_payload_users": len(p_set),
-                # Входящие юзеры = text ∪ payload (DISTINCT)
                 "incoming_users": len(t_set | p_set),
-                # Внутри одного проекта: 1 user = 1 диалог
                 "unique_dialogs": len(u_set),
                 "incoming_dialogs": len(t_set | p_set),
                 "dialogs_with_text": len(t_set - p_set),
                 "dialogs_with_payload": len(p_set),
                 "outgoing_recipients": len(o_set),
-                # Скорректированные текстовые сообщения (от text-only юзеров)
                 "filtered_incoming_text": round(project_filtered_text.get(pid, 0)),
             }
     else:

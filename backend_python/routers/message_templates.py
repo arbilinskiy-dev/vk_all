@@ -10,6 +10,8 @@ from pydantic import BaseModel
 from typing import Optional
 
 from database import get_db
+from services.auth_middleware import get_current_user, CurrentUser
+from services.action_tracker import track
 from schemas.models.message_templates import (
     MessageTemplate,
     MessageTemplateCreate,
@@ -62,21 +64,32 @@ def list_templates(payload: ListTemplatesPayload, db: Session = Depends(get_db))
 
 
 @router.post("/create", response_model=MessageTemplate)
-def create_template(payload: CreateTemplatePayload, db: Session = Depends(get_db)):
+def create_template(payload: CreateTemplatePayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Создать новый шаблон."""
-    return message_template_service.create_template(db, payload.projectId, payload.template)
+    result = message_template_service.create_template(db, payload.projectId, payload.template)
+    track(db, current_user, "template_create", "messages",
+          entity_type="template", entity_id=result.id if hasattr(result, 'id') else None,
+          project_id=payload.projectId,
+          metadata={"name": payload.template.name if hasattr(payload.template, 'name') else None})
+    return result
 
 
 @router.post("/update", response_model=MessageTemplate)
-def update_template(payload: UpdateTemplatePayload, db: Session = Depends(get_db)):
+def update_template(payload: UpdateTemplatePayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Обновить существующий шаблон."""
-    return message_template_service.update_template(db, payload.templateId, payload.template)
+    result = message_template_service.update_template(db, payload.templateId, payload.template)
+    track(db, current_user, "template_update", "messages",
+          entity_type="template", entity_id=payload.templateId)
+    return result
 
 
 @router.post("/delete")
-def delete_template(payload: DeleteTemplatePayload, db: Session = Depends(get_db)):
+def delete_template(payload: DeleteTemplatePayload, db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)):
     """Удалить шаблон."""
-    return message_template_service.delete_template(db, payload.templateId)
+    result = message_template_service.delete_template(db, payload.templateId)
+    track(db, current_user, "template_delete", "messages",
+          entity_type="template", entity_id=payload.templateId)
+    return result
 
 
 @router.post("/preview", response_model=MessageTemplatePreviewResponse)

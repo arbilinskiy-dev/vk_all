@@ -87,8 +87,16 @@ export const collectContestPosts = async (projectId: string): Promise<{ success:
 /**
  * Запускает обработку новых участников (нумерация + комментарий).
  */
-export const processContestEntries = async (projectId: string): Promise<{ success: boolean }> => {
-    return callApi('automations/reviews/processEntries', { projectId });
+export interface ProcessEntriesResult {
+    success: boolean;
+    processed: number;
+    errors: number;
+    message: string;
+    limit_reached: boolean;
+}
+
+export const processContestEntries = async (projectId: string): Promise<ProcessEntriesResult> => {
+    return callApi<ProcessEntriesResult>('automations/reviews/processEntries', { projectId });
 };
 
 /**

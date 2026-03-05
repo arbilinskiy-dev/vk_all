@@ -11,6 +11,7 @@ import { getProjectVariables } from '../../../../services/api/project.api';
 import { getPromoVariables, PromoVariableInfo } from '../../../../services/api/promo_lists.api';
 import { sendTypingStatus } from '../../../../services/api/messages.api';
 import { AttachedFile, AUTO_CLOSE_PAIRS, TYPING_THROTTLE_MS, MAX_MESSAGE_LENGTH } from '../../components/chat/chatInputConstants';
+import { useMessageTemplates } from '../useMessageTemplates';
 
 interface UseChatInputLogicProps {
     onSendMessage: (text: string, attachments?: File[]) => void;
@@ -49,7 +50,11 @@ export function useChatInputLogic({
     const [text, setText] = useState('');
     const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
     const [isVariablesOpen, setIsVariablesOpen] = useState(false);
+    const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
     const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+
+    // --- Шаблоны ---
+    const { templates, isLoading: isLoadingTemplates, preview: previewTemplate } = useMessageTemplates({ projectId });
 
     // --- Переменные ---
     const [globalVariables, setGlobalVariables] = useState<GlobalVariableDefinition[] | null>(null);
@@ -312,6 +317,35 @@ export function useChatInputLogic({
         });
     }, []);
 
+    // --- Вставка изображения из буфера обмена (Ctrl+V) ---
+    const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        const imageFiles: File[] = [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (item.type.startsWith('image/')) {
+                const file = item.getAsFile();
+                if (file) imageFiles.push(file);
+            }
+        }
+
+        if (imageFiles.length === 0) return;
+
+        // Есть изображения — предотвращаем стандартную вставку
+        e.preventDefault();
+
+        const newAttachments: AttachedFile[] = imageFiles.map(file => ({
+            id: `paste-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            file,
+            previewUrl: URL.createObjectURL(file),
+            type: 'photo' as const,
+        }));
+
+        setAttachedFiles(prev => [...prev, ...newAttachments]);
+    }, []);
+
     // Cleanup URLs при размонтировании
     useEffect(() => {
         return () => {
@@ -329,6 +363,10 @@ export function useChatInputLogic({
             text,
             isEmojiPickerOpen,
             isVariablesOpen,
+            isTemplatesOpen,
+            templates,
+            isLoadingTemplates,
+            previewTemplate,
             attachedFiles,
             globalVariables,
             isLoadingGlobalVariables,
@@ -347,6 +385,7 @@ export function useChatInputLogic({
             setText,
             setIsEmojiPickerOpen,
             setIsVariablesOpen,
+            setIsTemplatesOpen,
             insertAtCursor,
             handleInsertVariable,
             handleInsertEmoji,
@@ -356,6 +395,7 @@ export function useChatInputLogic({
             handleFileSelect,
             handleFileChange,
             handleRemoveFile,
+            handlePaste,
             handleContainerFocus,
             handleContainerBlur,
             notifyVkTyping,

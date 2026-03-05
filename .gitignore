@@ -65,4 +65,11 @@ backend_python/debug_tokens.py
 driver.cab
 logs_sync.json
 logs_sync.txt
+
+# Playwright MCP
+.playwright-mcp/
+
+# SQLite WAL/SHM файлы
+*.db-shm
+*.db-wal
 metadata.json

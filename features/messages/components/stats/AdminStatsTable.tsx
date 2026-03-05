@@ -12,10 +12,10 @@ import { MonitoringChatUser } from './MonitoringChatPanel';
 
 interface AdminStatsTableProps {
     adminStats: AdminStatsItem[];
-    expandedAdmins: Set<number>;
-    adminDialogsMap: Record<number, { dialogs: AdminDialogItem[]; loading: boolean }>;
+    expandedAdmins: Set<string>;
+    adminDialogsMap: Record<string, { dialogs: AdminDialogItem[]; loading: boolean }>;
     projectsMap: Map<string, Project>;
-    toggleAdminExpand: (senderId: number) => void;
+    toggleAdminExpand: (senderId: string) => void;
     onNavigateToChat?: (projectId: string, vkUserId: number) => void;
     /** Выбор пользователя для просмотра переписки в панели */
     onSelectChatUser?: (user: MonitoringChatUser) => void;

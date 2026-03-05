@@ -163,6 +163,7 @@ export const StoriesAutomationPage: React.FC<StoriesAutomationPageProps> = ({
                             />
                         ) : (
                             <StoriesStatsView 
+                                projectId={projectId}
                                 handleUpdateStats={handleUpdateStats}
                                 handleUpdateViewers={handleUpdateViewers}
                                 handleUpdateAll={handleUpdateAll}

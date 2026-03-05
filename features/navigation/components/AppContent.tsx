@@ -27,6 +27,8 @@ import { UpdatesPage } from '../../updates/components/UpdatesPage';
 import { SandboxPage } from '../../sandbox/components/SandboxPage';
 import { MessagesPage } from '../../messages/components/MessagesPage';
 import { MessageStatsPage } from '../../messages/components/stats/MessageStatsPage';
+import { AmAnalysisPage } from '../../messages/components/stats/AmAnalysisPage';
+import { DlvryOrdersPage } from '../../statistics/dlvry/DlvryOrdersPage';
 import { Conversation } from '../../messages/types';
 import { ManagerFocusInfo } from '../../messages/hooks/chat/useTypingState';
 import { SSEUserTypingData, SSEDialogFocusData } from '../../messages/types';
@@ -185,12 +187,12 @@ export const AppContent: React.FC<AppContentProps> = ({
     }
     
     if (activeView === 'automations-stories') {
-        // ВАЖНО: key={activeProject?.id} заставляет React полностью пересоздавать компонент
-        // при смене проекта, что гарантирует чистое состояние и предотвращает race conditions
-        // activeTab хранится здесь (в AppContent), чтобы сохраняться между переключениями проектов
+        // БЕЗ key — React переиспользует дерево, обновляя только данные внутри хуков.
+        // Хуки (useStoriesSettings, useStoriesLoader, useStoriesDashboard) реактивно
+        // сбрасывают и перезагружают данные через useEffect[projectId].
+        // activeTab хранится здесь (в AppContent), чтобы сохраняться между переключениями проектов.
         return (
             <StoriesAutomationPage 
-                key={activeProject?.id} 
                 projectId={activeProject?.id}
                 activeTab={storiesActiveTab}
                 setActiveTab={setStoriesActiveTab}
@@ -244,6 +246,10 @@ export const AppContent: React.FC<AppContentProps> = ({
     }
     
     // --- МОДУЛЬ СООБЩЕНИЙ ---
+    if (activeView === 'messages-am-analysis') {
+        return <AmAnalysisPage />;
+    }
+
     if (activeView === 'messages-stats') {
         return (
             <MessageStatsPage
@@ -347,6 +353,35 @@ export const AppContent: React.FC<AppContentProps> = ({
             />;
         }
          return <PlaceholderPage title="Раздел в разработке" message="Этот раздел скоро появится." />;
+    }
+
+    // --- МОДУЛЬ СТАТИСТИКИ ---
+    if (activeModule === 'stats') {
+        if (activeView === 'stats-db-agency') {
+            return <PlaceholderPage title="DB Agency" message="Статистика базы данных агентства — в разработке." />;
+        }
+        if (activeView === 'stats-db-project') {
+            return <PlaceholderPage title="DB Project" message="Статистика базы данных проекта — в разработке." />;
+        }
+        if (activeView === 'stats-dlvry') {
+            return <DlvryOrdersPage project={activeProject} />;
+        }
+        if (activeView === 'stats-crm') {
+            return <PlaceholderPage title="CRM" message="CRM статистика — в разработке." />;
+        }
+        if (activeView === 'stats-vk-ads') {
+            return <PlaceholderPage title="VK Ads" message="Статистика VK рекламы — в разработке." />;
+        }
+        if (activeView === 'stats-vk-mass') {
+            return <PlaceholderPage title="VK Mass" message="Статистика VK массовых рассылок — в разработке." />;
+        }
+        if (activeView === 'stats-vk-group') {
+            return <PlaceholderPage title="VK Group" message="Статистика VK сообщества — в разработке." />;
+        }
+        if (activeView === 'stats-vk-content') {
+            return <PlaceholderPage title="VK Content" message="Статистика VK контента — в разработке." />;
+        }
+        return <PlaceholderPage title="Статистика" message="Выберите подраздел в меню слева." />;
     }
 
     return <WelcomeScreen onGoToTraining={onGoToTraining} />;
