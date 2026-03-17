@@ -52,6 +52,20 @@ export function formatDate(iso: string | null | undefined): string | null {
     }
 }
 
+/** Компактное форматирование: 696 тыс. ₽ / 2,56 млн ₽ */
+export function formatCompact(value: number): string {
+    if (value >= 1_000_000) {
+        const m = value / 1_000_000;
+        // Если ровные миллионы — без дробной части
+        return m % 1 === 0 ? `${m} млн` : `${m.toFixed(2).replace('.', ',')} млн`;
+    }
+    if (value >= 1_000) {
+        const k = Math.round(value / 1_000);
+        return `${new Intl.NumberFormat('ru-RU').format(k)} тыс.`;
+    }
+    return new Intl.NumberFormat('ru-RU').format(Math.round(value));
+}
+
 /**
  * Склонение числительных для русского языка.
  * @param n — число

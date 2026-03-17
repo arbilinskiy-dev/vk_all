@@ -2,7 +2,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Project, SystemAccount } from '../../../shared/types';
 import { promoteToAdmins, PromoteToAdminsResponse, PromoteUserResult } from '../../../services/api/management.api';
-import { getAllSystemAccounts } from '../../../services/api/system_accounts.api';
+import { getAllSystemAccounts, verifyEnvToken } from '../../../services/api/system_accounts.api';
 
 // ─── Типы ─────────────────────────────────────────────────────────
 
@@ -46,14 +46,36 @@ export function usePromoteAdminsLogic({ isOpen, onClose, projects }: UsePromoteA
     const [projectSearch, setProjectSearch] = useState('');
     const [accountSearch, setAccountSearch] = useState('');
 
-    // ─── Загрузка системных аккаунтов ─────────────────────────────
+    // ─── Загрузка системных аккаунтов + ENV-токена ───────────────
     useEffect(() => {
         if (isOpen && systemAccounts.length === 0) {
             setIsLoadingAccounts(true);
-            getAllSystemAccounts()
-                .then(accounts => {
-                    // Только активные аккаунты с токенами
-                    setSystemAccounts(accounts.filter(a => a.status === 'active'));
+            Promise.all([
+                getAllSystemAccounts(),
+                verifyEnvToken().catch(() => null),
+            ])
+                .then(([accounts, envUser]) => {
+                    const active = accounts.filter(a => a.status === 'active');
+                    // Добавляем ENV-страницу в начало списка
+                    if (envUser) {
+                        const envAccount: SystemAccount = {
+                            id: `env-${envUser.id}`,
+                            vk_user_id: String(envUser.id),
+                            full_name: `${envUser.first_name} ${envUser.last_name} (ENV)`,
+                            profile_url: `https://vk.com/id${envUser.id}`,
+                            avatar_url: envUser.photo_100 || null,
+                            status: 'active',
+                        };
+                        // Не дублируем, если этот vk_user_id уже есть в системных
+                        const alreadyExists = active.some(a => String(a.vk_user_id) === String(envUser.id));
+                        if (!alreadyExists) {
+                            setSystemAccounts([envAccount, ...active]);
+                        } else {
+                            setSystemAccounts(active);
+                        }
+                    } else {
+                        setSystemAccounts(active);
+                    }
                 })
                 .catch(err => {
                     console.error('Ошибка загрузки системных аккаунтов:', err);
@@ -137,12 +159,15 @@ export function usePromoteAdminsLogic({ isOpen, onClose, projects }: UsePromoteA
         
         if (groupIds.length === 0 || userIds.length === 0) return;
 
+        // Определяем, выбран ли ENV-аккаунт (по id с префиксом env-)
+        const hasEnvSelected = Array.from(selectedAccountIds).some(id => id.startsWith('env-'));
+
         setIsRunning(true);
         setError(null);
         setResponse(null);
 
         try {
-            const result = await promoteToAdmins(groupIds, userIds, role);
+            const result = await promoteToAdmins(groupIds, userIds, role, hasEnvSelected);
             setResponse(result);
         } catch (err: any) {
             setError(err.message || 'Произошла ошибка при выполнении операции');

@@ -15,9 +15,12 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({ settings, on
     
     // Формирование пояснения для условий публикации
     const getFinishConditionText = () => {
-        if (settings.finishCondition === 'count') return `автоматически, как только наберется ${settings.targetCount} участников`;
+        const mode = settings.targetCountMode || 'exact';
+        const modeLabel = mode === 'exact' ? 'ровно' : mode === 'minimum' ? 'минимум' : 'максимум';
+        
+        if (settings.finishCondition === 'count') return `автоматически, при ${modeLabel} ${settings.targetCount} участниках`;
         if (settings.finishCondition === 'date') return `в указанный день недели (${settings.finishDayOfWeek}-й) в ${settings.finishTime}`;
-        return `при выполнении условий (День недели + минимум ${settings.targetCount} участников)`;
+        return `при выполнении условий (День недели + ${modeLabel} ${settings.targetCount} участников)`;
     };
 
     return (

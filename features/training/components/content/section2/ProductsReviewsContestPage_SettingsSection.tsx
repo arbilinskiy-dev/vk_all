@@ -177,13 +177,21 @@ export const SettingsSection: React.FC = () => {
                                 <p className="font-semibold text-gray-800 mb-2">Смешанный режим</p>
                                 <div className="space-y-3 mb-3">
                                     <div className="flex items-center gap-3">
-                                        <label className="text-sm text-gray-700">Минимум участников:</label>
+                                        <label className="text-sm text-gray-700">Кол-во участников:</label>
                                         <input 
                                             type="number" 
                                             value={30} 
                                             className="w-24 px-3 py-2 border border-gray-300 rounded-md text-center font-bold no-spinners"
                                             readOnly
                                         />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Режим подсчёта</label>
+                                        <div className="flex gap-1 bg-gray-100 p-0.5 rounded-md w-fit">
+                                            <span className="px-2.5 py-1 text-xs font-medium rounded bg-indigo-600 text-white">Ровно =</span>
+                                            <span className="px-2.5 py-1 text-xs font-medium rounded text-gray-600">Минимум ≥</span>
+                                            <span className="px-2.5 py-1 text-xs font-medium rounded text-gray-600">Максимум ≤</span>
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="text-sm text-gray-700 block mb-2">Проверка каждую:</label>
@@ -204,8 +212,8 @@ export const SettingsSection: React.FC = () => {
                                     </div>
                                 </div>
                                 <p className="text-sm text-gray-600 bg-white rounded p-3 border border-gray-200">
-                                    Каждую <strong>пятницу</strong> система проверит: если набралось 30+ участников — подведет итоги. 
-                                    Если нет — перенесет на следующую пятницу
+                                    Каждую <strong>пятницу</strong> система проверит кол-во участников и применит выбранный режим.
+                                    <strong>Ровно</strong> — точно N участников, <strong>Минимум</strong> — не меньше N (участвуют все), <strong>Максимум</strong> — не более N (розыгрыш всегда)
                                 </p>
                             </div>
                         )}

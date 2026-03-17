@@ -129,3 +129,70 @@ class TestGetHistory:
 
         assert result["source"] == "cache"
         bg_tasks.add_task.assert_not_called()
+
+
+class TestGetHistoryGroupChatProfiles:
+    """Тесты возврата профилей участников для групповых чатов."""
+
+    @patch("services.messages.history_service.messages_crud")
+    @patch("services.messages.history_service.fetch_from_vk")
+    def test_group_chat_returns_profiles(self, mock_fetch, mock_crud, mock_db, mock_project):
+        """Групповой чат → response содержит profiles с данными участников."""
+        from services.messages.history_service import get_history
+
+        mock_fetch.return_value = {
+            "items": [{"id": 1, "text": "hi", "date": 1700000100, "from_id": 100}],
+            "count": 1,
+            "profiles": [
+                {"id": 100, "first_name": "Иван", "last_name": "Петров", "photo_50": "url1"},
+                {"id": 200, "first_name": "Мария", "last_name": "Козлова", "photo_50": "url2"},
+            ],
+        }
+        mock_crud.get_cached_messages.return_value = (
+            [{"id": 1, "text": "hi"}], 1
+        )
+        meta = MagicMock()
+        meta.total_count = 1
+        meta.is_fully_loaded = True
+        mock_crud.get_cache_meta.return_value = meta
+        mock_crud.get_message_direction_counts.return_value = {"incoming": 1, "outgoing": 0}
+        mock_crud.get_deleted_from_vk_count.return_value = 0
+
+        result = get_history(
+            mock_db, "proj-1", 2000000001, 50, 0,
+            force_refresh=False, include_user_info=False,
+            project=mock_project, community_tokens=["token"], group_id_int=123456,
+        )
+
+        assert "profiles" in result
+        assert len(result["profiles"]) == 2
+        assert result["profiles"][0]["first_name"] == "Иван"
+        assert result["profiles"][1]["id"] == 200
+
+    @patch("services.messages.history_service.messages_crud")
+    @patch("services.messages.history_service.fetch_from_vk")
+    def test_regular_dialog_no_profiles(self, mock_fetch, mock_crud, mock_db, mock_project):
+        """Обычный диалог → profiles НЕ включаются в response."""
+        from services.messages.history_service import get_history
+
+        mock_fetch.return_value = {
+            "items": [{"id": 1, "text": "hi", "date": 1700000100, "from_id": 100}],
+            "count": 1,
+        }
+        mock_crud.get_cached_messages.return_value = (
+            [{"id": 1, "text": "hi"}], 1
+        )
+        meta = MagicMock()
+        meta.total_count = 1
+        meta.is_fully_loaded = True
+        mock_crud.get_cache_meta.return_value = meta
+        mock_crud.get_message_direction_counts.return_value = {"incoming": 1, "outgoing": 0}
+        mock_crud.get_deleted_from_vk_count.return_value = 0
+
+        result = get_history(
+            mock_db, "proj-1", 12345, 50, 0,
+            force_refresh=False, include_user_info=False,
+            project=mock_project, community_tokens=["token"], group_id_int=123456,
+        )
+
+        assert "profiles" not in result

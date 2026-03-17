@@ -17,24 +17,45 @@ from sqlalchemy.orm import Session
 from database import get_db
 from config import settings
 from typing import Optional
-from datetime import datetime, date, timedelta
+from datetime import date, timedelta
 import logging
 import json
 
 from schemas.dlvry_schemas import (
-    DlvryWebhookPayload,
     DlvryWebhookResponse,
-    DlvryOrderResponse,
     DlvryOrdersListResponse,
     DlvryOrderStatsResponse,
-    DlvryWebhookLogResponse,
+    DlvryAffiliateResponse,
+    DlvryAffiliateCreatePayload,
+    DlvryAffiliateUpdatePayload,
+    DlvryProductsListResponse,
+    DlvryProductsSummaryResponse,
+    DlvryProductRelatedResponse,
 )
 from services.dlvry.order_service import process_dlvry_webhook
 from services.dlvry.dlvry_client import DlvryApiClient
+from services.dlvry.dlvry_helpers import resolve_affiliate_id
+from services.dlvry.dlvry_formatters import (
+    format_order_list_item,
+    format_order_detail,
+    format_webhook_log,
+    format_daily_stats_row,
+)
 import crud.dlvry_order_crud as dlvry_crud
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _require_dlvry_token() -> str:
+    """Получить DLVRY_TOKEN или выбросить 503."""
+    token = settings.dlvry_token
+    if not token:
+        raise HTTPException(
+            status_code=503,
+            detail="DLVRY_TOKEN не настроен. Добавьте в .env",
+        )
+    return token
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -79,7 +100,10 @@ async def dlvry_webhook(request: Request, db: Session = Depends(get_db)):
 
     try:
         raw_json = json.dumps(body, ensure_ascii=False)
-        result = process_dlvry_webhook(db, body, raw_json=raw_json, remote_ip=client_ip)
+        # Подтягиваем каталог товаров для маппинга item_id → name
+        aff_id = str(body.get('affiliate_id') or '')
+        catalog = await _get_catalog(aff_id) if aff_id else {}
+        result = process_dlvry_webhook(db, body, raw_json=raw_json, remote_ip=client_ip, catalog=catalog)
         return DlvryWebhookResponse(**result)
 
     except Exception as e:
@@ -127,24 +151,7 @@ def get_orders(
     )
 
     return DlvryOrdersListResponse(
-        orders=[
-            DlvryOrderResponse(
-                id=o.id,
-                dlvry_order_id=o.dlvry_order_id,
-                affiliate_id=o.affiliate_id,
-                order_date=o.order_date.isoformat() if o.order_date else None,
-                client_name=o.client_name,
-                client_phone=o.phone,
-                total=o.total,
-                payment_type=o.payment_name,
-                delivery_type=o.delivery_name,
-                source_name=o.source_name,
-                status=o.status,
-                items_count=o.items_count,
-                created_at=o.received_at.isoformat() if o.received_at else None,
-            )
-            for o in orders
-        ],
+        orders=[format_order_list_item(o) for o in orders],
         total=total,
         skip=skip,
         limit=limit,
@@ -178,8 +185,32 @@ def get_orders_stats(
 # GET /orders/{order_id} — детали заказа
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# Кеш каталога товаров DLVRY (affiliate_id → {item_id → name})
+_catalog_cache: dict[str, tuple[float, dict[str, str]]] = {}
+_CATALOG_TTL = 3600  # 1 час
+
+
+async def _get_catalog(affiliate_id: str) -> dict[str, str]:
+    """Получить каталог товаров с кешированием (TTL 1 час)."""
+    import time
+    now = time.time()
+    if affiliate_id in _catalog_cache:
+        ts, catalog = _catalog_cache[affiliate_id]
+        if now - ts < _CATALOG_TTL:
+            return catalog
+
+    token = settings.dlvry_token
+    if not token:
+        return {}
+
+    client = DlvryApiClient(token=token)
+    catalog = await client.fetch_affiliate_items(affiliate_id)
+    _catalog_cache[affiliate_id] = (now, catalog)
+    return catalog
+
+
 @router.get("/orders/{order_id}")
-def get_order_detail(order_id: int, db: Session = Depends(get_db)):
+async def get_order_detail(order_id: int, db: Session = Depends(get_db)):
     """Получить полную информацию о заказе с позициями."""
     order = dlvry_crud.get_order_by_id(db, order_id)
     if not order:
@@ -187,58 +218,10 @@ def get_order_detail(order_id: int, db: Session = Depends(get_db)):
 
     items = dlvry_crud.get_order_items(db, order.id)
 
-    return {
-        "order": {
-            "id": order.id,
-            "dlvry_order_id": order.dlvry_order_id,
-            "affiliate_id": order.affiliate_id,
-            "order_date": order.order_date.isoformat() if order.order_date else None,
-            "client_name": order.client_name,
-            "client_phone": order.phone,
-            "client_email": order.client_email,
-            "client_birthday": order.client_bday,
-            "vk_user_id": order.vk_user_id,
-            "vk_group_id": order.vk_group_id,
-            "vk_platform": order.vk_platform,
-            "address_full": order.address_full,
-            "address_city": order.address_city,
-            "address_street": order.address_street,
-            "address_house": order.address_house,
-            "address_flat": order.address_apt,
-            "total": order.total,
-            "subtotal": order.order_sum,
-            "discount": order.discount,
-            "delivery_price": order.delivery_price,
-            "payment_type": order.payment_name,
-            "payment_code": order.payment_code,
-            "delivery_type": order.delivery_name,
-            "delivery_code": order.delivery_code,
-            "source_name": order.source_name,
-            "source_code": order.source_code,
-            "pickup_point_name": order.pickup_point_name,
-            "promocode": order.promocode,
-            "comment": order.comment,
-            "preorder": order.is_preorder,
-            "status": order.status,
-            "items_count": order.items_count,
-            "items_json": order.items_text,
-            "raw_json": order.raw_json,
-            "created_at": order.received_at.isoformat() if order.received_at else None,
-        },
-        "items": [
-            {
-                "id": item.id,
-                "name": item.name,
-                "price": item.price,
-                "quantity": item.quantity,
-                "total": round(float(item.price or 0) * int(item.quantity or 1), 2),
-                "code": item.code,
-                "weight": item.weight,
-                "options": item.options_json,
-            }
-            for item in items
-        ],
-    }
+    # Подгружаем каталог для обогащения названий позиций
+    catalog = await _get_catalog(order.affiliate_id) if order.affiliate_id else {}
+
+    return format_order_detail(order, items, catalog=catalog)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -254,18 +237,7 @@ def get_webhook_logs(
     """Получить журнал входящих вебхуков."""
     logs, total = dlvry_crud.get_webhook_logs(db, limit=limit, offset=skip)
     return {
-        "logs": [
-            DlvryWebhookLogResponse(
-                id=log.id,
-                remote_ip=log.remote_ip,
-                affiliate_id=log.affiliate_id,
-                dlvry_order_id=log.dlvry_order_id,
-                result=log.result,
-                error_message=log.error_message,
-                timestamp=log.timestamp,
-            )
-            for log in logs
-        ],
+        "logs": [format_webhook_log(log) for log in logs],
         "total": total,
     }
 
@@ -277,10 +249,7 @@ def get_webhook_logs(
 @router.delete("/webhook-logs")
 def clear_webhook_logs(db: Session = Depends(get_db)):
     """Удалить все записи из журнала вебхуков."""
-    from models_library.dlvry_orders import DlvryWebhookLog
-    count = db.query(DlvryWebhookLog).count()
-    db.query(DlvryWebhookLog).delete()
-    db.commit()
+    count = dlvry_crud.clear_webhook_logs(db)
     return {"deleted": count}
 
 
@@ -301,25 +270,8 @@ async def get_external_stats(
     Требует настроенный DLVRY_TOKEN в конфиге.
     affiliate_id можно передать напрямую или через project_id.
     """
-    token = settings.dlvry_token
-    if not token:
-        raise HTTPException(
-            status_code=503,
-            detail="DLVRY_TOKEN не настроен. Добавьте в .env",
-        )
-
-    # Если передан project_id — ищем affiliate_id в настройках проекта
-    if not affiliate_id and project_id:
-        from models_library.projects import Project
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if project and project.dlvry_affiliate_id:
-            affiliate_id = project.dlvry_affiliate_id
-    
-    if not affiliate_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Нужен affiliate_id или project_id с настроенной DLVRY интеграцией",
-        )
+    token = _require_dlvry_token()
+    affiliate_id = resolve_affiliate_id(db, project_id, affiliate_id)
 
     client = DlvryApiClient(token=token)
     stats = await client.get_orders_stats(affiliate_id, date_from, date_to)
@@ -346,25 +298,8 @@ async def get_comparison_stats(
     """
     Сравнить два периода — текущий и предыдущий (получает из DLVRY API).
     """
-    token = settings.dlvry_token
-    if not token:
-        raise HTTPException(
-            status_code=503,
-            detail="DLVRY_TOKEN не настроен. Добавьте в .env",
-        )
-    
-    # Если передан project_id — ищем affiliate_id в настройках проекта
-    if not affiliate_id and project_id:
-        from models_library.projects import Project
-        project = db.query(Project).filter(Project.id == project_id).first()
-        if project and project.dlvry_affiliate_id:
-            affiliate_id = project.dlvry_affiliate_id
-    
-    if not affiliate_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Нужен affiliate_id или project_id с настроенной DLVRY интеграцией",
-        )
+    token = _require_dlvry_token()
+    affiliate_id = resolve_affiliate_id(db, project_id, affiliate_id)
 
     client = DlvryApiClient(token=token)
     comparison = await client.get_orders_comparison(
@@ -400,12 +335,7 @@ def get_daily_stats(
     """
     import crud.dlvry_daily_stats_crud as stats_crud
 
-    # Если передан project_id без affiliate_id — подставляем
-    if not affiliate_id and project_id:
-        from models_library.projects import Project as ProjectModel
-        project = db.query(ProjectModel).filter(ProjectModel.id == project_id).first()
-        if project and project.dlvry_affiliate_id:
-            affiliate_id = project.dlvry_affiliate_id
+    affiliate_id = resolve_affiliate_id(db, project_id, affiliate_id, raise_if_missing=False)
 
     rows = stats_crud.get_daily_stats(
         db,
@@ -436,53 +366,7 @@ def get_daily_stats(
     )
 
     return {
-        "days": [
-            {
-                "date": row.stat_date.isoformat(),
-                "orders_count": row.orders_count,
-                "revenue": row.revenue,
-                "first_orders": row.first_orders,
-                "avg_check": row.avg_check,
-                # Отмены
-                "canceled": row.canceled,
-                "canceled_sum": row.canceled_sum,
-                # Финансы
-                "cost": row.cost,
-                "discount": row.discount,
-                "first_orders_sum": row.first_orders_sum,
-                "first_orders_cost": row.first_orders_cost,
-                # Клиенты
-                "unique_clients": row.unique_clients,
-                # Оплата (разбивка)
-                "sum_cash": row.sum_cash,
-                "count_payment_cash": row.count_payment_cash,
-                "sum_card": row.sum_card,
-                "count_payment_card": row.count_payment_card,
-                "count_payment_online": row.count_payment_online,
-                "sum_online_success": row.sum_online_success,
-                "sum_online_fail": row.sum_online_fail,
-                # Источники
-                "source_site": row.source_site,
-                "sum_source_site": row.sum_source_site,
-                "source_vkapp": row.source_vkapp,
-                "sum_source_vkapp": row.sum_source_vkapp,
-                "source_ios": row.source_ios,
-                "sum_source_ios": row.sum_source_ios,
-                "source_android": row.source_android,
-                "sum_source_android": row.sum_source_android,
-                # Доставка
-                "delivery_self_count": row.delivery_self_count,
-                "delivery_self_sum": row.delivery_self_sum,
-                "delivery_count": row.delivery_count,
-                "delivery_sum": row.delivery_sum,
-                # Повторные заказы
-                "repeat_order_2": row.repeat_order_2,
-                "repeat_order_3": row.repeat_order_3,
-                "repeat_order_4": row.repeat_order_4,
-                "repeat_order_5": row.repeat_order_5,
-            }
-            for row in rows
-        ],
+        "days": [format_daily_stats_row(row) for row in rows],
         "total": len(rows),
         "total_count": total_count,
         "has_more": (offset + len(rows)) < total_count,
@@ -503,11 +387,7 @@ def get_available_months(
     """Вернуть список год-месяц, по которым есть хотя бы одна запись."""
     import crud.dlvry_daily_stats_crud as stats_crud
 
-    if not affiliate_id and project_id:
-        from models_library.projects import Project as ProjectModel
-        project = db.query(ProjectModel).filter(ProjectModel.id == project_id).first()
-        if project and project.dlvry_affiliate_id:
-            affiliate_id = project.dlvry_affiliate_id
+    affiliate_id = resolve_affiliate_id(db, project_id, affiliate_id, raise_if_missing=False)
 
     months = stats_crud.get_available_months(
         db,
@@ -536,25 +416,11 @@ def sync_stats(
     """
     from services.dlvry.stats_sync_service import sync_dlvry_stats_for_project
 
-    # Определяем affiliate_id
-    real_affiliate_id = affiliate_id
-    real_project_id = project_id
-
-    if not real_affiliate_id and project_id:
-        from models_library.projects import Project as ProjectModel
-        project = db.query(ProjectModel).filter(ProjectModel.id == project_id).first()
-        if project and project.dlvry_affiliate_id:
-            real_affiliate_id = project.dlvry_affiliate_id
-
-    if not real_affiliate_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Нужен affiliate_id или project_id с настроенной DLVRY интеграцией",
-        )
+    real_affiliate_id = resolve_affiliate_id(db, project_id, affiliate_id)
 
     result = sync_dlvry_stats_for_project(
         db=db,
-        project_id=real_project_id,
+        project_id=project_id,
         affiliate_id=real_affiliate_id,
         date_from=date_from,
         date_to=date_to,
@@ -582,33 +448,17 @@ def sync_full_stream(
     Каждый чанк сохраняется в БД сразу — данные видны в интерфейсе.
     Прогресс передаётся через Server-Sent Events.
     """
-    from services.dlvry.stats_sync_service import _sync_full_backwards_gen
+    from services.dlvry.stats_sync_core import sync_full_backwards_gen as _sync_full_backwards_gen
 
-    real_affiliate_id = affiliate_id
-    real_project_id = project_id
-
-    if not real_affiliate_id and project_id:
-        from models_library.projects import Project as ProjectModel
-        project_obj = db.query(ProjectModel).filter(ProjectModel.id == project_id).first()
-        if project_obj and project_obj.dlvry_affiliate_id:
-            real_affiliate_id = project_obj.dlvry_affiliate_id
-
-    if not real_affiliate_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Нужен affiliate_id или project_id с настроенной DLVRY интеграцией",
-        )
-
-    token = settings.dlvry_token
-    if not token:
-        raise HTTPException(status_code=500, detail="DLVRY_TOKEN не настроен")
+    real_affiliate_id = resolve_affiliate_id(db, project_id, affiliate_id)
+    token = _require_dlvry_token()
 
     yesterday = date.today() - timedelta(days=1)
 
     def generate():
         for event in _sync_full_backwards_gen(
             db=db,
-            project_id=real_project_id,
+            project_id=project_id,
             affiliate_id=real_affiliate_id,
             token=token,
             end_date=yesterday,
@@ -635,7 +485,342 @@ def sync_all_stats(db: Session = Depends(get_db)):
     Синхронизировать статистику DLVRY для ВСЕХ проектов с настроенным affiliate_id.
     Используется кнопкой «Обновить всё» или планировщиком.
     """
-    from services.dlvry.stats_sync_service import sync_all_projects
+    from services.dlvry.stats_sync_all import sync_all_projects
 
     result = sync_all_projects(db)
     return result
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# POST /orders/sync — синхронизация заказов из DLVRY hl-orders API
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.post("/orders/sync")
+def sync_orders(
+    db: Session = Depends(get_db),
+    project_id: Optional[str] = Query(None, description="ID проекта"),
+    affiliate_id: Optional[str] = Query(None, description="ID филиала DLVRY"),
+    date_from: Optional[date] = Query(None, description="Начало периода (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="Конец периода (YYYY-MM-DD)"),
+):
+    """
+    Запросить заказы из DLVRY hl-orders API и записать в БД.
+    Инкрементальная дозапись — от последнего заказа до сегодня.
+    """
+    from services.dlvry.orders_sync_service import sync_dlvry_orders_for_project
+
+    real_affiliate_id = resolve_affiliate_id(db, project_id, affiliate_id)
+
+    result = sync_dlvry_orders_for_project(
+        db=db,
+        project_id=project_id,
+        affiliate_id=real_affiliate_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    if not result["success"]:
+        raise HTTPException(status_code=502, detail=result.get("error", "Ошибка синхронизации заказов"))
+
+    return result
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# POST /orders/sync-full-stream — полная загрузка заказов с SSE-стримингом
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.post("/orders/sync-full-stream")
+def sync_orders_full_stream(
+    db: Session = Depends(get_db),
+    project_id: Optional[str] = Query(None, description="ID проекта"),
+    affiliate_id: Optional[str] = Query(None, description="ID филиала DLVRY"),
+):
+    """
+    Полная загрузка заказов с SSE-стримингом прогресса.
+    Каждый чанк сохраняется в БД сразу — данные видны в интерфейсе.
+    """
+    from services.dlvry.orders_sync_service import sync_orders_full_backwards_gen
+
+    real_affiliate_id = resolve_affiliate_id(db, project_id, affiliate_id)
+    token = _require_dlvry_token()
+
+    today = date.today()
+
+    def generate():
+        for event in sync_orders_full_backwards_gen(
+            db=db,
+            project_id=project_id,
+            affiliate_id=real_affiliate_id,
+            token=token,
+            end_date=today,
+        ):
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# GET /products — аналитика товаров (агрегация позиций заказов)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.get("/products", response_model=DlvryProductsListResponse)
+def get_products_analytics(
+    db: Session = Depends(get_db),
+    project_id: Optional[str] = Query(None, description="Фильтр по проекту"),
+    affiliate_id: Optional[str] = Query(None, description="Фильтр по филиалу"),
+    date_from: Optional[date] = Query(None, description="Начало периода"),
+    date_to: Optional[date] = Query(None, description="Конец периода"),
+    search: Optional[str] = Query(None, description="Поиск по названию товара"),
+    sort_by: Optional[str] = Query("total_qty", description="Сортировка: total_qty, orders_count, total_revenue, avg_price, name"),
+    sort_dir: Optional[str] = Query("desc", description="Направление: asc, desc"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+):
+    """Список товаров с агрегированной статистикой продаж."""
+    products, total = dlvry_crud.get_products_analytics(
+        db,
+        project_id=project_id,
+        affiliate_id=affiliate_id,
+        date_from=date_from,
+        date_to=date_to,
+        search=search,
+        sort_by=sort_by or "total_qty",
+        sort_dir=sort_dir or "desc",
+        skip=skip,
+        limit=limit,
+    )
+    return DlvryProductsListResponse(
+        products=products,
+        total=total,
+        skip=skip,
+        limit=limit,
+    )
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# GET /products/summary — сводка по товарам
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.get("/products/summary", response_model=DlvryProductsSummaryResponse)
+def get_products_summary(
+    db: Session = Depends(get_db),
+    project_id: Optional[str] = Query(None, description="Фильтр по проекту"),
+    affiliate_id: Optional[str] = Query(None, description="Фильтр по филиалу"),
+    date_from: Optional[date] = Query(None, description="Начало периода"),
+    date_to: Optional[date] = Query(None, description="Конец периода"),
+):
+    """Сводная статистика по товарам за период."""
+    summary = dlvry_crud.get_products_summary(
+        db,
+        project_id=project_id,
+        affiliate_id=affiliate_id,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return DlvryProductsSummaryResponse(**summary)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# GET /products/{item_id}/related — сопутствующие товары (co-occurrence)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.get("/products/{item_id}/related", response_model=DlvryProductRelatedResponse)
+def get_product_related(
+    item_id: str,
+    db: Session = Depends(get_db),
+    project_id: Optional[str] = Query(None),
+    affiliate_id: Optional[str] = Query(None),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
+    limit: int = Query(15, ge=1, le=50),
+):
+    """Сопутствующие товары — что берут вместе с данным товаром."""
+    result = dlvry_crud.get_product_related(
+        db,
+        dlvry_item_id=item_id,
+        project_id=project_id,
+        affiliate_id=affiliate_id,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+    )
+    return DlvryProductRelatedResponse(**result)
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# POST /orders/backfill-names — заполнение названий товаров из каталога
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.post("/orders/backfill-names")
+async def backfill_item_names(
+    db: Session = Depends(get_db),
+    project_id: Optional[str] = Query(None, description="ID проекта"),
+    affiliate_id: Optional[str] = Query(None, description="ID филиала DLVRY"),
+):
+    """
+    Заполняет пустые названия товаров (name) для существующих позиций заказов.
+    Загружает каталог через /affiliates/{id}/items и обновляет items с пустым name.
+    """
+    from models_library.dlvry_orders import DlvryOrderItem, DlvryOrder
+
+    real_affiliate_id = resolve_affiliate_id(db, project_id, affiliate_id)
+    catalog = await _get_catalog(real_affiliate_id)
+    if not catalog:
+        raise HTTPException(status_code=502, detail="Не удалось загрузить каталог товаров DLVRY")
+
+    # Находим items с пустым name, привязанные к заказам данного affiliate
+    empty_items = (
+        db.query(DlvryOrderItem)
+        .join(DlvryOrder, DlvryOrderItem.order_id == DlvryOrder.id)
+        .filter(
+            DlvryOrder.affiliate_id == real_affiliate_id,
+            (DlvryOrderItem.name == '') | (DlvryOrderItem.name.is_(None)),
+        )
+        .all()
+    )
+
+    updated = 0
+    for item in empty_items:
+        new_name = catalog.get(str(item.dlvry_item_id), '')
+        if new_name:
+            item.name = new_name
+            updated += 1
+
+    # Также обновим items_text у заказов, чьи позиции обновились
+    if updated > 0:
+        # Собираем order_id → список items для пересчёта items_text
+        updated_order_ids = set()
+        for item in empty_items:
+            if catalog.get(str(item.dlvry_item_id)):
+                updated_order_ids.add(item.order_id)
+
+        for oid in updated_order_ids:
+            order_items = db.query(DlvryOrderItem).filter(DlvryOrderItem.order_id == oid).all()
+            lines = [f"{it.name or ''} × {it.quantity or 1}" for it in order_items]
+            db.query(DlvryOrder).filter(DlvryOrder.id == oid).update(
+                {"items_text": "\n".join(lines)}
+            )
+
+        db.commit()
+
+    logger.info(
+        f"[DLVRY Backfill] affiliate={real_affiliate_id}: "
+        f"{updated} позиций обновлено из {len(empty_items)} пустых, "
+        f"каталог={len(catalog)} товаров"
+    )
+
+    return {
+        "success": True,
+        "catalog_size": len(catalog),
+        "empty_items_found": len(empty_items),
+        "items_updated": updated,
+    }
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# CRUD филиалов DLVRY (привязка к проекту)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.get("/affiliates/{project_id}", response_model=list[DlvryAffiliateResponse])
+def list_affiliates(project_id: str, db: Session = Depends(get_db)):
+    """Получить все филиалы DLVRY для проекта."""
+    import crud.dlvry_affiliate_crud as aff_crud
+    affiliates = aff_crud.get_affiliates_by_project(db, project_id)
+    return [
+        DlvryAffiliateResponse(
+            id=a.id,
+            project_id=a.project_id,
+            affiliate_id=a.affiliate_id,
+            name=a.name,
+            is_active=a.is_active,
+            created_at=str(a.created_at) if a.created_at else None,
+        )
+        for a in affiliates
+    ]
+
+
+@router.post("/affiliates/{project_id}", response_model=DlvryAffiliateResponse)
+def create_affiliate(
+    project_id: str,
+    payload: DlvryAffiliateCreatePayload,
+    db: Session = Depends(get_db),
+):
+    """Добавить филиал DLVRY к проекту. Запускает фоновую синхронизацию статистики."""
+    import crud.dlvry_affiliate_crud as aff_crud
+
+    # Проверка дубликата
+    existing = aff_crud.get_affiliate_by_affiliate_id(db, payload.affiliate_id)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Филиал {payload.affiliate_id} уже привязан к проекту {existing.project_id}",
+        )
+
+    record = aff_crud.create_affiliate(
+        db,
+        project_id=project_id,
+        affiliate_id=payload.affiliate_id,
+        name=payload.name,
+    )
+
+    # Запускаем фоновую синхронизацию для нового филиала
+    try:
+        from services.dlvry.stats_sync_background import run_full_sync_background
+        run_full_sync_background(project_id, payload.affiliate_id)
+        logger.info(f"[DLVRY] Запущена фоновая синхронизация для нового филиала {payload.affiliate_id}")
+    except Exception as e:
+        logger.warning(f"[DLVRY] Не удалось запустить синхронизацию для {payload.affiliate_id}: {e}")
+
+    return DlvryAffiliateResponse(
+        id=record.id,
+        project_id=record.project_id,
+        affiliate_id=record.affiliate_id,
+        name=record.name,
+        is_active=record.is_active,
+        created_at=str(record.created_at) if record.created_at else None,
+    )
+
+
+@router.put("/affiliates/record/{record_id}", response_model=DlvryAffiliateResponse)
+def update_affiliate(
+    record_id: str,
+    payload: DlvryAffiliateUpdatePayload,
+    db: Session = Depends(get_db),
+):
+    """Обновить филиал (имя, активность)."""
+    import crud.dlvry_affiliate_crud as aff_crud
+
+    record = aff_crud.update_affiliate(
+        db, record_id,
+        name=payload.name if payload.name is not None else ...,
+        is_active=payload.is_active if payload.is_active is not None else ...,
+    )
+    if not record:
+        raise HTTPException(status_code=404, detail="Филиал не найден")
+
+    return DlvryAffiliateResponse(
+        id=record.id,
+        project_id=record.project_id,
+        affiliate_id=record.affiliate_id,
+        name=record.name,
+        is_active=record.is_active,
+        created_at=str(record.created_at) if record.created_at else None,
+    )
+
+
+@router.delete("/affiliates/record/{record_id}")
+def delete_affiliate(record_id: str, db: Session = Depends(get_db)):
+    """Удалить филиал."""
+    import crud.dlvry_affiliate_crud as aff_crud
+
+    deleted = aff_crud.delete_affiliate(db, record_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Филиал не найден")
+    return {"success": True}

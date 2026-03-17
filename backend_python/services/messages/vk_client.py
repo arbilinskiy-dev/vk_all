@@ -58,6 +58,10 @@ def get_project_and_tokens(db: Session, project_id: str) -> Tuple[ProjectModel, 
     return project, community_tokens, group_id_int
 
 
+# Порог peer_id для групповых чатов VK
+CHAT_PEER_ID_START = 2000000000
+
+
 def fetch_from_vk(
     community_tokens: list,
     group_id_int: int,
@@ -66,15 +70,29 @@ def fetch_from_vk(
     offset: int,
     project_id: str,
 ) -> Dict[str, Any]:
-    """Прямой запрос к VK API messages.getHistory."""
+    """Прямой запрос к VK API messages.getHistory.
+    Для групповых чатов (peer_id >= 2000000000) использует peer_id вместо user_id
+    и добавляет extended=1 для получения профилей участников."""
+    # Для групповых чатов VK API требует peer_id вместо user_id
+    is_group_chat = user_id >= CHAT_PEER_ID_START
+    if is_group_chat:
+        id_param = {"peer_id": user_id}
+    else:
+        id_param = {"user_id": user_id}
+
+    params = {
+        **id_param,
+        "count": count,
+        "offset": offset,
+        "rev": 0,
+    }
+    # Для групповых чатов запрашиваем профили участников
+    if is_group_chat:
+        params["extended"] = 1
+
     return call_vk_api_for_group(
         method="messages.getHistory",
-        params={
-            "user_id": user_id,
-            "count": count,
-            "offset": offset,
-            "rev": 0,
-        },
+        params=params,
         group_id=group_id_int,
         community_tokens=community_tokens,
         project_id=project_id,

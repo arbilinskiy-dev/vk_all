@@ -56,12 +56,49 @@ export interface DlvryDayStat {
     repeat_order_5: number;
 }
 
-/** Агрегированные данные за период */
+/** Агрегированные данные за период (полные суммы из БД) */
 export interface DlvryAggregated {
+    // Базовые
     total_orders: number;
     total_revenue: number;
     total_first_orders: number;
     avg_check: number;
+    total_unique_clients: number;
+    // Отмены
+    total_canceled: number;
+    total_canceled_sum: number;
+    // Финансы
+    total_cost: number;
+    total_discount: number;
+    total_first_orders_sum: number;
+    total_first_orders_cost: number;
+    // Оплата
+    total_count_payment_cash: number;
+    total_sum_cash: number;
+    total_count_payment_card: number;
+    total_sum_card: number;
+    total_count_payment_online: number;
+    total_sum_online_success: number;
+    total_sum_online_fail: number;
+    // Источники
+    total_source_vkapp: number;
+    total_sum_source_vkapp: number;
+    total_source_site: number;
+    total_sum_source_site: number;
+    total_source_ios: number;
+    total_sum_source_ios: number;
+    total_source_android: number;
+    total_sum_source_android: number;
+    // Доставка
+    total_delivery_count: number;
+    total_delivery_sum: number;
+    total_delivery_self_count: number;
+    total_delivery_self_sum: number;
+    // Повторные заказы
+    total_repeat_order_2: number;
+    total_repeat_order_3: number;
+    total_repeat_order_4: number;
+    total_repeat_order_5: number;
 }
 
 /** Ответ GET /stats/daily */

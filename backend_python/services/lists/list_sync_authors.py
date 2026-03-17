@@ -7,6 +7,7 @@ from services.lists.list_sync_utils import get_all_project_tokens, fetch_users_s
 from crud.lists.utils import deduplicate_users
 from crud.lists.authors import get_all_author_vk_ids, bulk_update_author_details
 from database import SessionLocal
+from config import settings
 from services.post_helpers import get_rounded_timestamp
 
 def refresh_author_details_task(task_id: str, project_id: str, user_token: str):
@@ -31,7 +32,14 @@ def refresh_author_details_task(task_id: str, project_id: str, user_token: str):
         # 2. Получаем ID всех авторов через нормализованный запрос
         all_vk_ids = get_all_author_vk_ids(db, project_id)
         
-        unique_tokens = get_all_project_tokens(db, user_token)
+        # Приоритет: VK_SERVICE_KEY → fallback на user-токены
+        service_key = settings.vk_service_key
+        if service_key:
+            unique_tokens = [service_key]
+            use_service_key = True
+        else:
+            unique_tokens = get_all_project_tokens(db, user_token)
+            use_service_key = False
     finally:
         db.close()
         
@@ -46,11 +54,12 @@ def refresh_author_details_task(task_id: str, project_id: str, user_token: str):
     # --- Phase 2: Network ---
     task_monitor.update_task(task_id, "fetching", loaded=0, total=len(all_vk_ids))
     fields = 'sex,bdate,city,country,photo_100,domain,has_mobile,last_seen,deactivated,is_closed,can_access_closed'
+    extra_params = {'lang': 'ru'} if use_service_key else None
     
     def on_progress(loaded, total):
         task_monitor.update_task(task_id, "fetching", loaded=loaded, total=total)
 
-    fetched_users = fetch_users_smart_parallel(all_vk_ids, unique_tokens, fields, project_id, on_progress)
+    fetched_users = fetch_users_smart_parallel(all_vk_ids, unique_tokens, fields, project_id, on_progress, extra_params)
 
     # --- Phase 3: Write ---
     db = SessionLocal()

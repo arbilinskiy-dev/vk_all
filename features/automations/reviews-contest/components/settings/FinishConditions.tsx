@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { ContestSettings, FinishConditionType } from '../../types';
+import { ContestSettings, FinishConditionType, TargetCountMode } from '../../types';
 import { CustomTimePicker } from '../../../../../shared/components/pickers/CustomTimePicker';
 import { DaySelector } from './controls/FormControls';
 
@@ -9,12 +9,70 @@ interface FinishConditionsProps {
     onChange: (field: keyof ContestSettings, value: any) => void;
 }
 
+/** Переключатель режима интерпретации количества участников */
+const CountModeSelector: React.FC<{
+    value: TargetCountMode;
+    onChange: (mode: TargetCountMode) => void;
+}> = ({ value, onChange }) => {
+    const modes: { id: TargetCountMode; label: string; icon: string }[] = [
+        { id: 'exact', label: 'Ровно =', icon: '' },
+        { id: 'minimum', label: 'Минимум ≥', icon: '' },
+        { id: 'maximum', label: 'Максимум ≤', icon: '' },
+    ];
+
+    return (
+        <div className="flex gap-1 bg-gray-100 p-0.5 rounded-md">
+            {modes.map(mode => (
+                <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => onChange(mode.id)}
+                    className={`px-2.5 py-1 text-xs font-medium rounded transition-all focus:outline-none ${
+                        value === mode.id
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'text-gray-600 hover:bg-gray-200'
+                    }`}
+                >
+                    {mode.label}
+                </button>
+            ))}
+        </div>
+    );
+};
+
+/** Подсказка под настройками — зависит от finishCondition + targetCountMode */
+const getHintText = (condition: FinishConditionType, mode: TargetCountMode): string => {
+    if (condition === 'count') {
+        switch (mode) {
+            case 'exact':
+                return '🎉 Итоги подведутся автоматически, как только наберётся ровно указанное кол-во участников. Лишние перейдут в следующий цикл.';
+            case 'minimum':
+                return '🎉 Итоги подведутся автоматически, как только наберётся указанное кол-во участников или больше. Участвуют ВСЕ, кто накопился.';
+            case 'maximum':
+                return '🎉 Итоги подведутся автоматически при достижении указанного кол-ва. Если участников меньше — розыгрыш все равно состоится. Лишние перейдут в следующий цикл.';
+        }
+    }
+    if (condition === 'mixed') {
+        switch (mode) {
+            case 'exact':
+                return '⚖️ В указанный день участвуют ровно столько человек. Если меньше — перенос на следующую неделю. Если больше — лишние в следующий цикл.';
+            case 'minimum':
+                return '⚖️ В указанный день розыгрыш только при N+ участниках. Если набралось — участвуют ВСЕ. Если меньше — перенос.';
+            case 'maximum':
+                return '⚖️ В указанный день розыгрыш состоится в любом случае (даже если меньше N). Но не более N участников — лишние в следующий цикл.';
+        }
+    }
+    return '';
+};
+
 export const FinishConditions: React.FC<FinishConditionsProps> = ({ settings, onChange }) => {
     const finishOptions: { id: FinishConditionType; label: string }[] = [
         { id: 'count', label: 'По количеству' },
         { id: 'date', label: 'В определенный день' },
         { id: 'mixed', label: 'День + Количество' },
     ];
+
+    const currentMode = settings.targetCountMode || 'exact';
 
     return (
         <div className="space-y-4 opacity-0 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
@@ -40,18 +98,27 @@ export const FinishConditions: React.FC<FinishConditionsProps> = ({ settings, on
             <div className="min-h-[12rem] relative border border-gray-200 rounded-lg p-4 bg-gray-50 flex flex-col justify-center transition-all duration-300">
                 {settings.finishCondition === 'count' && (
                     <div className="animate-fade-in-up space-y-4">
-                            <div className="flex items-center gap-3">
-                            <span className="text-sm font-medium text-gray-700">Целевое количество участников:</span>
-                            <input
-                                type="number"
-                                value={settings.targetCount}
-                                onChange={(e) => onChange('targetCount', Number(e.target.value))}
-                                className="w-24 border border-gray-300 rounded-md px-3 py-2 text-sm text-center font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 no-spinners transition-shadow"
-                                placeholder="50"
-                            />
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-3 flex-wrap">
+                                <span className="text-sm font-medium text-gray-700">Кол-во участников:</span>
+                                <input
+                                    type="number"
+                                    value={settings.targetCount}
+                                    onChange={(e) => onChange('targetCount', Number(e.target.value))}
+                                    className="w-24 border border-gray-300 rounded-md px-3 py-2 text-sm text-center font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 no-spinners transition-shadow"
+                                    placeholder="50"
+                                />
+                            </div>
+                            <div>
+                                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Режим подсчёта</span>
+                                <CountModeSelector 
+                                    value={currentMode} 
+                                    onChange={(mode) => onChange('targetCountMode', mode)} 
+                                />
+                            </div>
                         </div>
                         <div className="text-sm text-gray-600 bg-white p-3 rounded border border-gray-200">
-                            <p>🎉 Пост с итогами опубликуется <strong>автоматически</strong>, как только наберется указанное количество постов в базе.</p>
+                            <p>{getHintText('count', currentMode)}</p>
                         </div>
                     </div>
                 )}
@@ -95,9 +162,9 @@ export const FinishConditions: React.FC<FinishConditionsProps> = ({ settings, on
                                 />
                             </div>
                         </div>
-                        <div className="flex items-center gap-3">
-                                <span className="text-sm font-medium text-gray-700">Минимум участников:</span>
-                                <input
+                        <div className="flex items-center gap-3 flex-wrap">
+                            <span className="text-sm font-medium text-gray-700">Кол-во участников:</span>
+                            <input
                                 type="number"
                                 value={settings.targetCount}
                                 onChange={(e) => onChange('targetCount', Number(e.target.value))}
@@ -105,8 +172,15 @@ export const FinishConditions: React.FC<FinishConditionsProps> = ({ settings, on
                                 placeholder="50"
                             />
                         </div>
+                        <div>
+                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Режим подсчёта</span>
+                            <CountModeSelector 
+                                value={currentMode} 
+                                onChange={(mode) => onChange('targetCountMode', mode)} 
+                            />
+                        </div>
                         <div className="text-sm text-gray-600 bg-white p-2 rounded border border-gray-200">
-                            <p>⚖️ Итоги в указанный день, <strong>только если</strong> наберется нужное кол-во. Если нет — перенос на следующую неделю.</p>
+                            <p>{getHintText('mixed', currentMode)}</p>
                         </div>
                     </div>
                 )}

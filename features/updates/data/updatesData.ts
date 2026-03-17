@@ -2,6 +2,7 @@
 // Структура: массив релизов, каждый содержит дату, описание и список изменений
 // Данные каждого релиза хранятся в отдельном файле
 
+import { release13Data } from './release13Data';
 import { release12Data } from './release12Data';
 import { release11Data } from './release11Data';
 import { release8Data } from './release8Data';
@@ -63,6 +64,7 @@ export interface ReleaseUpdate {
 
 /** Все обновления приложения (от новых к старым) */
 export const updatesData: ReleaseUpdate[] = [
+    release13Data,
     release12Data,
     release11Data,
     release8Data,

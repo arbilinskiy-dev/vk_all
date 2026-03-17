@@ -10,10 +10,12 @@ import json
 import logging
 import concurrent.futures
 from datetime import datetime
+from typing import Dict, List
 
 import crud
 from database import SessionLocal
 import services.task_monitor as task_monitor
+from services.lists.list_sync_utils import get_community_tokens
 from services.lists.parallel_common import (
     BulkRefreshState,
     ProjectStatus,
@@ -46,7 +48,7 @@ def run_parallel_subscribers_refresh_v2(task_id: str, user_token: str):
     
     # === ЭТАП 1: ПОЛУЧЕНИЕ ДАННЫХ (короткая сессия) ===
     with OperationTimer("load_initial_data", task_id):
-        projects_list, tokens = _load_initial_data()
+        projects_list, tokens, community_tokens_map = _load_initial_data()
     
     log_pool_status("AFTER_LOAD_DATA")
     
@@ -54,8 +56,8 @@ def run_parallel_subscribers_refresh_v2(task_id: str, user_token: str):
     if not _validate_data(task_id, projects_list, tokens):
         return
     
-    logger.info(f"[ORCHESTRATOR] Tokens: {len(tokens)} | Projects: {len(projects_list)}")
-    print(f"PARALLEL_BULK: Найдено {len(tokens)} токенов, {len(projects_list)} проектов")
+    logger.info(f"[ORCHESTRATOR] Tokens: {len(tokens)} | Projects: {len(projects_list)} | Community: {len(community_tokens_map)}")
+    print(f"PARALLEL_BULK: Найдено {len(tokens)} токенов, {len(projects_list)} проектов, {len(community_tokens_map)} с community-токенами")
     
     # === ЭТАП 3: ПРОВЕРКА АДМИНСКИХ ПРАВ ===
     with OperationTimer("check_admin_rights", f"{len(tokens)} tokens, {len(projects_list)} groups"):
@@ -70,6 +72,7 @@ def run_parallel_subscribers_refresh_v2(task_id: str, user_token: str):
     
     # === ЭТАП 4: ПОДГОТОВКА СОСТОЯНИЯ ===
     state = BulkRefreshState(task_id, projects_list, tokens, admin_map)
+    state.community_tokens_map = community_tokens_map  # Community-токены для processor
     distribute_projects_to_state(state)
     _log_distribution(state)
     update_task_progress(state, force=True)
@@ -88,31 +91,39 @@ def run_parallel_subscribers_refresh_v2(task_id: str, user_token: str):
 
 def _load_initial_data():
     """
-    Загружает начальные данные из БД (проекты и токены).
+    Загружает начальные данные из БД (проекты, токены, community-токены).
     
     Использует короткую сессию — закрываем сразу после чтения.
     
     Returns:
-        Tuple[projects_list, tokens]
+        Tuple[projects_list, tokens, community_tokens_map]
     """
     projects_list = []
     tokens = []
+    community_tokens_map: Dict[str, List[str]] = {}  # {project_id: [tokens]}
     
     db = SessionLocal()
     try:
         # Получаем все проекты
         projects_db = crud.get_all_projects(db)
-        projects_list = [
-            {'id': p.id, 'name': p.name, 'vk_id': str(p.vkProjectId)}
-            for p in projects_db if p.vkProjectId is not None
-        ]
+        for p in projects_db:
+            if p.vkProjectId is not None:
+                projects_list.append({'id': p.id, 'name': p.name, 'vk_id': str(p.vkProjectId)})
+                
+                # Извлекаем community-токены для каждого проекта
+                ct = get_community_tokens(p)
+                if ct:
+                    community_tokens_map[p.id] = ct
         
-        # Получаем все токены
+        # Получаем все системные токены
         tokens = get_all_tokens_with_names(db)
     finally:
         db.close()  # ЗАКРЫВАЕМ СРАЗУ после получения данных!
     
-    return projects_list, tokens
+    if community_tokens_map:
+        print(f"PARALLEL_BULK: Community-токены найдены у {len(community_tokens_map)} проектов")
+    
+    return projects_list, tokens, community_tokens_map
 
 
 def _validate_data(task_id: str, projects_list: list, tokens: list) -> bool:

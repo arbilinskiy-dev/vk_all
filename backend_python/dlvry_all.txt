@@ -1,0 +1,50 @@
+﻿........................................................................ [ 52%]
+................................................................         [100%]
+============================== warnings summary ===============================
+database.py:99
+  C:\Users\nikita79882\Desktop\vk planer code\12.02.2026\backend_python\tests\dlvry\..\..\database.py:99: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+  C:\python\Lib\site-packages\pydantic\_internal\_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+main.py:271
+  C:\Users\nikita79882\Desktop\vk planer code\12.02.2026\backend_python\tests\dlvry\..\..\main.py:271: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+..\..\..\..\..\..\python\Lib\site-packages\fastapi\applications.py:4495
+..\..\..\..\..\..\python\Lib\site-packages\fastapi\applications.py:4495
+  C:\python\Lib\site-packages\fastapi\applications.py:4495: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+main.py:384
+  C:\Users\nikita79882\Desktop\vk planer code\12.02.2026\backend_python\tests\dlvry\..\..\main.py:384: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+tests/dlvry/test_dlvry_daily_stats_integration.py::TestCrudDailyStats::test_upsert_updates_existing
+  C:\Users\nikita79882\Desktop\vk planer code\12.02.2026\backend_python\tests\dlvry\..\..\crud\dlvry_daily_stats_crud.py:114: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    existing.updated_at = datetime.utcnow()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+136 passed, 12 warnings in 286.09s (0:04:46)

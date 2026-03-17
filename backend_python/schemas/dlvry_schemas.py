@@ -164,6 +164,21 @@ class DlvryOrderResponse(BaseModel):
     status: str = "received"
     items_count: Optional[int] = None
     created_at: Optional[str] = None
+    # ── Расширенные поля для переключаемых групп колонок ──
+    cost: Optional[float] = None
+    discount: Optional[float] = None
+    delivery_price: Optional[float] = None
+    subtotal: Optional[float] = None
+    payment_bonus: Optional[float] = None
+    markup: Optional[float] = None
+    vk_platform: Optional[str] = None
+    vk_user_id: Optional[str] = None
+    address_city: Optional[str] = None
+    persons: Optional[int] = None
+    items_total_qty: Optional[int] = None
+    promocode: Optional[str] = None
+    comment: Optional[str] = None
+    is_preorder: bool = False
 
 
 class DlvryOrdersListResponse(BaseModel):
@@ -181,6 +196,7 @@ class DlvryOrderStatsResponse(BaseModel):
     avg_check: float = 0
     total_items: int = 0
     unique_clients: int = 0
+    orders_today: int = 0
     period_from: Optional[str] = None
     period_to: Optional[str] = None
 
@@ -194,3 +210,83 @@ class DlvryWebhookLogResponse(BaseModel):
     result: str
     error_message: Optional[str] = None
     timestamp: Optional[datetime] = None
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Филиалы DLVRY
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class DlvryAffiliateResponse(BaseModel):
+    """Филиал DLVRY, привязанный к проекту."""
+    id: str
+    project_id: str
+    affiliate_id: str
+    name: Optional[str] = None
+    is_active: bool = True
+    created_at: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class DlvryAffiliateCreatePayload(BaseModel):
+    """Payload для создания филиала."""
+    affiliate_id: str
+    name: Optional[str] = None
+
+
+class DlvryAffiliateUpdatePayload(BaseModel):
+    """Payload для обновления филиала."""
+    name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Аналитика товаров
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class DlvryProductAnalyticsItem(BaseModel):
+    """Одна строка аналитики товара."""
+    dlvry_item_id: str = ""
+    name: str = ""
+    code: str = ""
+    sku_title: str = ""
+    total_qty: int = 0
+    orders_count: int = 0
+    total_revenue: float = 0
+    avg_price: float = 0
+    min_price: float = 0
+    max_price: float = 0
+
+
+class DlvryProductsListResponse(BaseModel):
+    """Список товаров с пагинацией."""
+    products: List[DlvryProductAnalyticsItem]
+    total: int
+    skip: int = 0
+    limit: int = 50
+
+
+class DlvryProductsSummaryResponse(BaseModel):
+    """Сводная статистика по товарам."""
+    unique_products: int = 0
+    total_qty: int = 0
+    total_revenue: float = 0
+    total_orders: int = 0
+    avg_qty_per_order: float = 0
+    avg_revenue_per_product: float = 0
+
+
+class DlvryRelatedProductItem(BaseModel):
+    """Сопутствующий товар."""
+    dlvry_item_id: str = ""
+    name: str = ""
+    co_orders: int = 0
+    pct: float = 0
+    avg_qty: float = 0
+
+
+class DlvryProductRelatedResponse(BaseModel):
+    """Ответ: сопутствующие товары."""
+    target_orders_count: int = 0
+    related: List[DlvryRelatedProductItem] = []

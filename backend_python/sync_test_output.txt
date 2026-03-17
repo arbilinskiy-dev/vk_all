@@ -1,0 +1,176 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.5, pytest-9.0.2, pluggy-1.6.0 -- C:\python\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\nikita79882\Desktop\vk planer code\12.02.2026\backend_python
+plugins: anyio-4.9.0
+collecting ... collected 1 item
+
+tests/dlvry/test_dlvry_daily_stats_integration.py::TestSyncAll::test_sync_all_no_projects_returns_zeros FAILED [100%]
+
+================================== FAILURES ===================================
+_____________ TestSyncAll.test_sync_all_no_projects_returns_zeros _____________
+
+self = <dlvry.test_dlvry_daily_stats_integration.TestSyncAll object at 0x000001D489B11BA0>
+client = <starlette.testclient.TestClient object at 0x000001D48E1F81A0>
+test_db = <sqlalchemy.orm.session.Session object at 0x000001D48CC8BB60>
+
+    def test_sync_all_no_projects_returns_zeros(self, client, test_db):
+        """\u041d\u0435\u0442 \u043f\u0440\u043e\u0435\u043a\u0442\u043e\u0432 \u0441 DLVRY \u2192 \u043d\u0443\u043b\u0438."""
+        r = client.post("/api/dlvry/stats/sync-all")
+>       data = r.json()
+               ^^^^^^^^
+
+tests\dlvry\test_dlvry_daily_stats_integration.py:424: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Response [500 Internal Server Error]>, kwargs = {}
+
+    def json(self, **kwargs: typing.Any) -> typing.Any:
+>       return jsonlib.loads(self.content, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\python\Lib\site-packages\httpx\_models.py:832: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+s = 'Internal Server Error', cls = None, object_hook = None, parse_float = None
+parse_int = None, parse_constant = None, object_pairs_hook = None, kw = {}
+
+    def loads(s, *, cls=None, object_hook=None, parse_float=None,
+            parse_int=None, parse_constant=None, object_pairs_hook=None, **kw):
+        """Deserialize ``s`` (a ``str``, ``bytes`` or ``bytearray`` instance
+        containing a JSON document) to a Python object.
+    
+        ``object_hook`` is an optional function that will be called with the
+        result of any object literal decode (a ``dict``). The return value of
+        ``object_hook`` will be used instead of the ``dict``. This feature
+        can be used to implement custom decoders (e.g. JSON-RPC class hinting).
+    
+        ``object_pairs_hook`` is an optional function that will be called with the
+        result of any object literal decoded with an ordered list of pairs.  The
+        return value of ``object_pairs_hook`` will be used instead of the ``dict``.
+        This feature can be used to implement custom decoders.  If ``object_hook``
+        is also defined, the ``object_pairs_hook`` takes priority.
+    
+        ``parse_float``, if specified, will be called with the string
+        of every JSON float to be decoded. By default this is equivalent to
+        float(num_str). This can be used to use another datatype or parser
+        for JSON floats (e.g. decimal.Decimal).
+    
+        ``parse_int``, if specified, will be called with the string
+        of every JSON int to be decoded. By default this is equivalent to
+        int(num_str). This can be used to use another datatype or parser
+        for JSON integers (e.g. float).
+    
+        ``parse_constant``, if specified, will be called with one of the
+        following strings: -Infinity, Infinity, NaN.
+        This can be used to raise an exception if invalid JSON numbers
+        are encountered.
+    
+        To use a custom ``JSONDecoder`` subclass, specify it with the ``cls``
+        kwarg; otherwise ``JSONDecoder`` is used.
+        """
+        if isinstance(s, str):
+            if s.startswith('\ufeff'):
+                raise JSONDecodeError("Unexpected UTF-8 BOM (decode using utf-8-sig)",
+                                      s, 0)
+        else:
+            if not isinstance(s, (bytes, bytearray)):
+                raise TypeError(f'the JSON object must be str, bytes or bytearray, '
+                                f'not {s.__class__.__name__}')
+            s = s.decode(detect_encoding(s), 'surrogatepass')
+    
+        if (cls is None and object_hook is None and
+                parse_int is None and parse_float is None and
+                parse_constant is None and object_pairs_hook is None and not kw):
+>           return _default_decoder.decode(s)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\python\Lib\json\__init__.py:346: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <json.decoder.JSONDecoder object at 0x000001D484137620>
+s = 'Internal Server Error'
+_w = <built-in method match of re.Pattern object at 0x000001D484240110>
+
+    def decode(self, s, _w=WHITESPACE.match):
+        """Return the Python representation of ``s`` (a ``str`` instance
+        containing a JSON document).
+    
+        """
+>       obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+C:\python\Lib\json\decoder.py:345: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <json.decoder.JSONDecoder object at 0x000001D484137620>
+s = 'Internal Server Error', idx = 0
+
+    def raw_decode(self, s, idx=0):
+        """Decode a JSON document from ``s`` (a ``str`` beginning with
+        a JSON document) and return a 2-tuple of the Python
+        representation and the index in ``s`` where the document ended.
+    
+        This can be used to decode a JSON document from a string that may
+        have extraneous data at the end.
+    
+        """
+        try:
+            obj, end = self.scan_once(s, idx)
+        except StopIteration as err:
+>           raise JSONDecodeError("Expecting value", s, err.value) from None
+E           json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+C:\python\Lib\json\decoder.py:363: JSONDecodeError
+---------------------------- Captured stdout setup ----------------------------
+\n==================================================\n!!! \u0417\u0410\u041f\u0423\u0429\u0415\u041d\u0410 \u0412\u0415\u0420\u0421\u0418\u042f: v1.0.51_bulk_ai_fix !!!\n!!! ALLOWED ORIGINS: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173', 'https://vk-content-planner-frontend-preprod.website.yandexcloud.net', 'https://vk-content-planner-frontend.website.yandexcloud.net', 'https://dosmmit.ru', 'https://www.dosmmit.ru'] !!!\n==================================================\n\nChecking database schema...\nRunning database migrations...\n\u2139\ufe0f vk_users table already exists, skipping...\nvk_profiles already has 1271389 records, skipping population.\nvk_profiles migration complete.\nmember_events already has data, skipping population.\nMembers migration complete.\npost_interactions already has data, skipping population.\nDialogs/authors migration complete.\n\u2139\ufe0f cached_messages table already exists, skipping...\n\u2139\ufe0f message_cache_meta table already exists, skipping...\n\u2139\ufe0f message_read_status table already exists, skipping...\n\u2139\ufe0f message_stats_hourly table already exists, checking columns...\n  \u2139\ufe0f Column incoming_payload_count already exists\n  \u2139\ufe0f Column incoming_text_count already exists\n  \u2139\ufe0f Column outgoing_system_count already exists\n  \u2139\ufe0f Column outgoing_bot_count already exists\n  \u2139\ufe0f Column unique_text_users_json already exists\n  \u2139\ufe0f Column unique_payload_users_json already exists\n  \u2139\ufe0f Column outgoing_users_json already exists\n  \u2139\ufe0f Column unique_dialogs_count already exists\n  \u2139\ufe0f Column unique_text_users_count already exists\n  \u2139\ufe0f Column unique_payload_users_count already exists\n  \u2139\ufe0f Column outgoing_users_count already exists\n  \u2139\ufe0f Column incoming_users_count already exists\n\u2139\ufe0f message_stats_hourly_users table already exists, skipping...\n\u2139\ufe0f message_stats_user table already exists, skipping...\n\u2139\ufe0f message_stats_admin table already exists, skipping...\n\u2139\ufe0f message_subscriptions table already exists, skipping...\n  Table 'message_templates' already exists, skipping.\n  Table 'promo_lists' already exists, skipping.\n  Table 'promo_list_codes' already exists, skipping.\n  Table 'dialog_labels' already exists, skipping.\n  Table 'dialog_label_assignments' already exists, skipping.\n\u2139\ufe0f auth_sessions table already exists, skipping...\n\u2139\ufe0f auth_logs table already exists, skipping...\n\u2139\ufe0f user_roles table already exists, skipping...\n\u2139\ufe0f users.role_id already exists, skipping...\n\u2139\ufe0f user_actions table already exists, checking columns...\n[DLVRY] \u0422\u0430\u0431\u043b\u0438\u0446\u0430 dlvry_orders \u0443\u0436\u0435 \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442\n[DLVRY] \u0422\u0430\u0431\u043b\u0438\u0446\u0430 dlvry_order_items \u0443\u0436\u0435 \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442\n[DLVRY] \u0422\u0430\u0431\u043b\u0438\u0446\u0430 dlvry_webhook_logs \u0443\u0436\u0435 \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442\n[DLVRY] \u041c\u0438\u0433\u0440\u0430\u0446\u0438\u044f \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0430.\n[DLVRY] \u2139\ufe0f \u0422\u0430\u0431\u043b\u0438\u0446\u0430 dlvry_daily_stats \u0443\u0436\u0435 \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442.\n[DLVRY] \u2139\ufe0f \u0412\u0441\u0435 \u043a\u043e\u043b\u043e\u043d\u043a\u0438 dlvry_daily_stats \u0430\u043a\u0442\u0443\u0430\u043b\u044c\u043d\u044b.\n[DLVRY] \u0422\u0430\u0431\u043b\u0438\u0446\u0430 dlvry_project_affiliates \u0443\u0436\u0435 \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442.\n\u2139\ufe0f user_membership_history table already exists, skipping...\n\u2139\ufe0f team_contact_types exists\n\u2139\ufe0f team_section_types exists\n\u2139\ufe0f team_competency_categories exists\n\u2139\ufe0f team_regulation_categories exists\n\u2139\ufe0f team_training_categories exists\n\u2139\ufe0f team_test_categories exists\n\u2139\ufe0f team_competencies exists\n\u2139\ufe0f team_regulations exists\n\u2139\ufe0f team_trainings exists\n\u2139\ufe0f team_tests exists\n\u2139\ufe0f team_departments exists\n\u2139\ufe0f team_positions exists\n\u2139\ufe0f team_employees exists\n\u2139\ufe0f team_employee_contacts exists\n\u2139\ufe0f team_position_sections exists\n\u2139\ufe0f team_position_competencies exists\n\u2139\ufe0f team_position_regulations exists\n\u2139\ufe0f team_position_trainings exists\n\u2139\ufe0f team_position_tests exists\n\u2139\ufe0f team_employee_competencies exists\n\u2139\ufe0f team_employee_trainings exists\n\u2139\ufe0f team_employee_test_results exists\n[CLEANUP] \u2713 vk_profiles: 1,271,389 \u0437\u0430\u043f\u0438\u0441\u0435\u0439 (\u0441\u0442\u0430\u0440\u044b\u0435 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0443\u0436\u0435 \u0443\u0434\u0430\u043b\u0435\u043d\u044b)\n[CLEANUP] \u2713 project_members: 1,281,870 \u0437\u0430\u043f\u0438\u0441\u0435\u0439 (\u0441\u0442\u0430\u0440\u044b\u0435 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0443\u0436\u0435 \u0443\u0434\u0430\u043b\u0435\u043d\u044b)\n[CLEANUP] \u2713 member_events: 1,294,498 \u0437\u0430\u043f\u0438\u0441\u0435\u0439 (\u0441\u0442\u0430\u0440\u044b\u0435 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0443\u0436\u0435 \u0443\u0434\u0430\u043b\u0435\u043d\u044b)\n[CLEANUP] \u2713 post_interactions: 299,885 \u0437\u0430\u043f\u0438\u0441\u0435\u0439 (\u0441\u0442\u0430\u0440\u044b\u0435 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0443\u0436\u0435 \u0443\u0434\u0430\u043b\u0435\u043d\u044b)\n[CLEANUP] \u2713 project_dialogs: 240,994 \u0437\u0430\u043f\u0438\u0441\u0435\u0439 (\u0441\u0442\u0430\u0440\u044b\u0435 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0443\u0436\u0435 \u0443\u0434\u0430\u043b\u0435\u043d\u044b)\n[CLEANUP] \u2713 project_authors: 48,027 \u0437\u0430\u043f\u0438\u0441\u0435\u0439 (\u0441\u0442\u0430\u0440\u044b\u0435 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0443\u0436\u0435 \u0443\u0434\u0430\u043b\u0435\u043d\u044b)\n[CLEANUP] \u0421\u0442\u0430\u0440\u044b\u0435 \u0442\u0430\u0431\u043b\u0438\u0446\u044b \u0443\u0436\u0435 \u0431\u044b\u043b\u0438 \u0443\u0434\u0430\u043b\u0435\u043d\u044b \u0440\u0430\u043d\u0435\u0435.\nMigrations complete.\n\U0001f512 ENCRYPTION: \u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0434\u0430\u043d\u043d\u044b\u0445 \u043d\u0430 \u043d\u0435\u043e\u0431\u0445\u043e\u0434\u0438\u043c\u043e\u0441\u0442\u044c \u0448\u0438\u0444\u0440\u043e\u0432\u0430\u043d\u0438\u044f...\nINIT: Checking predefined Project Context fields...\nINIT: All context fields already exist.\nStarting APScheduler...\n\u2705 APScheduler started \u2014 18 scheduled jobs registered.\nVK Callback Worker skipped (another process holds the lock).\nSSE Manager initialized (loop + Redis Pub/Sub listener started if Redis available).\nStartup complete.
+----------------------------- Captured log setup ------------------------------
+WARNING  vk_callback.worker:worker.py:314 EMBEDDED WORKER: Redis ýõôþ¸ªºÿõý, òþ¨úõ¨ ýõ ÷ðÿº•õý
+-------------------------- Captured stdout teardown ---------------------------
+Shutting down application...\n\u2705 APScheduler stopped gracefully.\nShutdown complete.
+============================== warnings summary ===============================
+database.py:99
+  C:\Users\nikita79882\Desktop\vk planer code\12.02.2026\backend_python\tests\dlvry\..\..\database.py:99: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+..\..\..\..\..\..\python\Lib\site-packages\pydantic\_internal\_config.py:323
+  C:\python\Lib\site-packages\pydantic\_internal\_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+main.py:271
+  C:\Users\nikita79882\Desktop\vk planer code\12.02.2026\backend_python\tests\dlvry\..\..\main.py:271: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+..\..\..\..\..\..\python\Lib\site-packages\fastapi\applications.py:4495
+..\..\..\..\..\..\python\Lib\site-packages\fastapi\applications.py:4495
+  C:\python\Lib\site-packages\fastapi\applications.py:4495: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+main.py:384
+  C:\Users\nikita79882\Desktop\vk planer code\12.02.2026\backend_python\tests\dlvry\..\..\main.py:384: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("shutdown")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/dlvry/test_dlvry_daily_stats_integration.py::TestSyncAll::test_sync_all_no_projects_returns_zeros
+======================= 1 failed, 11 warnings in 6.70s ========================

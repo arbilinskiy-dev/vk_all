@@ -30,7 +30,7 @@ export const getGlobalVariablesForProject = async (projectId: string): Promise<{
  * Заменяет N отдельных запросов getForProject.
  */
 export const getGlobalVariablesForMultipleProjects = async (projectIds: string[]): Promise<{ definitions: GlobalVariableDefinition[], valuesByProject: Record<string, ProjectGlobalVariableValue[]> }> => {
-    return callApi('global-variables/getForMultipleProjects', { projectIds });
+    return callApi('global-variables/getForMultipleProjects', { projectIds }, 'POST', { noRetry: true });
 };
 
 /**

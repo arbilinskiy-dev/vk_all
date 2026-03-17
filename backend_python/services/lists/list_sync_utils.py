@@ -1,10 +1,32 @@
 
+import json
 import time
 import concurrent.futures
 from typing import List, Dict, Optional
 from services.vk_api.api_client import call_vk_api as raw_vk_call
 import crud
 from database import SessionLocal
+
+
+def get_community_tokens(project) -> List[str]:
+    """
+    Извлекает токены сообщества из проекта (основной + дополнительные).
+    Возвращает список уникальных токенов или пустой список.
+    """
+    tokens = []
+    if project.communityToken:
+        tokens.append(project.communityToken)
+
+    if project.additional_community_tokens:
+        try:
+            extras = json.loads(project.additional_community_tokens)
+            if isinstance(extras, list):
+                tokens.extend([t for t in extras if t])
+        except Exception:
+            pass
+
+    return list(set([t for t in tokens if t]))
+
 
 def get_all_project_tokens(db, user_token: str = None) -> List[str]:
     """
@@ -97,11 +119,15 @@ def _fetch_chunk_smart(
     tokens: List[str], 
     chunk_index: int, 
     fields: str, 
-    project_id: str
+    project_id: str,
+    extra_params: Optional[Dict] = None
 ) -> List[Dict]:
     """
     Воркер для обработки одного чанка пользователей.
     Реализует Smart Fallback: если токен падает, пробует следующий.
+    
+    extra_params: дополнительные параметры для VK API (например, {'lang': 'ru'}
+                  для корректной кириллицы при использовании сервисного ключа).
     """
     if not tokens:
         return []
@@ -121,11 +147,14 @@ def _fetch_chunk_smart(
         masked = f"...{token[-4:]}"
         try:
             # Прямой вызов без глобальной ротации (мы управляем ротацией здесь)
-            response = raw_vk_call('users.get', {
+            call_params = {
                 'user_ids': ids_str,
                 'fields': fields,
                 'access_token': token
-            }, project_id=project_id)
+            }
+            if extra_params:
+                call_params.update(extra_params)
+            response = raw_vk_call('users.get', call_params, project_id=project_id)
             
             # Успех! Возвращаем данные
             # print(f"   [Smart Worker] Chunk {chunk_index} OK with token {masked}")
@@ -144,10 +173,16 @@ def fetch_users_smart_parallel(
     tokens: List[str], 
     fields: str, 
     project_id: str,
-    progress_callback=None
+    progress_callback=None,
+    extra_params: Optional[Dict] = None
 ) -> List[Dict]:
     """
     Параллельная загрузка пользователей с защитой от сбоев токенов.
+    
+    extra_params: дополнительные параметры для VK API.
+                  ВАЖНО: при использовании сервисного ключа (VK_SERVICE_KEY)
+                  необходимо передавать {'lang': 'ru'}, иначе VK API
+                  возвращает имена и города транслитом на латинице.
     """
     total_count = len(vk_ids)
     if total_count == 0 or not tokens:
@@ -168,7 +203,7 @@ def fetch_users_smart_parallel(
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_index = {
-            executor.submit(_fetch_chunk_smart, chunk, tokens, i, fields, project_id): i 
+            executor.submit(_fetch_chunk_smart, chunk, tokens, i, fields, project_id, extra_params): i 
             for i, chunk in enumerate(chunks)
         }
 

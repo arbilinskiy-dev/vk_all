@@ -53,6 +53,22 @@ export function useChatInputLogic({
     const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
     const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
 
+    // --- Сброс состояния ввода при смене проекта или собеседника ---
+    useEffect(() => {
+        setText('');
+        setAttachedFiles(prev => {
+            prev.forEach(f => URL.revokeObjectURL(f.previewUrl));
+            return [];
+        });
+        setIsEmojiPickerOpen(false);
+        setIsVariablesOpen(false);
+        setIsTemplatesOpen(false);
+        // Сброс кешированных переменных (они привязаны к проекту)
+        setGlobalVariables(null);
+        setProjectVariables(null);
+        setPromoVariables(null);
+    }, [projectId, currentUserId]);
+
     // --- Шаблоны ---
     const { templates, isLoading: isLoadingTemplates, preview: previewTemplate } = useMessageTemplates({ projectId });
 

@@ -8,6 +8,7 @@ from models_library.members import MemberEvent
 from services import vk_service, task_monitor
 from services.post_helpers import get_rounded_timestamp
 from database import SessionLocal
+from config import settings
 from .list_sync_utils import get_all_project_tokens, fetch_users_smart_parallel
 from crud.lists.utils import deduplicate_users
 
@@ -29,7 +30,14 @@ def refresh_history_details_task(task_id: str, project_id: str, list_type: str, 
         deduplicate_users(db, MemberEvent, project_id, event_type=event_type)
 
         all_vk_ids = crud.get_all_history_vk_ids(db, project_id, list_type)
-        unique_tokens = get_all_project_tokens(db, user_token)
+        # Приоритет: VK_SERVICE_KEY → fallback на user-токены
+        service_key = settings.vk_service_key
+        if service_key:
+            unique_tokens = [service_key]
+            use_service_key = True
+        else:
+            unique_tokens = get_all_project_tokens(db, user_token)
+            use_service_key = False
     finally:
         db.close()
 
@@ -44,11 +52,12 @@ def refresh_history_details_task(task_id: str, project_id: str, list_type: str, 
     # --- Phase 2: Network ---
     task_monitor.update_task(task_id, "fetching", loaded=0, total=len(all_vk_ids))
     fields = 'last_seen,first_name,last_name,sex,photo_100,bdate,city,country,domain,has_mobile'
+    extra_params = {'lang': 'ru'} if use_service_key else None
     
     def on_progress(loaded, total):
         task_monitor.update_task(task_id, "fetching", loaded=loaded, total=total)
 
-    fetched_users = fetch_users_smart_parallel(all_vk_ids, unique_tokens, fields, project_id, on_progress)
+    fetched_users = fetch_users_smart_parallel(all_vk_ids, unique_tokens, fields, project_id, on_progress, extra_params)
     
     # --- Phase 3: Write ---
     db = SessionLocal()

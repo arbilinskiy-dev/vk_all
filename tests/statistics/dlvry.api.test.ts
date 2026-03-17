@@ -46,6 +46,21 @@ function createMockOrdersResponse() {
                 status: 'new',
                 items_count: 3,
                 created_at: '2026-03-01T10:00:00',
+                // Расширенные поля для переключаемых групп колонок
+                cost: 750.0,
+                discount: 100.0,
+                delivery_price: 150.0,
+                subtotal: 1700.5,
+                payment_bonus: 50.0,
+                markup: 30.0,
+                vk_platform: 'desktop_web',
+                vk_user_id: '789',
+                address_city: 'Москва',
+                persons: 2,
+                items_total_qty: 5,
+                promocode: 'СКИДКА10',
+                comment: 'Тестовый заказ',
+                is_preorder: false,
             },
         ],
         total: 1,
@@ -145,6 +160,29 @@ describe('dlvry.api', () => {
             expect(result.orders).toHaveLength(1);
             expect(result.total).toBe(1);
             expect(result.orders[0].client_name).toBe('Иван Иванов');
+        });
+
+        it('возвращает расширенные поля заказа', async () => {
+            const mockData = createMockOrdersResponse();
+            mockFetch.mockResolvedValue(mockOkResponse(mockData));
+
+            const result = await fetchDlvryOrders();
+            const order = result.orders[0];
+
+            expect(order.cost).toBe(750.0);
+            expect(order.discount).toBe(100.0);
+            expect(order.delivery_price).toBe(150.0);
+            expect(order.subtotal).toBe(1700.5);
+            expect(order.payment_bonus).toBe(50.0);
+            expect(order.markup).toBe(30.0);
+            expect(order.vk_platform).toBe('desktop_web');
+            expect(order.vk_user_id).toBe('789');
+            expect(order.address_city).toBe('Москва');
+            expect(order.persons).toBe(2);
+            expect(order.items_total_qty).toBe(5);
+            expect(order.promocode).toBe('СКИДКА10');
+            expect(order.comment).toBe('Тестовый заказ');
+            expect(order.is_preorder).toBe(false);
         });
 
         it('выбрасывает ошибку при non-ok ответе', async () => {

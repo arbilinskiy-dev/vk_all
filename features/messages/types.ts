@@ -1,6 +1,7 @@
 /**
  * Типы для модуля "Работа с сообщениями"
  */
+import type { VkMessageItem } from '../../services/api/messages.types';
 
 /** Канал обмена сообщениями */
 export type MessagesChannel = 'vk' | 'tg';
@@ -55,8 +56,14 @@ export interface MessageKeyboard {
 /** Одно сообщение в диалоге */
 export interface ChatMessageData {
     id: string;
+    /** ID сообщения внутри диалога (conversation_message_id из VK API, нужен для пересылки между диалогами) */
+    conversationMessageId?: number;
     /** Направление: входящее от юзера или исходящее от сообщества */
     direction: MessageDirection;
+    /** ID отправителя VK (>0 = пользователь, <0 = сообщество) */
+    fromId?: number;
+    /** Имя отправителя (для групповых чатов — имя участника) */
+    senderName?: string;
     text: string;
     timestamp: string; // ISO строка
     /** Прочитано ли сообщение */
@@ -71,6 +78,20 @@ export interface ChatMessageData {
     isBotMessage?: boolean;
     /** Сообщение удалено из ВК (есть в нашей базе, но нет в VK) */
     isDeletedFromVk?: boolean;
+    /** Сообщение, на которое это ответ */
+    replyMessage?: {
+        id: string;
+        text: string;
+        direction: MessageDirection;
+    };
+    /** Пересланные сообщения */
+    forwardedMessages?: {
+        id: string;
+        text: string;
+        direction: MessageDirection;
+        senderName?: string;
+        timestamp?: string;
+    }[];
 }
 
 /** Собеседник (пользователь ВК или Telegram) */
@@ -105,6 +126,12 @@ export interface Conversation {
     isImportant?: boolean;
     /** ID меток (ярлыков), назначенных диалогу */
     labelIds?: string[];
+    /** Групповой чат сообщества (peer_id >= 2000000001) */
+    isGroupChat?: boolean;
+    /** Количество участников (для групповых чатов) */
+    membersCount?: number;
+    /** peer_id чата (для групповых чатов) */
+    peerId?: number;
 }
 
 /** Фильтр поиска по сообщениям */
@@ -167,29 +194,13 @@ export type SSEEventType =
     | 'user_read'              // пользователь VK прочитал наши исходящие
     | 'user_typing'            // пользователь VK печатает сообщение
     | 'dialog_focus'           // менеджер открыл/покинул диалог
-    | 'mailing_user_updated';  // данные пользователя в рассылке обновлены (при message_new)
+    | 'mailing_user_updated'   // данные пользователя в рассылке обновлены (при message_new)
+    | 'chat_action';           // действие менеджера в диалоге (вход/выход, метки и т.д.)
 
 /** Данные нового сообщения из SSE */
 export interface SSENewMessageData {
     vk_user_id: number;
-    message: {
-        id: number;
-        from_id: number;
-        peer_id: number;
-        text: string;
-        date: number;
-        out: number;
-        attachments?: unknown[];
-        keyboard?: {
-            one_time?: boolean;
-            inline?: boolean;
-            buttons: unknown[][];
-        };
-        /** Payload кнопки бота (строка JSON) */
-        payload?: string;
-        /** Имя менеджера, отправившего сообщение через нашу систему */
-        sent_by_name?: string;
-    };
+    message: VkMessageItem;
     unread_count: number;
     is_incoming: boolean;
     /** "append" — дозаписано в кэш, "reload" — кэш перезагружен из VK API */
@@ -243,6 +254,54 @@ export interface SSEMailingUserUpdatedData {
 export interface SSEMessageEvent {
     type: SSEEventType;
     project_id: string;
-    data: SSENewMessageData | SSEMessageReadData | SSEAllReadData | SSEUserReadData | SSEUserTypingData | SSEDialogFocusData | SSEMailingUserUpdatedData;
+    data: SSENewMessageData | SSEMessageReadData | SSEAllReadData | SSEUserReadData | SSEUserTypingData | SSEDialogFocusData | SSEMailingUserUpdatedData | SSEChatActionData;
     timestamp: number;
 }
+
+// =============================================================================
+// Действия менеджеров в чате (хронология)
+// =============================================================================
+
+/** Тип действия в чате */
+export type ChatActionType =
+    | 'chat_enter'
+    | 'chat_leave'
+    | 'mark_important'
+    | 'unmark_important'
+    | 'mark_unread'
+    | 'label_assign'
+    | 'label_unassign'
+    | 'forward_to_chat'
+    | 'message_send';
+
+/** Одно действие менеджера в хронологии чата */
+export interface ChatActionData {
+    /** Уникальный ID (формат "action_123") */
+    id: string;
+    /** Тип действия */
+    action_type: ChatActionType;
+    /** ID менеджера */
+    manager_id: string;
+    /** Имя менеджера */
+    manager_name: string;
+    /** Время действия (ISO строка) */
+    timestamp: string;
+    /** Доп. данные (название метки, цвет и т.п.) */
+    metadata?: {
+        label_id?: string;
+        label_name?: string;
+        label_color?: string;
+        [key: string]: unknown;
+    };
+}
+
+/** Данные SSE события chat_action */
+export interface SSEChatActionData {
+    vk_user_id: number;
+    action: ChatActionData;
+}
+
+/** Элемент хронологии чата: сообщение ИЛИ действие */
+export type ChatTimelineItem =
+    | { type: 'message'; data: ChatMessageData }
+    | { type: 'action'; data: ChatActionData };

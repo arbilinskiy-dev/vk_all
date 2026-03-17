@@ -201,14 +201,37 @@ export const ProjectTable: React.FC<ProjectTableProps> = ({ projects, editedProj
                                             placeholder="Код подтверждения"
                                         />
                                     </td>}
-                                    {visibleColumns.dlvry_affiliate_id && <td className="px-4 py-2">
-                                        <input
-                                            type="text"
-                                            value={currentData.dlvry_affiliate_id || ''}
-                                            onChange={(e) => onProjectChange(project.id, 'dlvry_affiliate_id', e.target.value)}
-                                            className={`${inputClasses} w-full`}
-                                            placeholder="ID филиала"
-                                        />
+                                    {visibleColumns.dlvry_affiliates_count && <td className="px-4 py-2 text-center">
+                                        {(() => {
+                                            const count = currentData.dlvry_affiliates_count ?? 0;
+                                            const ids = currentData.dlvry_affiliate_ids ?? [];
+                                            if (count === 0) {
+                                                return <span className="text-xs text-gray-400">—</span>;
+                                            }
+                                            if (count === 1) {
+                                                return (
+                                                    <span className="text-xs font-mono text-orange-800 cursor-help" title={`Филиал DLVRY: ${ids[0] ?? ''}`}>
+                                                        {ids[0] ?? ''}
+                                                    </span>
+                                                );
+                                            }
+                                            return (
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <div className="text-xs cursor-help" title={ids.join('\n')}>
+                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">{count} шт.</span>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => onOpenSettings(project, 'integrations')}
+                                                        className="p-1 text-gray-400 hover:text-orange-600 rounded-full hover:bg-orange-50 transition-colors"
+                                                        title="Управление филиалами DLVRY в настройках"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.536L16.732 3.732z" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            );
+                                        })()}
                                     </td>}
                                     {visibleColumns.vkGroupName && <td className="px-4 py-2 text-sm text-gray-800 truncate">
                                         {project.vkGroupName}

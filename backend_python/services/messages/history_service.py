@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from crud import messages_crud
 from services.vk_api.api_client import VkApiError
-from services.messages.vk_client import fetch_from_vk
+from services.messages.vk_client import fetch_from_vk, CHAT_PEER_ID_START
 from services.messages.user_info_service import get_user_info_for_response
 
 logger = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ def get_history(
     """
     has_filters = direction is not None or bool(search_text and search_text.strip())
     vk_available = True
+    vk_profiles = []  # Профили участников (для групповых чатов)
     
     # --- 1. Синхронизация с VK API (пропускаем если есть фильтры — данные уже в базе) ---
     if not has_filters:
@@ -60,6 +61,8 @@ def get_history(
             result = fetch_from_vk(community_tokens, group_id_int, user_id, VK_FETCH_SIZE, 0, project_id)
             vk_items = result.get("items", [])
             total = result.get("count", 0)
+            # Профили участников (возвращаются при extended=1 для групповых чатов)
+            vk_profiles = result.get("profiles", [])
             
             # Upsert в БД
             if vk_items:
@@ -138,6 +141,13 @@ def get_history(
         "cached_count": total_in_cache,
         "is_fully_loaded": meta.is_fully_loaded if meta else False,
     }
+
+    # Профили участников для групповых чатов (from_id → имя)
+    if user_id >= CHAT_PEER_ID_START and vk_profiles:
+        response["profiles"] = [
+            {"id": p["id"], "first_name": p.get("first_name", ""), "last_name": p.get("last_name", ""), "photo_50": p.get("photo_50", "")}
+            for p in vk_profiles
+        ]
     
     # Статистика по направлению сообщений (при первичной загрузке)
     if offset == 0:

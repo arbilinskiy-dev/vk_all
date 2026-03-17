@@ -33,13 +33,19 @@ def add_blacklist_users(db: Session, project_id: str, urls_string: str, until_da
         raise HTTPException(400, "Не удалось извлечь корректные ID или имена пользователей из ссылок.")
 
     # 3. Запрашиваем данные пользователей через VK API (users.get)
+    # Приоритет: VK_SERVICE_KEY → fallback на vk_user_token
     try:
         user_ids_str = ",".join(identifiers)
-        vk_response = vk_service.call_vk_api('users.get', {
+        token = settings.vk_service_key or settings.vk_user_token
+        call_params = {
             'user_ids': user_ids_str,
             'fields': 'screen_name',
-            'access_token': settings.vk_user_token
-        })
+            'access_token': token
+        }
+        # Сервисный ключ требует lang=ru для кириллицы
+        if settings.vk_service_key:
+            call_params['lang'] = 'ru'
+        vk_response = vk_service.call_vk_api('users.get', call_params)
     except Exception as e:
         raise HTTPException(400, f"Ошибка VK API при проверке пользователей: {str(e)}")
 

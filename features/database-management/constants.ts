@@ -14,7 +14,7 @@ export const COLUMNS: ColumnDefinition[] = [
     { key: 'additional_community_tokens', label: 'Доп. токены' },
     { key: 'notes', label: 'Заметки' },
     { key: 'vk_confirmation_code', label: 'Код Callback API' },
-    { key: 'dlvry_affiliate_id', label: 'DLVRY ID' },
+    { key: 'dlvry_affiliates_count', label: 'DLVRY филиалы' },
     { key: 'vkGroupName', label: 'Название VK' },
     { key: 'vkLink', label: 'Ссылка VK' },
 ];

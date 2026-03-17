@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { Project, AllPosts, ScheduledPost, SuggestedPost, Note, SystemPost, GlobalVariableDefinition, ProjectGlobalVariableValue, UnifiedStory } from '../../shared/types';
+import { Project, ProjectSummary, AllPosts, ScheduledPost, SuggestedPost, Note, SystemPost, GlobalVariableDefinition, ProjectGlobalVariableValue, UnifiedStory } from '../../shared/types';
 import * as api from '../../services/api';
 import { interpretApiError } from '../../services/errorService';
 import { AppView } from '../../App';
@@ -7,8 +7,8 @@ import { useLocalStorage } from '../../shared/hooks/useLocalStorage';
 
 // Типы для пропсов хука
 interface UseDataRefreshersProps {
-    initialProjects: Project[];
-    projects: Project[]; setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
+    initialProjects: ProjectSummary[];
+    projects: ProjectSummary[]; setProjects: React.Dispatch<React.SetStateAction<ProjectSummary[]>>;
     allPosts: AllPosts; setAllPosts: React.Dispatch<React.SetStateAction<AllPosts>>;
     allScheduledPosts: Record<string, ScheduledPost[]>; setAllScheduledPosts: React.Dispatch<React.SetStateAction<Record<string, ScheduledPost[]>>>;
     allSuggestedPosts: Record<string, SuggestedPost[]>; setAllSuggestedPosts: React.Dispatch<React.SetStateAction<Record<string, SuggestedPost[]>>>;

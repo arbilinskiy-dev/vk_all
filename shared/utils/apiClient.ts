@@ -63,7 +63,12 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
  * @returns Промис, который разрешается с данными от бэкенда.
  * @throws Ошибку, если сетевой запрос не удался или бэкенд сообщил об ошибке.
  */
-export const callApi = async <T = any>(endpoint: string, payload: object = {}, method: string = 'POST'): Promise<T> => {
+export interface CallApiOptions {
+    /** Пропустить retry-логику (для batch-загрузок при инициализации) */
+    noRetry?: boolean;
+}
+
+export const callApi = async <T = any>(endpoint: string, payload: object = {}, method: string = 'POST', options?: CallApiOptions): Promise<T> => {
     const url = `${API_BASE_URL}/${endpoint}`;
     
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -74,21 +79,21 @@ export const callApi = async <T = any>(endpoint: string, payload: object = {}, m
         headers['X-Session-Token'] = sessionToken;
     }
     
-    const options: RequestInit = {
+    const fetchOptions: RequestInit = {
         method: method,
         headers: headers,
     };
 
     if (method === 'POST' || method === 'PUT') {
-        options.body = JSON.stringify(payload);
+        fetchOptions.body = JSON.stringify(payload);
     }
 
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = options?.noRetry ? 1 : 3;
     const INITIAL_DELAY = 1000; // 1 секунда, экспоненциальный бэкофф: 1с → 2с → 4с
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
-            const response = await fetch(url, options);
+            const response = await fetch(url, fetchOptions);
             
             // Handle non-JSON responses (like 500 Internal Server Error from Nginx/Gunicorn)
             const text = await response.text();

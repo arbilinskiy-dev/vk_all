@@ -17,9 +17,31 @@ interface ChatMessageProps {
     searchQuery?: string;
     /** Фильтры отображения (скрытие вложений/кнопок) */
     displayFilters?: ChatDisplayFilters;
+    /** Колбэк выбора сообщения для ответа */
+    onReply?: (message: ChatMessageData) => void;
+    /** Сообщение выбрано для ответа */
+    isSelected?: boolean;
+    /** Колбэк навигации к диалогу с пользователем в нашей системе */
+    onNavigateToDialog?: (vkUserId: number) => void;
 }
 
-export const ChatMessage: React.FC<ChatMessageProps> = ({ message, searchQuery, displayFilters }) => {
+/**
+ * Извлекает VK user_id из inline-кнопки «Диалог с клиентом» (ссылка vk.com/gim{groupId}?sel={userId})
+ */
+function extractDialogUserId(keyboard?: { buttons: { action: { type: string; link?: string } }[][] }): number | null {
+    if (!keyboard?.buttons) return null;
+    for (const row of keyboard.buttons) {
+        for (const btn of row) {
+            if (btn.action.type === 'open_link' && btn.action.link) {
+                const match = btn.action.link.match(/\/gim\d+\?sel=(\d+)/);
+                if (match) return Number(match[1]);
+            }
+        }
+    }
+    return null;
+}
+
+export const ChatMessage: React.FC<ChatMessageProps> = ({ message, searchQuery, displayFilters, onReply, isSelected = false, onNavigateToDialog }) => {
     const isOutgoing = message.direction === 'outgoing';
     const shouldHideAttachments = displayFilters?.hideAttachments ?? false;
     const shouldHideKeyboard = displayFilters?.hideKeyboard ?? false;
@@ -60,6 +82,38 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, searchQuery, 
         <div className={`flex items-center justify-end gap-1.5 mt-1 ${
             isOutgoing && !isNoBubble ? 'text-indigo-200' : 'text-gray-400'
         }`}>
+            {/* Кнопка «Ответить» / «Выбрано ✓» — всегда видна */}
+            {onReply && (
+                <button
+                    onClick={() => onReply(message)}
+                    className={`mr-auto flex items-center gap-0.5 text-[11px] rounded px-1 py-0.5 transition-colors ${
+                        isSelected
+                            ? (isOutgoing && !isNoBubble
+                                ? 'text-emerald-300 bg-emerald-500/20'
+                                : 'text-emerald-600 bg-emerald-100')
+                            : (isOutgoing && !isNoBubble
+                                ? 'text-indigo-300 hover:text-white hover:bg-indigo-500/30'
+                                : 'text-gray-400 hover:text-indigo-600 hover:bg-gray-200/60')
+                    }`}
+                    title={isSelected ? 'Снять выбор' : 'Выбрать для ответа'}
+                >
+                    {isSelected ? (
+                        <>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                            Выбрано
+                        </>
+                    ) : (
+                        <>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                            </svg>
+                            Ответить
+                        </>
+                    )}
+                </button>
+            )}
             {/* Имя менеджера, отправившего сообщение через нашу систему */}
             {isOutgoing && message.sentByName && (
                 <span className={`text-[11px] mr-auto ${
@@ -85,7 +139,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, searchQuery, 
     // Рендер без бабла (стикер, граффити, подарок)
     if (isNoBubble) {
         return (
-            <div className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-3`}>
+            <div className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-3 rounded-lg transition-colors ${isSelected ? 'bg-emerald-50' : ''}`}>
                 <div className="max-w-[70%]">
                     {message.attachments!.map((att, i) => (
                         <AttachmentRenderer key={i} att={att} isOutgoing={isOutgoing} />
@@ -97,7 +151,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, searchQuery, 
     }
 
     return (
-        <div className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-3`}>
+        <div className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-3 rounded-lg transition-colors ${isSelected ? 'bg-emerald-50' : ''}`}>
             <div className="max-w-[70%]">
                 <div
                     className={`rounded-2xl px-4 py-2.5 ${
@@ -106,7 +160,66 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, searchQuery, 
                             : 'bg-gray-100 text-gray-800 rounded-bl-md'
                     }`}
                 >
-                {/* Индикатор бот-сообщения — вверху бабла */}
+                {/* Имя отправителя (для групповых чатов — показывает кто написал) */}
+                {!isOutgoing && message.senderName && (
+                    <p className="text-[11px] font-semibold text-indigo-600 mb-1">
+                        {message.senderName}
+                    </p>
+                )}
+                {/* Цитата сообщения, на которое ответ */}
+                {message.replyMessage && (
+                    <div className={`mb-2 pl-2.5 border-l-2 rounded-sm ${
+                        isOutgoing
+                            ? 'border-indigo-300 bg-indigo-500/30'
+                            : 'border-indigo-400 bg-gray-200/60'
+                    }`}>
+                        <p className={`text-[11px] font-medium ${
+                            isOutgoing ? 'text-indigo-200' : 'text-indigo-600'
+                        }`}>
+                            {message.replyMessage.direction === 'incoming' ? 'Клиент' : 'Вы'}
+                        </p>
+                        <p className={`text-[12px] line-clamp-2 ${
+                            isOutgoing ? 'text-indigo-100' : 'text-gray-600'
+                        }`}>
+                            {message.replyMessage.text || 'Вложение'}
+                        </p>
+                    </div>
+                )}
+                {/* Пересланные сообщения */}
+                {message.forwardedMessages && message.forwardedMessages.length > 0 && (
+                    <div className={`mb-2 pl-2.5 border-l-2 rounded-sm ${
+                        isOutgoing
+                            ? 'border-amber-300 bg-amber-500/20'
+                            : 'border-amber-400 bg-amber-50'
+                    }`}>
+                        <p className={`text-[11px] font-medium mb-1 ${
+                            isOutgoing ? 'text-amber-200' : 'text-amber-600'
+                        }`}>
+                            Пересланные сообщения ({message.forwardedMessages.length})
+                        </p>
+                        {message.forwardedMessages.slice(0, 3).map((fwd, i) => (
+                            <div key={fwd.id || i} className="mb-1 last:mb-0">
+                                <p className={`text-[11px] font-medium ${
+                                    isOutgoing ? 'text-indigo-200' : 'text-indigo-500'
+                                }`}>
+                                    {fwd.senderName || (fwd.direction === 'incoming' ? 'Клиент' : 'Вы')}
+                                </p>
+                                <p className={`text-[12px] line-clamp-2 ${
+                                    isOutgoing ? 'text-indigo-100' : 'text-gray-600'
+                                }`}>
+                                    {fwd.text || 'Вложение'}
+                                </p>
+                            </div>
+                        ))}
+                        {message.forwardedMessages.length > 3 && (
+                            <p className={`text-[10px] italic ${
+                                isOutgoing ? 'text-indigo-300' : 'text-gray-400'
+                            }`}>
+                                и ещё {message.forwardedMessages.length - 3}...
+                            </p>
+                        )}
+                    </div>
+                )}
                 {(message.isBotMessage || message.keyboard) && (
                     <div className={`flex items-center gap-1 mb-1.5 ${isOutgoing ? 'justify-end' : 'justify-start'}`}>
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-yellow-400 text-yellow-900 text-[10px] font-semibold shadow-sm">
@@ -153,6 +266,24 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message, searchQuery, 
                 {!shouldHideKeyboard && message.keyboard && (
                     <KeyboardButtons keyboard={message.keyboard} isOutgoing={isOutgoing} />
                 )}
+
+                {/* Кнопка «Открыть в системе» — быстрый переход в диалог с клиентом */}
+                {!shouldHideKeyboard && onNavigateToDialog && (() => {
+                    const userId = extractDialogUserId(message.keyboard);
+                    if (!userId) return null;
+                    return (
+                        <button
+                            onClick={() => onNavigateToDialog(userId)}
+                            className="mt-1.5 w-full px-3 py-2 rounded-lg text-[13px] font-medium border transition-all duration-150 bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100 hover:border-indigo-300 cursor-pointer flex items-center justify-center gap-1.5"
+                            title="Открыть диалог с клиентом в нашей системе"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                            </svg>
+                            Открыть диалог в системе
+                        </button>
+                    );
+                })()}
 
                 {/* Компактные индикаторы скрытых элементов */}
                 {(shouldHideAttachments && message.attachments && message.attachments.length > 0) || (shouldHideKeyboard && message.keyboard) ? (

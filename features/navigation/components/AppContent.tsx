@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { AppView, AppModule } from '../../../App';
-import { Project, AuthUser } from '../../../shared/types';
+import { ProjectSummary, AuthUser } from '../../../shared/types';
 import { ListGroup } from '../../lists/types';
 import { useProjects } from '../../../contexts/ProjectsContext';
 
@@ -36,7 +36,7 @@ import { SSEUserTypingData, SSEDialogFocusData } from '../../messages/types';
 interface AppContentProps {
     activeModule: AppModule | null;
     activeView: AppView;
-    activeProject: Project | null;
+    activeProject: ProjectSummary | null;
     activeViewParams?: Record<string, any>;
     onClearParams?: () => void;
     user: AuthUser;
@@ -49,8 +49,10 @@ interface AppContentProps {
     onNavigateToAiPosts?: (postId?: string) => void;
     onNavigateToContestV2?: (contestId: string, projectId: string) => void; // Для Конкурс 2.0
     setNavigationBlocker?: React.Dispatch<React.SetStateAction<(() => boolean) | null>>;
-    /** Колбэк для перехода в центр обучения */
+    /** Колбэк перехода в центр обучения */
     onGoToTraining?: () => void;
+    /** Переход на глобальный view (для навигации внутри модуля команды) */
+    onSelectGlobalView?: (view: AppView) => void;
     /** Колбэк перехода в диалог: переключает проект + view + диалог */
     onNavigateToMessages?: (projectId: string, vkUserId: number) => void;
     /** ID активного диалога (модуль сообщений) */
@@ -107,6 +109,7 @@ export const AppContent: React.FC<AppContentProps> = ({
     onNavigateToContestV2,
     setNavigationBlocker,
     onGoToTraining,
+    onSelectGlobalView,
     onNavigateToMessages,
     activeConversationId,
     onSelectConversation,

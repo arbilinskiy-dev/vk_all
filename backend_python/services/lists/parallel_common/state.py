@@ -63,6 +63,10 @@ class BulkRefreshState:
         # Очередь проектов для переназначения
         self.orphaned_projects: List[str] = []
         
+        # Community-токены по проектам (read-only после инициализации)
+        # {project_id: [community_token_1, community_token_2, ...]}
+        self.community_tokens_map: Dict[str, List[str]] = {}
+        
         # Статистика
         self.total_done = 0
         self.total_errors = 0

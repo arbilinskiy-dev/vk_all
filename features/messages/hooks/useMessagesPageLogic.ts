@@ -5,7 +5,7 @@
  */
 import { useMemo, useEffect, useCallback, useRef, useState } from 'react';
 import { Project, AuthUser } from '../../../shared/types';
-import { Conversation, ChatMessageData, MessageSearchFilter, SSENewMessageData, SSEMessageReadData, SSEUserReadData, SSEUserTypingData, SSEDialogFocusData, SSEMailingUserUpdatedData, MailingUserInfo } from '../types';
+import { Conversation, ChatMessageData, MessageSearchFilter, SSENewMessageData, SSEMessageReadData, SSEUserReadData, SSEUserTypingData, SSEDialogFocusData, SSEMailingUserUpdatedData, SSEChatActionData, MailingUserInfo } from '../types';
 import { ManagerFocusInfo } from './chat/useTypingState';
 import { useMessageHistory } from './chat/useMessageHistory';
 import { useMailingUserInfo } from './mailing/useMailingUserInfo';
@@ -116,6 +116,8 @@ export function useMessagesPageLogic({
         lastRawVkItem,
         userInfoFromHistory,
         messageStats,
+        chatActions,
+        addChatAction,
     } = useMessageHistory({
         projectId,
         userId: vkUserId,
@@ -263,8 +265,8 @@ export function useMessagesPageLogic({
     // =========================================================================
 
     /** Обёртка над sendMessage — автоматически прокидывает managerId и managerName */
-    const sendMessageWithSender = useCallback(async (text: string, attachments?: File[]) => {
-        return sendMessage(text, attachments, managerId, managerName);
+    const sendMessageWithSender = useCallback(async (text: string, attachments?: File[], replyTo?: number, forwardMessages?: string, optimisticReply?: ChatMessageData['replyMessage'], optimisticForwarded?: ChatMessageData['forwardedMessages']) => {
+        return sendMessage(text, attachments, managerId, managerName, replyTo, forwardMessages, optimisticReply, optimisticForwarded);
     }, [sendMessage, managerId, managerName]);
 
     const handleNewMessage = useCallback((data: SSENewMessageData) => {
@@ -392,6 +394,13 @@ export function useMessagesPageLogic({
         }
     }, [projectId, forceReload]);
 
+    // SSE: действие менеджера в диалоге — показываем только для текущего открытого диалога
+    const handleChatAction = useCallback((data: SSEChatActionData) => {
+        if (vkUserIdRef.current === data.vk_user_id) {
+            addChatAction(data.action);
+        }
+    }, [addChatAction]);
+
     // Подключение SSE
     const { isConnected } = useMessagesSSE({
         projectId,
@@ -404,6 +413,7 @@ export function useMessagesPageLogic({
             onMailingUserUpdated: handleMailingUserUpdated,
             onAllRead: handleAllRead,
             onReconnect: handleReconnect,
+            onChatAction: handleChatAction,
         },
         managerName,
     });
@@ -455,7 +465,8 @@ export function useMessagesPageLogic({
             hasMore,
             isFullyLoaded,
             messageStats,
-            // Данные пользователя
+            // Действия менеджеров
+            chatActions,
             userInfo,
             isUserInfoLoading,
             isUserInfoRefreshing,

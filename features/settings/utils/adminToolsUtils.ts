@@ -48,3 +48,31 @@ export const parseProjectsData = (subMessage: string | undefined): ProjectProgre
     }
     return null;
 };
+
+/**
+ * Упрощённый прогресс проекта (рассылка и подобные задачи).
+ * Формат: {name, status, message?, error?}
+ */
+export interface SimpleProjectProgress {
+    name: string;
+    status: 'done' | 'error' | 'processing';
+    message?: string;
+    error?: string;
+}
+
+/**
+ * Парсинг упрощённых данных о проектах из sub_message (формат рассылки).
+ * Отличается от v2: нет project_id, есть name + status + message.
+ */
+export const parseSimpleProjectsData = (subMessage: string | undefined): SimpleProjectProgress[] | null => {
+    if (!subMessage) return null;
+    try {
+        const data = JSON.parse(subMessage);
+        if (Array.isArray(data) && data.length > 0 && 'name' in data[0] && 'status' in data[0] && !('project_id' in data[0]) && !('worker_id' in data[0])) {
+            return data;
+        }
+    } catch {
+        // Не JSON или невалидный формат
+    }
+    return null;
+};

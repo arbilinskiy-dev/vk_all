@@ -5,6 +5,7 @@ Pydantic-схемы — в schemas/messages_schemas.py.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
 import logging
@@ -13,6 +14,7 @@ from database import get_db
 from services.vk_api.token_manager import call_vk_api_for_group
 from services.auth_middleware import get_current_user, CurrentUser
 from services.action_tracker import track
+from crud import chat_action_crud
 
 # Сервисы
 from services.messages.vk_client import get_project_and_tokens
@@ -37,6 +39,10 @@ from schemas.messages_schemas import (
     ToggleImportantRequest,
 )
 from services.messages.conversations_init_service import conversations_init as conv_init_service
+from services.messages.community_chats_service import (
+    get_community_chats as community_chats_service,
+    sync_community_chats as sync_community_chats_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -142,10 +148,35 @@ def send_message_endpoint(
         sender_id=body.sender_id,
         sender_name=body.sender_name,
         attachment=body.attachment,
+        reply_to=body.reply_to,
+        forward_messages=body.forward_messages,
+        forward=body.forward,
+        keyboard=body.keyboard,
     )
     track(db, current_user, "message_send", "messages",
           entity_type="message", project_id=body.project_id,
           metadata={"user_id": body.user_id})
+
+    # Логируем пересылку сообщений в групповой чат
+    if body.forward and body.user_id >= 2000000000:
+        try:
+            import json as _json
+            fwd = _json.loads(body.forward)
+            source_peer_id = fwd.get("peer_id")
+            msg_count = len(fwd.get("conversation_message_ids", []))
+            if source_peer_id:
+                _log_and_broadcast_chat_action(
+                    db, body.project_id, source_peer_id,
+                    current_user.user_id, current_user.username,
+                    "forward_to_chat",
+                    metadata={
+                        "target_chat_id": body.user_id,
+                        "messages_count": msg_count,
+                    },
+                )
+        except Exception:
+            pass  # некритичная функция, не блокируем отправку
+
     return result
 
 
@@ -372,6 +403,12 @@ def mark_dialog_as_unread(
           entity_type="dialog", entity_id=str(body.user_id),
           project_id=body.project_id,
           metadata={"vk_user_id": body.user_id})
+    # Записываем действие «отметил непрочитанным» в хронологию чата
+    _log_and_broadcast_chat_action(
+        db, body.project_id, body.user_id,
+        current_user.user_id, current_user.username,
+        "mark_unread",
+    )
     return result
 
 
@@ -418,7 +455,7 @@ def get_sse_stats():
 # =============================================================================
 
 @router.post("/dialog-focus")
-def set_dialog_focus(body: DialogFocusRequest):
+def set_dialog_focus(body: DialogFocusRequest, db: Session = Depends(get_db)):
     """Устанавливает/снимает фокус менеджера на диалоге."""
     from services.sse_manager import sse_manager
 
@@ -433,10 +470,22 @@ def set_dialog_focus(body: DialogFocusRequest):
             body.project_id, body.vk_user_id,
             body.manager_id, body.manager_name,
         )
+        # Записываем действие «зашёл в чат»
+        _log_and_broadcast_chat_action(
+            db, body.project_id, body.vk_user_id,
+            body.manager_id, body.manager_name,
+            "chat_enter",
+        )
     elif body.action == "leave":
         sse_manager.remove_dialog_focus(
             body.project_id, body.vk_user_id,
             body.manager_id, body.manager_name,
+        )
+        # Записываем действие «вышел из чата»
+        _log_and_broadcast_chat_action(
+            db, body.project_id, body.vk_user_id,
+            body.manager_id, body.manager_name,
+            "chat_leave",
         )
     else:
         return {"success": False, "error": f"Неизвестное action: {body.action}"}
@@ -495,6 +544,37 @@ def conversations_init(
 
 
 # =============================================================================
+# ЭНДПОИНТ: POST /messages/community-chats
+# Список групповых чатов (бесед) сообщества (из кэша БД)
+# =============================================================================
+
+class CommunityChatsRequest(BaseModel):
+    project_id: str
+
+@router.post("/community-chats")
+def get_community_chats(
+    body: CommunityChatsRequest,
+    db: Session = Depends(get_db),
+):
+    """Возвращает список групповых чатов из кэша БД (мгновенно)."""
+    return community_chats_service(db, body.project_id)
+
+
+# =============================================================================
+# ЭНДПОИНТ: POST /messages/community-chats/sync
+# Синхронизация чатов с VK API → сохранение в БД
+# =============================================================================
+
+@router.post("/community-chats/sync")
+def sync_community_chats(
+    body: CommunityChatsRequest,
+    db: Session = Depends(get_db),
+):
+    """Синхронизирует чаты с VK API и сохраняет в БД. Медленная операция."""
+    return sync_community_chats_service(db, body.project_id)
+
+
+# =============================================================================
 # ЭНДПОИНТ: PUT /messages/toggle-important
 # Пометить/снять пометку «Важное» для диалога
 # =============================================================================
@@ -536,6 +616,13 @@ def toggle_important(
           entity_type="dialog", entity_id=str(body.vk_user_id),
           project_id=body.project_id,
           metadata={"vk_user_id": body.vk_user_id, "is_important": body.is_important})
+    # Записываем действие в хронологию чата
+    action_type = "mark_important" if body.is_important else "unmark_important"
+    _log_and_broadcast_chat_action(
+        db, body.project_id, body.vk_user_id,
+        current_user.user_id, current_user.username,
+        action_type,
+    )
     return {"success": True, "is_important": body.is_important}
 
 
@@ -587,3 +674,74 @@ def get_dialog_focuses_debug():
         "all_focuses": all_focuses,
         "sse_stats": stats,
     }
+
+
+# =============================================================================
+# ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ: запись действия + SSE
+# =============================================================================
+
+def _log_and_broadcast_chat_action(
+    db: Session,
+    project_id: str,
+    vk_user_id: int,
+    manager_id: str,
+    manager_name: str,
+    action_type: str,
+    metadata: dict = None,
+):
+    """
+    Записывает действие менеджера в chat_actions и публикует SSE 'chat_action'.
+    Вызывается из эндпоинтов dialog-focus, mark-unread, toggle-important, label assign/unassign.
+    """
+    from services.sse_manager import sse_manager
+    from services.sse_event import SSEEvent
+
+    action = chat_action_crud.log_chat_action(
+        db=db,
+        project_id=project_id,
+        vk_user_id=vk_user_id,
+        manager_id=manager_id,
+        manager_name=manager_name,
+        action_type=action_type,
+        metadata=metadata,
+    )
+
+    # SSE: транслируем действие всем подписчикам проекта
+    import json as _json
+    action_data = {
+        "vk_user_id": vk_user_id,
+        "action": {
+            "id": f"action_{action.id}",
+            "action_type": action_type,
+            "manager_id": manager_id,
+            "manager_name": manager_name,
+            "timestamp": action.created_at.isoformat() if action.created_at else None,
+        },
+    }
+    if metadata:
+        action_data["action"]["metadata"] = metadata
+
+    sse_manager.publish(SSEEvent(
+        event_type="chat_action",
+        project_id=project_id,
+        data=action_data,
+    ))
+
+    return action
+
+
+# =============================================================================
+# ЭНДПОИНТ: GET /messages/chat-actions
+# Получить действия менеджеров в диалоге (для хронологии чата)
+# =============================================================================
+
+@router.get("/chat-actions")
+def get_chat_actions(
+    project_id: str = Query(..., description="ID проекта"),
+    vk_user_id: int = Query(..., description="VK user ID"),
+    limit: int = Query(200, description="Максимум записей"),
+    db: Session = Depends(get_db),
+):
+    """Возвращает действия менеджеров в диалоге для отображения в хронологии чата."""
+    actions = chat_action_crud.get_chat_actions(db, project_id, vk_user_id, limit=limit)
+    return {"success": True, "actions": actions}

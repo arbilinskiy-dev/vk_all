@@ -105,9 +105,36 @@ export function mapVkMessage(item: VkMessageItem, groupId: number): ChatMessageD
     // Определяем, связано ли сообщение с ботом (payload присутствует = нажатие кнопки или ответ бота)
     const isBotMessage = !!item.payload;
 
+    // Парсинг reply_message — сообщение, на которое это ответ
+    let replyMessage: ChatMessageData['replyMessage'] | undefined;
+    if (item.reply_message) {
+        const replyIsOutgoing = item.reply_message.out === 1 || item.reply_message.from_id < 0;
+        replyMessage = {
+            id: String(item.reply_message.id),
+            text: item.reply_message.text || '',
+            direction: replyIsOutgoing ? 'outgoing' : 'incoming',
+        };
+    }
+
+    // Парсинг fwd_messages — пересланные сообщения
+    let forwardedMessages: ChatMessageData['forwardedMessages'] | undefined;
+    if (item.fwd_messages && item.fwd_messages.length > 0) {
+        forwardedMessages = item.fwd_messages.map(fwd => {
+            const fwdIsOutgoing = fwd.out === 1 || fwd.from_id < 0;
+            return {
+                id: String(fwd.id),
+                text: fwd.text || '',
+                direction: fwdIsOutgoing ? 'outgoing' : 'incoming' as const,
+                timestamp: new Date(fwd.date * 1000).toISOString(),
+            };
+        });
+    }
+
     return {
         id: String(item.id),
+        conversationMessageId: item.conversation_message_id,
         direction: isOutgoing ? 'outgoing' : 'incoming',
+        fromId: item.from_id,
         text: item.text || '',
         timestamp: new Date(item.date * 1000).toISOString(),
         isRead: item.read_state === 1,
@@ -116,5 +143,7 @@ export function mapVkMessage(item: VkMessageItem, groupId: number): ChatMessageD
         sentByName: item.sent_by_name,
         isBotMessage,
         isDeletedFromVk: item.is_deleted_from_vk || false,
+        replyMessage,
+        forwardedMessages,
     };
 }

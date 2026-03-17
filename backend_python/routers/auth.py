@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+import time
+import collections
 
 import crud
 import schemas
@@ -8,6 +10,33 @@ from database import get_db
 from services.auth_middleware import get_current_user, CurrentUser
 
 router = APIRouter()
+
+# =====================================================
+# Rate limiting для /auth/login — защита от перебора паролей
+# 5 попыток в минуту на IP, потом 429 Too Many Requests
+# =====================================================
+_LOGIN_ATTEMPTS: dict[str, collections.deque] = {}
+_LOGIN_MAX_ATTEMPTS = 5
+_LOGIN_WINDOW_SECONDS = 60
+
+def _check_login_rate_limit(ip: str):
+    """Проверяет, не превышен ли лимит попыток входа для IP."""
+    now = time.time()
+    if ip not in _LOGIN_ATTEMPTS:
+        _LOGIN_ATTEMPTS[ip] = collections.deque()
+    
+    attempts = _LOGIN_ATTEMPTS[ip]
+    # Удаляем устаревшие попытки
+    while attempts and attempts[0] < now - _LOGIN_WINDOW_SECONDS:
+        attempts.popleft()
+    
+    if len(attempts) >= _LOGIN_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Слишком много попыток входа. Подождите минуту.",
+        )
+    attempts.append(now)
+
 
 @router.post("/auth/login")
 def login(payload: schemas.LoginPayload, request: Request, db: Session = Depends(get_db)):
@@ -19,6 +48,9 @@ def login(payload: schemas.LoginPayload, request: Request, db: Session = Depends
     # Извлекаем IP и User-Agent из запроса
     ip_address = request.headers.get("X-Forwarded-For", request.client.host if request.client else None)
     user_agent = request.headers.get("User-Agent")
+    
+    # Rate limiting по IP
+    _check_login_rate_limit(ip_address or "unknown")
     
     result = session_auth_service.authenticate_and_create_session(
         db=db,

@@ -33,7 +33,7 @@ function createMockDetailResponse(overrides: any = {}) {
             client_birthday: '1990-05-15',
             vk_user_id: '123456',
             vk_group_id: null,
-            vk_platform: null,
+            vk_platform: 'desktop_web',
             address_full: 'г. Москва, ул. Пушкина, д. 10, кв. 5',
             address_city: 'Москва',
             address_street: 'Пушкина',
@@ -58,6 +58,12 @@ function createMockDetailResponse(overrides: any = {}) {
             items_json: null,
             raw_json: null,
             created_at: '2026-03-01T10:30:00',
+            // Расширенные поля
+            cost: 1200,
+            payment_bonus: 100,
+            markup: 50,
+            persons: 3,
+            items_total_qty: 5,
             ...overrides.order,
         },
         items: overrides.items ?? [
@@ -156,7 +162,7 @@ describe('DlvryOrderDetailModal', () => {
         });
 
         expect(screen.getByText('Кола 0.5л')).toBeInTheDocument();
-        expect(screen.getByText(/Позиции \(2\)/)).toBeInTheDocument();
+        expect(screen.getByText(/Позиции - 2/)).toBeInTheDocument();
     });
 
     it('отображает суммы (итого, подытог, скидка, доставка)', async () => {
@@ -216,5 +222,120 @@ describe('DlvryOrderDetailModal', () => {
         });
 
         expect(screen.queryByText('VK ID')).not.toBeInTheDocument();
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Расширенные поля (переключаемые группы колонок)
+    // ─────────────────────────────────────────────────────────────────────
+
+    it('отображает VK платформу когда она задана', async () => {
+        mockFetchDetail.mockResolvedValue(createMockDetailResponse());
+
+        render(<DlvryOrderDetailModal orderId={1} onClose={vi.fn()} />);
+
+        await waitFor(() => {
+            expect(screen.getByText('Анна Смирнова')).toBeInTheDocument();
+        });
+
+        expect(screen.getByText('VK платформа')).toBeInTheDocument();
+        expect(screen.getByText('desktop_web')).toBeInTheDocument();
+    });
+
+    it('не отображает VK платформу когда она отсутствует', async () => {
+        const data = createMockDetailResponse({ order: { vk_platform: null } });
+        mockFetchDetail.mockResolvedValue(data);
+
+        render(<DlvryOrderDetailModal orderId={1} onClose={vi.fn()} />);
+
+        await waitFor(() => {
+            expect(screen.getByText('Анна Смирнова')).toBeInTheDocument();
+        });
+
+        expect(screen.queryByText('VK платформа')).not.toBeInTheDocument();
+    });
+
+    it('отображает себестоимость и маржу', async () => {
+        mockFetchDetail.mockResolvedValue(createMockDetailResponse());
+
+        render(<DlvryOrderDetailModal orderId={1} onClose={vi.fn()} />);
+
+        await waitFor(() => {
+            expect(screen.getByText('Себестоимость')).toBeInTheDocument();
+        });
+
+        expect(screen.getByText('Маржа')).toBeInTheDocument();
+    });
+
+    it('отображает оплату бонусами когда > 0', async () => {
+        mockFetchDetail.mockResolvedValue(createMockDetailResponse());
+
+        render(<DlvryOrderDetailModal orderId={1} onClose={vi.fn()} />);
+
+        await waitFor(() => {
+            expect(screen.getByText('Оплата бонусами')).toBeInTheDocument();
+        });
+    });
+
+    it('не отображает оплату бонусами когда = 0', async () => {
+        const data = createMockDetailResponse({ order: { payment_bonus: 0 } });
+        mockFetchDetail.mockResolvedValue(data);
+
+        render(<DlvryOrderDetailModal orderId={1} onClose={vi.fn()} />);
+
+        await waitFor(() => {
+            expect(screen.getByText('Анна Смирнова')).toBeInTheDocument();
+        });
+
+        expect(screen.queryByText('Оплата бонусами')).not.toBeInTheDocument();
+    });
+
+    it('отображает наценку когда > 0', async () => {
+        mockFetchDetail.mockResolvedValue(createMockDetailResponse());
+
+        render(<DlvryOrderDetailModal orderId={1} onClose={vi.fn()} />);
+
+        await waitFor(() => {
+            expect(screen.getByText('Наценка')).toBeInTheDocument();
+        });
+    });
+
+    it('отображает кол-во персон когда > 0', async () => {
+        mockFetchDetail.mockResolvedValue(createMockDetailResponse());
+
+        render(<DlvryOrderDetailModal orderId={1} onClose={vi.fn()} />);
+
+        await waitFor(() => {
+            expect(screen.getByText('Кол-во персон')).toBeInTheDocument();
+        });
+
+        expect(screen.getByText('3')).toBeInTheDocument();
+    });
+
+    it('отображает единицы товаров когда > 0', async () => {
+        mockFetchDetail.mockResolvedValue(createMockDetailResponse());
+
+        render(<DlvryOrderDetailModal orderId={1} onClose={vi.fn()} />);
+
+        await waitFor(() => {
+            expect(screen.getByText('Единиц товаров')).toBeInTheDocument();
+        });
+
+        expect(screen.getByText('5')).toBeInTheDocument();
+    });
+
+    it('не отображает финансовые карточки без cost', async () => {
+        const data = createMockDetailResponse({
+            order: { cost: null, payment_bonus: null, markup: null },
+        });
+        mockFetchDetail.mockResolvedValue(data);
+
+        render(<DlvryOrderDetailModal orderId={1} onClose={vi.fn()} />);
+
+        await waitFor(() => {
+            expect(screen.getByText('Анна Смирнова')).toBeInTheDocument();
+        });
+
+        expect(screen.queryByText('Себестоимость')).not.toBeInTheDocument();
+        expect(screen.queryByText('Маржа')).not.toBeInTheDocument();
     });
 });

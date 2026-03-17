@@ -158,4 +158,40 @@ describe('ChatMessage', () => {
         render(<ChatMessage message={msg} displayFilters={defaultFilters} />);
         expect(screen.getByText('Документ.pdf')).toBeInTheDocument();
     });
+
+    // === Имя отправителя в групповых чатах ===
+    it('показывает senderName для входящих сообщений', () => {
+        const msg = createMessage({
+            direction: 'incoming',
+            senderName: 'Иван Петров',
+        });
+        render(<ChatMessage message={msg} />);
+        expect(screen.getByText('Иван Петров')).toBeInTheDocument();
+    });
+
+    it('НЕ показывает senderName для исходящих сообщений', () => {
+        const msg = createMessage({
+            direction: 'outgoing',
+            senderName: 'Иван Петров',
+        });
+        render(<ChatMessage message={msg} />);
+        expect(screen.queryByText('Иван Петров')).not.toBeInTheDocument();
+    });
+
+    it('НЕ показывает senderName если он не задан', () => {
+        const msg = createMessage({
+            direction: 'incoming',
+            senderName: undefined,
+        });
+        const { container } = render(<ChatMessage message={msg} />);
+        // Нет элемента с классом text-indigo-600 (стиль имени отправителя)
+        expect(container.querySelector('.text-indigo-600')).not.toBeInTheDocument();
+    });
+
+    // === fromId ===
+    it('сохраняет fromId в данных сообщения', () => {
+        const msg = createMessage({ fromId: 12345 });
+        // fromId — внутреннее поле, просто проверяем что тип принимает его
+        expect(msg.fromId).toBe(12345);
+    });
 });

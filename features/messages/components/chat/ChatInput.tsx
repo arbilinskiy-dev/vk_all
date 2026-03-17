@@ -15,6 +15,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Project } from '../../../../shared/types';
+import { ChatMessageData } from '../../types';
 import { EmojiPicker } from '../../../emoji/components/EmojiPicker';
 import { useChatInputLogic } from '../../hooks/chat/useChatInputLogic';
 import { MAX_MESSAGE_LENGTH } from './chatInputConstants';
@@ -40,6 +41,14 @@ interface ChatInputProps {
     pendingTemplate?: { text: string; key: number; mode: 'insert' | 'replace' } | null;
     /** Колбэк: сохранить текст как шаблон */
     onSaveAsTemplate?: (text: string) => void;
+    /** Сообщение, на которое отвечаем (первое из выбранных) */
+    replyToMessage?: ChatMessageData | null;
+    /** Все выбранные сообщения */
+    selectedMessages?: ChatMessageData[];
+    /** Отменить ответ (сбросить все выбранные) */
+    onCancelReply?: () => void;
+    /** Убрать конкретное сообщение из выбранных */
+    onRemoveSelected?: (id: string) => void;
 }
 
 /**
@@ -55,6 +64,10 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     currentUserId,
     pendingTemplate,
     onSaveAsTemplate,
+    replyToMessage,
+    selectedMessages = [],
+    onCancelReply,
+    onRemoveSelected,
 }) => {
     const { state, actions, refs } = useChatInputLogic({
         onSendMessage,
@@ -67,6 +80,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     // --- Вставка шаблона из правой панели ---
     const appliedTemplateKeyRef = useRef<number | null>(null);
+
+    // Сброс ref шаблона при смене диалога
+    useEffect(() => {
+        appliedTemplateKeyRef.current = null;
+    }, [projectId, currentUserId]);
+
     useEffect(() => {
         if (pendingTemplate && pendingTemplate.key !== appliedTemplateKeyRef.current) {
             appliedTemplateKeyRef.current = pendingTemplate.key;
@@ -86,6 +105,49 @@ export const ChatInput: React.FC<ChatInputProps> = ({
 
     return (
         <div className="border-t border-gray-200 bg-white px-4 py-3">
+            {/* Превью выбранных сообщений (ответ / пересылка) */}
+            {selectedMessages.length > 0 && (
+                <div className="mb-2 px-3 py-2 bg-indigo-50 border border-indigo-200 rounded-lg">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-medium text-indigo-600">
+                            {selectedMessages.length === 1 ? '↩ Ответ на сообщение' : `↩ Выбрано: ${selectedMessages.length} сообщ.`}
+                        </span>
+                        {onCancelReply && (
+                            <button
+                                onClick={onCancelReply}
+                                className="text-[11px] text-gray-400 hover:text-gray-600 transition-colors"
+                                title="Отменить всё"
+                            >
+                                ✕ Отменить
+                            </button>
+                        )}
+                    </div>
+                    <div className="flex flex-col gap-1 max-h-24 overflow-y-auto">
+                        {selectedMessages.map(msg => (
+                            <div key={msg.id} className="flex items-center gap-2">
+                                <div className="flex-shrink-0 w-0.5 h-5 bg-indigo-400 rounded-full" />
+                                <p className="flex-1 text-[12px] text-gray-600 truncate">
+                                    <span className="font-medium text-indigo-500 mr-1">
+                                        {msg.direction === 'incoming' ? (userName || 'Клиент') : 'Вы'}:
+                                    </span>
+                                    {msg.text || 'Вложение'}
+                                </p>
+                                {selectedMessages.length > 1 && onRemoveSelected && (
+                                    <button
+                                        onClick={() => onRemoveSelected(msg.id)}
+                                        className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+                                        title="Убрать"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
             {/* Скрытый input для загрузки файлов */}
             <input
                 ref={refs.fileInputRef}

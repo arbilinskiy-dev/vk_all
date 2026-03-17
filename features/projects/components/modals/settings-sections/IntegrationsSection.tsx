@@ -8,6 +8,7 @@ import { CallbackCurrentStateBlock } from './CallbackCurrentStateBlock';
 import { CallbackEventSelector } from './CallbackEventSelector';
 import { CallbackSetupResult } from './CallbackSetupResult';
 import { TokensBlock } from './TokensBlock';
+import { DlvryAffiliatesBlock } from './DlvryAffiliatesBlock';
 
 interface IntegrationsSectionProps {
     formData: Project;
@@ -128,53 +129,25 @@ export const IntegrationsSection: React.FC<IntegrationsSectionProps> = ({
                     <div>
                         <h4 className="text-sm font-semibold text-orange-800 mb-1">🍕 DLVRY — Заказы</h4>
                         <p className="text-xs text-orange-600 mb-3">
-                            Привяжите филиал DLVRY к этому проекту, чтобы заказы автоматически попадали в систему.
+                            Привяжите филиалы DLVRY к этому проекту. У одного проекта может быть несколько филиалов.
                             Укажите ID филиала из панели DLVRY.
                         </p>
                     </div>
 
-                    {/* Поле ID филиала */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700">ID филиала DLVRY</label>
-                        <input
-                            type="text"
-                            name="dlvry_affiliate_id"
-                            autoComplete="off"
-                            value={formData.dlvry_affiliate_id || ''}
-                            onChange={handleFormChange}
-                            disabled={isSaving}
-                            className="mt-1 w-full border rounded px-3 py-2 text-sm border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-100"
-                            placeholder="Например, 2579645"
-                        />
-                        {formData.dlvry_affiliate_id && (
-                            <p className="text-xs text-green-600 mt-1">
-                                ✓ Интеграция настроена — заказы из филиала {formData.dlvry_affiliate_id} будут привязаны к этому проекту
-                            </p>
-                        )}
-                    </div>
+                    {/* Список филиалов (управляется через API) */}
+                    <DlvryAffiliatesBlock
+                        projectId={formData.id}
+                        isSaving={isSaving}
+                    />
 
                     {/* Инструкция по настройке вебхука */}
                     <div className="p-3 bg-white/70 border border-orange-200 rounded-lg">
                         <h5 className="text-xs font-semibold text-orange-800 mb-2">📋 Настройка вебхука в DLVRY</h5>
                         <p className="text-xs text-gray-600 mb-2">
-                            Чтобы заказы автоматически поступали в систему, настройте вебхук в панели DLVRY:
+                            Чтобы заказы автоматически поступали в систему, настройте вебхук в панели DLVRY для каждого филиала:
                         </p>
                         <ol className="text-xs text-gray-600 space-y-1.5 list-decimal list-inside mb-3">
-                            <li>
-                                Откройте настройки филиала:{' '}
-                                {formData.dlvry_affiliate_id ? (
-                                    <a
-                                        href={`https://panel.dlvry.ru/affiliates/${formData.dlvry_affiliate_id}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-orange-600 hover:text-orange-800 underline font-medium"
-                                    >
-                                        panel.dlvry.ru/affiliates/{formData.dlvry_affiliate_id}
-                                    </a>
-                                ) : (
-                                    <span className="text-gray-400">panel.dlvry.ru/affiliates/<em>ID</em></span>
-                                )}
-                            </li>
+                            <li>Откройте настройки филиала в <span className="text-orange-600 font-medium">panel.dlvry.ru</span></li>
                             <li>Перейдите в раздел <strong>«Внешние программы учёта»</strong></li>
                             <li>Выберите <strong>«Собственная CRM»</strong></li>
                             <li>

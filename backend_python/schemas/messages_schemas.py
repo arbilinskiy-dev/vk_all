@@ -20,6 +20,10 @@ class SendMessageRequest(BaseModel):
     sender_id: Optional[str] = None   # ID менеджера, отправившего сообщение
     sender_name: Optional[str] = None  # Имя менеджера (например, "admin")
     attachment: Optional[str] = None   # Строка вложений VK ("photo123_456,photo123_789")
+    reply_to: Optional[int] = None     # ID сообщения VK, на которое отвечаем
+    forward_messages: Optional[str] = None  # ID пересылаемых сообщений через запятую ("123,456,789")
+    forward: Optional[str] = None  # JSON для пересылки между диалогами ({"peer_id":...,"conversation_message_ids":[...],"owner_id":...})
+    keyboard: Optional[str] = None  # JSON VK inline keyboard
 
 
 class MarkReadRequest(BaseModel):

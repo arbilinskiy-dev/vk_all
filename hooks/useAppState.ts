@@ -1,7 +1,7 @@
 
 import { useState } from 'react';
 import { AppView, AppModule } from '../App';
-import { Project } from '../shared/types';
+import { ProjectSummary } from '../shared/types';
 import { ListGroup } from '../features/lists/types';
 
 export const useAppState = () => {
@@ -9,7 +9,7 @@ export const useAppState = () => {
     const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
     const [activeView, setActiveView] = useState<AppView>('schedule');
     const [activeViewParams, setActiveViewParams] = useState<Record<string, any>>({});
-    const [editingProject, setEditingProject] = useState<Project | null>(null);
+    const [editingProject, setEditingProject] = useState<ProjectSummary | null>(null);
     const [activeListGroup, setActiveListGroup] = useState<ListGroup>('subscribers');
 
     const handleSelectModule = (module: AppModule) => {

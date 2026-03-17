@@ -99,11 +99,14 @@ export const useUnreadDialogCounts = ({
     fetchCountsRef.current = fetchCounts;
     projectsRef.current = projects;
 
-    // Cleanup reconciliation timer при unmount
+    // Cleanup timers при unmount
     useEffect(() => {
         return () => {
             if (reconciliationTimerRef.current) {
                 clearTimeout(reconciliationTimerRef.current);
+            }
+            if (sseBatchTimerRef.current) {
+                clearTimeout(sseBatchTimerRef.current);
             }
         };
     }, []);
@@ -123,21 +126,34 @@ export const useUnreadDialogCounts = ({
         }
     }, [enabled, projects.length, fetchCounts]);
 
-    // Обновить счётчик для конкретного проекта (для синхронизации с SSE/conversations)
-    const updateProjectCount = useCallback((projectId: string, count: number) => {
-        msgLog('UNREAD_COUNTS', `📌 updateProjectCount: ${fmtProject(projectId)} → ${fmtCount(count)} (бэдж в сайдбаре)`);
+    // --- Батчинг SSE-обновлений ---
+    // Вместо setCounts на каждое SSE-событие (154 ре-рендеров при входе),
+    // собираем обновления за 500ms и применяем разом — один ре-рендер.
+    const sseBatchRef = useRef<Record<string, number>>({});
+    const sseBatchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const flushSseBatch = useCallback(() => {
+        const batch = sseBatchRef.current;
+        sseBatchRef.current = {};
+        sseBatchTimerRef.current = null;
+
+        const keys = Object.keys(batch);
+        if (keys.length === 0) return;
+
+        msgLog('UNREAD_COUNTS', `📦 SSE batch flush: ${keys.length} проектов обновлено за раз`);
         setCounts(prev => {
-            if (prev[projectId] === count) {
-                msgLog('UNREAD_COUNTS', `updateProjectCount: значение не изменилось (${count}), пропуск`);
-                return prev;
+            let changed = false;
+            const next = { ...prev };
+            for (const [pid, count] of Object.entries(batch)) {
+                if (next[pid] !== count) {
+                    next[pid] = count;
+                    changed = true;
+                }
             }
-            msgLog('UNREAD_COUNTS', `updateProjectCount: ${fmtProject(projectId)} ${fmtCount(prev[projectId] || 0)} → ${fmtCount(count)}`);
-            return { ...prev, [projectId]: count };
+            return changed ? next : prev;
         });
 
         // --- Reconciliation: через 3с перезапросить ВСЕ счётчики с бэкенда ---
-        // Если SSE потерял событие для другого проекта — этот запрос подтянет актуальные данные.
-        // Debounce: если несколько SSE-событий пришли подряд, запрос будет только один (через 3с после последнего).
         if (reconciliationTimerRef.current) {
             clearTimeout(reconciliationTimerRef.current);
         }
@@ -146,6 +162,16 @@ export const useUnreadDialogCounts = ({
             fetchCountsRef.current?.(projectsRef.current);
         }, 3000);
     }, []);
+
+    // Обновить счётчик для конкретного проекта (для синхронизации с SSE/conversations)
+    const updateProjectCount = useCallback((projectId: string, count: number) => {
+        msgLog('UNREAD_COUNTS', `📌 updateProjectCount: ${fmtProject(projectId)} → ${fmtCount(count)}`);
+        sseBatchRef.current[projectId] = count;
+
+        if (!sseBatchTimerRef.current) {
+            sseBatchTimerRef.current = setTimeout(flushSseBatch, 500);
+        }
+    }, [flushSseBatch]);
 
     // --- Периодический refresh (safety net для пропущенных SSE событий) ---
     // Каждые 60 секунд перезапрашиваем реальные счётчики с бэкенда,

@@ -75,7 +75,7 @@ export const PostModalFooter: React.FC<PostModalFooterProps> = ({
             } else {
                 text = 'Запланировать';
             }
-            return postCount > 1 ? `${text} (${postCount})` : text;
+            return postCount > 1 ? `${text} - ${postCount}` : text;
         }
         return 'Сохранить';
     };
@@ -89,7 +89,7 @@ export const PostModalFooter: React.FC<PostModalFooterProps> = ({
                         <button onClick={onDelete} disabled={isSaving || isUploading || (isLocked && !isCopyMode)} className="px-4 py-2 text-sm font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50 border border-red-200">Удалить</button>
                     )}
                     {mode === 'edit' && !isNewPost && !isPublished && !isCopyMode && (
-                        <button onClick={onPublishNow} disabled={isSaving || isUploading || isLocked || isContentEmpty || isAiNotReady} className="px-4 py-2 text-sm font-medium rounded-md text-green-600 hover:bg-green-100 disabled:opacity-50">Опубликовать сейчас</button>
+                        <button onClick={onPublishNow} disabled={isSaving || isUploading || isLocked || isContentEmpty || isAiNotReady} className="px-4 py-2 text-sm font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed border border-green-200">Опубликовать сейчас</button>
                     )}
                     {/* Кнопка массового редактирования */}
                     {showBulkEditButton && onBulkEdit && !isNewPost && !isCopyMode && (
@@ -108,7 +108,7 @@ export const PostModalFooter: React.FC<PostModalFooterProps> = ({
                 <div className="flex items-center gap-2">
                     {mode === 'view' && !isNewPost && (
                         <>
-                            {!isPublished && <button onClick={onPublishNow} disabled={isLocked || isContentEmpty} className="px-4 py-2 text-sm font-medium rounded-md text-green-600 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed">Опубликовать сейчас</button>}
+                            {!isPublished && <button onClick={onPublishNow} disabled={isLocked || isContentEmpty} className="px-4 py-2 text-sm font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed border border-green-200">Опубликовать сейчас</button>}
                             <button onClick={onSwitchToEdit} disabled={isLocked} className="px-4 py-2 text-sm font-medium rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed">Редактировать</button>
                         </>
                     )}
@@ -116,7 +116,7 @@ export const PostModalFooter: React.FC<PostModalFooterProps> = ({
                          <button 
                             onClick={onSave}
                             disabled={isSaving || isUploading || (isLocked && !isCopyMode) || isContentEmpty || (!isDirty && !isNewPost && !isCopyMode) || isAiNotReady}
-                            className="px-6 py-2 text-sm font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400 flex items-center justify-center min-w-[120px] whitespace-nowrap"
+                            className="px-4 py-2 text-sm font-medium rounded-md bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-400 flex items-center justify-center min-w-[120px] whitespace-nowrap"
                             title={isAiNotReady ? 'Выберите вариант текста в чате' : isNewPost || isCopyMode ? 'Сохранить и создать пост(ы)' : 'Сохранить изменения в посте'}
                         >
                             {isSaving || isUploading ? <div className="loader border-white border-t-transparent h-4 w-4"></div> : getSaveButtonText()}

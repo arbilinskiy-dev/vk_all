@@ -3,43 +3,25 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from typing import Optional, List
 import json
 
-class Project(BaseModel):
+
+class ProjectSummary(BaseModel):
+    """Лёгкая версия проекта — только поля, нужные при старте (sidebar, фильтры, превью)."""
     id: str
     name: str
     vkProjectId: str
     vkGroupShortName: str
     vkGroupName: str
     vkLink: str
-    
-    # Новое поле
     avatar_url: Optional[str] = None
-    
-    notes: Optional[str] = None
-    team: Optional[str] = None  # Устаревшее поле, сохранено для обратной совместимости
-    teams: Optional[List[str]] = []  # Массив команд проекта
+    teams: Optional[List[str]] = []
     disabled: Optional[bool] = False
     archived: Optional[bool] = False
-    variables: Optional[str] = None
-    vk_confirmation_code: Optional[str] = None
-    communityToken: Optional[str] = None
-    additional_community_tokens: Optional[List[str]] = []
     sort_order: Optional[int] = None
-    last_market_update: Optional[str] = None
-    dlvry_affiliate_id: Optional[str] = None  # ID филиала DLVRY (привязка к проекту)
-    
-    model_config = ConfigDict(from_attributes=True)
+    communityToken: Optional[str] = None
+    vk_confirmation_code: Optional[str] = None
+    dlvry_affiliate_id: Optional[str] = None
 
-    @field_validator('additional_community_tokens', mode='before')
-    @classmethod
-    def parse_json_tokens(cls, v):
-        if isinstance(v, str):
-            if not v:
-                return []
-            try:
-                return json.loads(v)
-            except json.JSONDecodeError:
-                return []
-        return v
+    model_config = ConfigDict(from_attributes=True)
 
     @field_validator('teams', mode='before')
     @classmethod
@@ -54,6 +36,29 @@ class Project(BaseModel):
                 return []
         if v is None:
             return []
+        return v
+
+
+class Project(ProjectSummary):
+    """Полная версия проекта — загружается по запросу (настройки, DB Management)."""
+    notes: Optional[str] = None
+    team: Optional[str] = None  # Устаревшее поле, сохранено для обратной совместимости
+    variables: Optional[str] = None
+    additional_community_tokens: Optional[List[str]] = []
+    last_market_update: Optional[str] = None
+    dlvry_affiliates_count: Optional[int] = 0  # Количество привязанных филиалов DLVRY
+    dlvry_affiliate_ids: Optional[List[str]] = []  # Список affiliate_id для отображения в таблице
+
+    @field_validator('additional_community_tokens', mode='before')
+    @classmethod
+    def parse_json_tokens(cls, v):
+        if isinstance(v, str):
+            if not v:
+                return []
+            try:
+                return json.loads(v)
+            except json.JSONDecodeError:
+                return []
         return v
 
 class User(BaseModel):

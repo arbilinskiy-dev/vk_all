@@ -4,7 +4,11 @@ import { createPortal } from 'react-dom';
 
 // --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+const MONTHS_SHORT = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+// Режим отображения: дни → месяцы → годы (drill-down при клике на заголовок)
+type ViewMode = 'days' | 'months' | 'years';
 
 const parseDate = (dateStr: string): Date => {
     if (!dateStr) return new Date();
@@ -25,6 +29,17 @@ const getFirstDayOfMonth = (year: number, month: number) => {
     return day === 0 ? 6 : day - 1; // Сдвиг для Пн=0, Вс=6
 };
 
+/** Начало десятилетия для сетки годов (напр. 2020 для 2026) */
+const getDecadeStart = (year: number) => Math.floor(year / 10) * 10;
+
+// --- SVG стрелки (повторно используемые) ---
+const ArrowLeft = () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+);
+const ArrowRight = () => (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+);
+
 interface CustomDatePickerProps {
     value: string;
     onChange: (val: string) => void;
@@ -44,6 +59,7 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
     const [position, setPosition] = useState({ top: 0, left: 0 });
     const [openDirection, setOpenDirection] = useState<'down' | 'up'>('down');
     const [viewDate, setViewDate] = useState(value ? parseDate(value) : new Date());
+    const [viewMode, setViewMode] = useState<ViewMode>('days');
     
     const buttonRef = useRef<HTMLButtonElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -54,22 +70,23 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
         }
     }, [value, isOpen]);
 
+    // При открытии календаря — всегда начинаем с режима дней
+    useEffect(() => {
+        if (isOpen) setViewMode('days');
+    }, [isOpen]);
+
     const updatePosition = () => {
         if (buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
-            // Увеличили предполагаемую высоту календаря для более надежного переключения вверх
             const calendarHeight = 360; 
 
-            // Проверка места снизу
             const spaceBelow = window.innerHeight - rect.bottom;
             const spaceAbove = rect.top;
             
             if (spaceBelow < calendarHeight && spaceAbove > calendarHeight) {
-                // Открываем вверх
                 setPosition({ top: rect.top - 4, left: rect.left });
                 setOpenDirection('up');
             } else {
-                // Стандартно вниз
                 setPosition({ top: rect.bottom + 4, left: rect.left });
                 setOpenDirection('down');
             }
@@ -103,6 +120,7 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
         };
     }, [isOpen]);
 
+    // --- Навигация: дни ---
     const handlePrevMonth = () => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1));
     const handleNextMonth = () => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1));
     
@@ -116,7 +134,30 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
         const today = new Date();
         onChange(formatDate(today));
         setIsOpen(false);
-    }
+    };
+
+    // --- Навигация: месяцы ---
+    const handlePrevYear = () => setViewDate(new Date(viewDate.getFullYear() - 1, viewDate.getMonth(), 1));
+    const handleNextYear = () => setViewDate(new Date(viewDate.getFullYear() + 1, viewDate.getMonth(), 1));
+    const handleMonthSelect = (monthIdx: number) => {
+        setViewDate(new Date(viewDate.getFullYear(), monthIdx, 1));
+        setViewMode('days');
+    };
+
+    // --- Навигация: годы (сетка 12 лет = десятилетие ± 1) ---
+    const decadeStart = getDecadeStart(viewDate.getFullYear());
+    const handlePrevDecade = () => setViewDate(new Date(viewDate.getFullYear() - 10, viewDate.getMonth(), 1));
+    const handleNextDecade = () => setViewDate(new Date(viewDate.getFullYear() + 10, viewDate.getMonth(), 1));
+    const handleYearSelect = (year: number) => {
+        setViewDate(new Date(year, viewDate.getMonth(), 1));
+        setViewMode('months');
+    };
+
+    // --- Клик на заголовок: дни → месяцы → годы ---
+    const handleHeaderClick = () => {
+        if (viewMode === 'days') setViewMode('months');
+        else if (viewMode === 'months') setViewMode('years');
+    };
 
     const daysInMonth = getDaysInMonth(viewDate.getFullYear(), viewDate.getMonth());
     const firstDayIdx = getFirstDayOfMonth(viewDate.getFullYear(), viewDate.getMonth());
@@ -133,7 +174,14 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
     const isToday = (day: number) => {
         const today = new Date();
         return today.getDate() === day && today.getMonth() === viewDate.getMonth() && today.getFullYear() === viewDate.getFullYear();
-    }
+    };
+
+    // Заголовок зависит от режима
+    const headerLabel = viewMode === 'days'
+        ? `${MONTHS[viewDate.getMonth()]} ${viewDate.getFullYear()}`
+        : viewMode === 'months'
+        ? `${viewDate.getFullYear()}`
+        : `${decadeStart} – ${decadeStart + 9}`;
 
     return (
         <>
@@ -152,42 +200,116 @@ export const CustomDatePicker: React.FC<CustomDatePickerProps> = ({
             {isOpen && createPortal(
                 <div
                     ref={menuRef}
-                    // Внешний контейнер отвечает только за позиционирование (включая сдвиг вверх)
                     className={`fixed z-[100] ${openDirection === 'up' ? '-translate-y-full' : ''}`}
                     style={{ top: position.top, left: position.left }}
                 >
-                    {/* Внутренний контейнер отвечает за внешний вид и анимацию появления */}
                     <div className="bg-white rounded-lg shadow-xl border border-gray-200 p-3 w-64 animate-fade-in-up select-none">
+                        {/* ── Шапка: кликабельный заголовок + стрелки ── */}
                         <div className="flex justify-between items-center mb-2">
-                            <span className="font-bold text-gray-700">{MONTHS[viewDate.getMonth()]} {viewDate.getFullYear()}</span>
+                            <button
+                                type="button"
+                                onClick={handleHeaderClick}
+                                className={`font-bold text-gray-700 hover:text-blue-600 transition-colors ${viewMode === 'years' ? 'cursor-default hover:text-gray-700' : 'cursor-pointer'}`}
+                            >
+                                {headerLabel}
+                            </button>
                             <div className="flex gap-1">
-                                <button onClick={handlePrevMonth} className="p-1 hover:bg-gray-100 rounded"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg></button>
-                                <button onClick={handleNextMonth} className="p-1 hover:bg-gray-100 rounded"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg></button>
+                                <button
+                                    type="button"
+                                    onClick={viewMode === 'days' ? handlePrevMonth : viewMode === 'months' ? handlePrevYear : handlePrevDecade}
+                                    className="p-1 hover:bg-gray-100 rounded"
+                                >
+                                    <ArrowLeft />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={viewMode === 'days' ? handleNextMonth : viewMode === 'months' ? handleNextYear : handleNextDecade}
+                                    className="p-1 hover:bg-gray-100 rounded"
+                                >
+                                    <ArrowRight />
+                                </button>
                             </div>
                         </div>
-                        <div className="grid grid-cols-7 gap-1 mb-1 text-center">
-                            {WEEKDAYS.map(d => <div key={d} className="text-xs text-gray-400 font-medium">{d}</div>)}
-                        </div>
-                        <div className="grid grid-cols-7 gap-1 text-center">
-                            {emptySlots.map(i => <div key={`empty-${i}`} />)}
-                            {daysArray.map(day => (
-                                <button
-                                    key={day}
-                                    onClick={() => handleDayClick(day)}
-                                    className={`w-7 h-7 text-sm rounded-full flex items-center justify-center transition-colors ${
-                                        isSelected(day) ? 'bg-blue-500 text-white' : 
-                                        isToday(day) ? 'text-blue-600 font-bold hover:bg-blue-50' : 
-                                        'text-gray-700 hover:bg-gray-100'
-                                    }`}
-                                >
-                                    {day}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="flex justify-between mt-3 pt-2 border-t border-gray-100 text-xs">
-                            <button onClick={() => {/*Logic for clear if needed*/}} className="text-red-500 hover:text-red-700 hidden">Удалить</button>
-                            <button onClick={handleTodayClick} className="text-blue-600 hover:text-blue-800 font-medium w-full text-right">Сегодня</button>
-                        </div>
+
+                        {/* ── Режим: дни ── */}
+                        {viewMode === 'days' && (
+                            <>
+                                <div className="grid grid-cols-7 gap-1 mb-1 text-center">
+                                    {WEEKDAYS.map(d => <div key={d} className="text-xs text-gray-400 font-medium">{d}</div>)}
+                                </div>
+                                <div className="grid grid-cols-7 gap-1 text-center">
+                                    {emptySlots.map(i => <div key={`empty-${i}`} />)}
+                                    {daysArray.map(day => (
+                                        <button
+                                            key={day}
+                                            type="button"
+                                            onClick={() => handleDayClick(day)}
+                                            className={`w-7 h-7 text-sm rounded-full flex items-center justify-center transition-colors ${
+                                                isSelected(day) ? 'bg-blue-500 text-white' : 
+                                                isToday(day) ? 'text-blue-600 font-bold hover:bg-blue-50' : 
+                                                'text-gray-700 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            {day}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="flex justify-between mt-3 pt-2 border-t border-gray-100 text-xs">
+                                    <button type="button" onClick={() => {/*Logic for clear if needed*/}} className="text-red-500 hover:text-red-700 hidden">Удалить</button>
+                                    <button type="button" onClick={handleTodayClick} className="text-blue-600 hover:text-blue-800 font-medium w-full text-right">Сегодня</button>
+                                </div>
+                            </>
+                        )}
+
+                        {/* ── Режим: выбор месяца ── */}
+                        {viewMode === 'months' && (
+                            <div className="grid grid-cols-3 gap-2 py-1">
+                                {MONTHS_SHORT.map((m, idx) => {
+                                    const isCurrent = selectedDate && selectedDate.getMonth() === idx && selectedDate.getFullYear() === viewDate.getFullYear();
+                                    const isThisMonth = new Date().getMonth() === idx && new Date().getFullYear() === viewDate.getFullYear();
+                                    return (
+                                        <button
+                                            key={m}
+                                            type="button"
+                                            onClick={() => handleMonthSelect(idx)}
+                                            className={`py-2 text-sm rounded-lg transition-colors ${
+                                                isCurrent ? 'bg-blue-500 text-white' :
+                                                isThisMonth ? 'text-blue-600 font-bold hover:bg-blue-50' :
+                                                'text-gray-700 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            {m}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* ── Режим: выбор года (сетка 4×3 = 12 лет) ── */}
+                        {viewMode === 'years' && (
+                            <div className="grid grid-cols-3 gap-2 py-1">
+                                {Array.from({ length: 12 }, (_, i) => decadeStart - 1 + i).map(year => {
+                                    const isCurrentYear = selectedDate && selectedDate.getFullYear() === year;
+                                    const isThisYear = new Date().getFullYear() === year;
+                                    const isOutOfDecade = year < decadeStart || year > decadeStart + 9;
+                                    return (
+                                        <button
+                                            key={year}
+                                            type="button"
+                                            onClick={() => handleYearSelect(year)}
+                                            className={`py-2 text-sm rounded-lg transition-colors ${
+                                                isCurrentYear ? 'bg-blue-500 text-white' :
+                                                isThisYear ? 'text-blue-600 font-bold hover:bg-blue-50' :
+                                                isOutOfDecade ? 'text-gray-400 hover:bg-gray-50' :
+                                                'text-gray-700 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            {year}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                 </div>,
                 document.body

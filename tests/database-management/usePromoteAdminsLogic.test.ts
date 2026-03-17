@@ -20,6 +20,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockPromoteToAdmins = vi.fn();
 const mockGetAllSystemAccounts = vi.fn();
+const mockVerifyEnvToken = vi.fn();
 
 vi.mock('../../services/api/management.api', () => ({
     promoteToAdmins: (...args: any[]) => mockPromoteToAdmins(...args),
@@ -27,6 +28,7 @@ vi.mock('../../services/api/management.api', () => ({
 
 vi.mock('../../services/api/system_accounts.api', () => ({
     getAllSystemAccounts: (...args: any[]) => mockGetAllSystemAccounts(...args),
+    verifyEnvToken: (...args: any[]) => mockVerifyEnvToken(...args),
 }));
 
 // ─── Импорт после моков ──────────────────────────────────────────
@@ -109,6 +111,8 @@ describe('usePromoteAdminsLogic', () => {
         vi.clearAllMocks();
         // По умолчанию возвращаем только активные аккаунты
         mockGetAllSystemAccounts.mockResolvedValue(defaultAccounts);
+        // ENV-токен по умолчанию не найден
+        mockVerifyEnvToken.mockRejectedValue(new Error('no env'));
     });
 
     // === Загрузка системных аккаунтов ===
@@ -347,7 +351,8 @@ describe('usePromoteAdminsLogic', () => {
             expect(mockPromoteToAdmins).toHaveBeenCalledWith(
                 [100001],     // groupIds
                 [200001],     // userIds
-                'administrator' // role по умолчанию
+                'administrator', // role по умолчанию
+                false         // hasEnvSelected
             );
 
             expect(result.current.state.response).toEqual(mockResponse);
@@ -377,7 +382,7 @@ describe('usePromoteAdminsLogic', () => {
                 await result.current.actions.handleStart();
             });
 
-            expect(mockPromoteToAdmins).toHaveBeenCalledWith([100001], [200001], 'editor');
+            expect(mockPromoteToAdmins).toHaveBeenCalledWith([100001], [200001], 'editor', false); // hasEnvSelected = false
         });
 
         it('обрабатывает ошибку API', async () => {

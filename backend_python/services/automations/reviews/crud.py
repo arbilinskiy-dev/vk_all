@@ -53,6 +53,7 @@ def upsert_contest_settings(db: Session, settings: ReviewContestSettings) -> mod
     
     contest.finish_condition = settings.finishCondition
     contest.target_count = settings.targetCount
+    contest.target_count_mode = settings.targetCountMode or 'exact'
     contest.finish_date = settings.finishDate
     contest.finish_day_of_week = settings.finishDayOfWeek
     contest.finish_time = settings.finishTime
@@ -216,10 +217,14 @@ def get_blacklist(db: Session, project_id: str) -> List[models.ReviewContestBlac
         .order_by(models.ReviewContestBlacklist.created_at.desc())\
         .all()
 
-def add_to_blacklist(db: Session, contest_id: str, users_data: List[Dict], until_date: datetime = None):
+def add_to_blacklist(db: Session, contest_id: str, users_data: List[Dict], until_date: datetime = None, auto_commit: bool = True):
     """
     Добавляет пользователей в черный список.
     users_data: [{id: 123, name: '...', screen_name: '...'}, ...]
+    
+    Args:
+        auto_commit: Если False — не делает commit. Вызывающий код сам решает,
+                     когда коммитить (для атомарности в финализаторе).
     """
     for user in users_data:
         # Проверяем, есть ли уже этот пользователь в ЧС этого конкурса
@@ -245,14 +250,20 @@ def add_to_blacklist(db: Session, contest_id: str, users_data: List[Dict], until
             )
             db.add(new_entry)
             
-    db.commit()
+    if auto_commit:
+        db.commit()
 
 def delete_from_blacklist(db: Session, item_id: str):
     db.query(models.ReviewContestBlacklist).filter(models.ReviewContestBlacklist.id == item_id).delete()
     db.commit()
 
-def cleanup_expired_blacklist(db: Session, contest_id: str) -> int:
-    """Удаляет записи с истекшим сроком действия."""
+def cleanup_expired_blacklist(db: Session, contest_id: str, auto_commit: bool = True) -> int:
+    """Удаляет записи с истекшим сроком действия.
+    
+    Args:
+        auto_commit: Если False — не делает commit. Вызывающий код сам решает,
+                     когда коммитить (для атомарности в финализаторе).
+    """
     now = datetime.now(timezone.utc)
     deleted_count = db.query(models.ReviewContestBlacklist).filter(
         models.ReviewContestBlacklist.contest_id == contest_id,
@@ -260,7 +271,8 @@ def cleanup_expired_blacklist(db: Session, contest_id: str) -> int:
         models.ReviewContestBlacklist.until_date < now
     ).delete(synchronize_session=False)
     
-    db.commit()
+    if auto_commit:
+        db.commit()
     return deleted_count
 
 def get_active_blacklist_user_ids(db: Session, contest_id: str) -> List[int]:

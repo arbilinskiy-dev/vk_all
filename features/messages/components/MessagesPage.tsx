@@ -6,14 +6,17 @@
  */
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Project, AuthUser } from '../../../shared/types';
-import { MessagesChannel, Conversation, SSEUserTypingData, SSEDialogFocusData } from '../types';
+import { MessagesChannel, Conversation, ChatMessageData, SSEUserTypingData, SSEDialogFocusData } from '../types';
 import { MessageTemplate } from '../../../services/api/message_template.api';
 import { ManagerFocusInfo } from '../hooks/chat/useTypingState';
 import { ChatView } from './chat/ChatView';
+import { ForwardToChatModal } from './chat/ForwardToChatModal';
 import { MessagesEmptyState } from './MessagesEmptyState';
 import { UserInfoPanel } from './user-info/UserInfoPanel';
 import { CompactUserInfo, InfoTab } from './user-info/CompactUserInfo';
 import { useMessagesPageLogic } from '../hooks/useMessagesPageLogic';
+import { forwardToChat as forwardToChatApi } from '../../../services/api/messages.chat.api';
+import { getManagerId } from '../utils/getManagerId';
 
 interface MessagesPageProps {
     /** Текущий канал (vk или tg) */
@@ -106,6 +109,12 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
     /** Текст из чата для «Сохранить как шаблон» */
     const [saveAsTemplateText, setSaveAsTemplateText] = useState<string | null>(null);
 
+    // --- Сброс pendingTemplate при смене диалога или проекта ---
+    useEffect(() => {
+        setPendingTemplate(null);
+        setSaveAsTemplateText(null);
+    }, [activeConversationId, activeProject?.id]);
+
     // --- Состояние правой панели: полный / минималистичный режим ---
     const STORAGE_KEY = 'vk-planner-info-panel-expanded';
     const [isInfoPanelExpanded, setIsInfoPanelExpanded] = useState<boolean>(() => {
@@ -165,6 +174,56 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
         // Формат ID в useConversations: "conv-{vk_user_id}"
         onSelectConversation(`conv-${vkUserId}`);
     }, [onSelectConversation]);
+
+    // --- Пересылка сообщений в групповой чат ---
+    const [forwardModalMessages, setForwardModalMessages] = useState<ChatMessageData[] | null>(null);
+    const [isForwarding, setIsForwarding] = useState(false);
+
+    /** Открыть модал пересылки */
+    const handleOpenForwardModal = useCallback((messages: ChatMessageData[]) => {
+        setForwardModalMessages(messages);
+    }, []);
+
+    /** Отправить пересылку в выбранный чат */
+    const handleForwardToChat = useCallback(async (targetPeerId: number, comment: string) => {
+        if (!forwardModalMessages || !activeProject?.id || !state.activeConversation) return;
+
+        const groupId = activeProject.vkProjectId;
+        if (!groupId) return;
+
+        // peer_id исходного диалога: для обычного диалога = vk_user_id, для группового чата = peerId
+        const sourcePeerId = state.activeConversation.peerId || Number(state.activeConversation.user.id);
+
+        // conversation_message_id для каждого выбранного сообщения
+        const conversationMessageIds = forwardModalMessages
+            .map(m => m.conversationMessageId)
+            .filter((id): id is number => id !== undefined);
+
+        if (conversationMessageIds.length === 0) return;
+
+        setIsForwarding(true);
+        try {
+            const managerId = getManagerId();
+            const managerName = user?.name || user?.email || undefined;
+
+            await forwardToChatApi(
+                activeProject.id,
+                targetPeerId,
+                sourcePeerId,
+                conversationMessageIds,
+                Number(groupId),
+                managerId || undefined,
+                managerName,
+                comment,
+                state.activeConversation.user.firstName || undefined,
+            );
+            setForwardModalMessages(null);
+        } catch (e) {
+            console.error('Ошибка пересылки сообщений:', e);
+        } finally {
+            setIsForwarding(false);
+        }
+    }, [forwardModalMessages, activeProject, state.activeConversation, user]);
 
     // Если нет проекта или нет выбранного диалога — показываем empty state
     if (!activeProject || !state.activeConversation) {
@@ -226,6 +285,9 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                         const vkUserId = Number(state.activeConversation!.user.id);
                         onUnassignLabel(vkUserId, labelId);
                     } : undefined}
+                    onForwardToChat={handleOpenForwardModal}
+                    chatActions={state.chatActions}
+                    onNavigateToDialog={handleNavigateToChat}
                 />
             </div>
             {/* Правая рабочая область — информация о пользователе */}
@@ -298,6 +360,19 @@ export const MessagesPage: React.FC<MessagesPageProps> = ({
                     />
                 )}
             </div>
+
+            {/* Модал пересылки сообщений в групповой чат */}
+            {forwardModalMessages && state.activeConversation && (
+                <ForwardToChatModal
+                    conversations={conversations}
+                    selectedMessages={forwardModalMessages}
+                    userName={state.activeConversation.user.firstName}
+                    sourcePeerId={state.activeConversation.peerId || Number(state.activeConversation.user.id)}
+                    isSending={isForwarding}
+                    onSend={handleForwardToChat}
+                    onClose={() => setForwardModalMessages(null)}
+                />
+            )}
         </div>
     );
 };

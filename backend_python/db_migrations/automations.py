@@ -99,6 +99,9 @@ def migrate(engine: Engine):
     # Миграция: Реальная дата поста VK для записей конкурса отзывов
     check_and_add_column(engine, 'review_contest_entries', 'post_date', 'TIMESTAMP WITH TIME ZONE')
 
+    # Миграция: Режим интерпретации target_count (exact, minimum, maximum)
+    check_and_add_column(engine, 'review_contests', 'target_count_mode', "VARCHAR DEFAULT 'exact'")
+
     # Миграция: Уникальный constraint для предотвращения дублирования историй
     # Защита от race condition при параллельном выполнении в нескольких Gunicorn-воркерах
     check_and_add_unique_constraint(

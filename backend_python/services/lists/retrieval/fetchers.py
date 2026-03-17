@@ -149,8 +149,27 @@ def fetch_list_items(
         rows = query.order_by(agg_subq.c.last_interaction_date.desc().nulls_last())\
                      .offset(offset).limit(page_size).all()
         
+        # Собираем post_ids для полученных пользователей одним запросом
+        profile_ids = [vp.id for vp, cnt, last_dt in rows]
+        post_ids_map = {}  # vk_profile_id → [vk_post_id, ...]
+        if profile_ids:
+            pid_query = db.query(
+                model.vk_profile_id, model.vk_post_id
+            ).filter(
+                model.project_id == project_id,
+                model.vk_profile_id.in_(profile_ids),
+            )
+            if r.type_filter:
+                col, val = r.type_filter
+                pid_query = pid_query.filter(col == val)
+            for pid, post_id in pid_query.all():
+                post_ids_map.setdefault(pid, []).append(post_id)
+        
         # Оборачиваем в InteractionUserResult для совместимости с Pydantic-схемой
-        return [InteractionUserResult(vp, cnt, last_dt, project_id) for vp, cnt, last_dt in rows]
+        return [
+            InteractionUserResult(vp, cnt, last_dt, project_id, post_ids_map.get(vp.id, []))
+            for vp, cnt, last_dt in rows
+        ]
 
     # ── STANDARD MODE: прямой запрос к модели ─────────────────────
     query = db.query(model).filter(model.project_id == project_id)

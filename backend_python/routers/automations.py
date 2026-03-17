@@ -31,6 +31,7 @@ def get_reviews_settings(payload: ProjectIdPayload, db: Session = Depends(get_db
             startDate=datetime.now().strftime("%Y-%m-%d"),
             finishCondition="date",
             targetCount=10,
+            targetCountMode='exact',
             finishDate="",
             finishDayOfWeek=1,
             finishTime="10:00",
@@ -48,6 +49,7 @@ def get_reviews_settings(payload: ProjectIdPayload, db: Session = Depends(get_db
         startDate=contest.start_date or "",
         finishCondition=contest.finish_condition or "date",
         targetCount=contest.target_count,
+        targetCountMode=contest.target_count_mode or 'exact',
         finishDate=contest.finish_date,
         finishDayOfWeek=contest.finish_day_of_week,
         finishTime=contest.finish_time,
@@ -72,6 +74,7 @@ def save_reviews_settings(payload: ReviewContestSettings, db: Session = Depends(
         startDate=contest.start_date or "",
         finishCondition=contest.finish_condition or "date",
         targetCount=contest.target_count,
+        targetCountMode=contest.target_count_mode or 'exact',
         finishDate=contest.finish_date,
         finishDayOfWeek=contest.finish_day_of_week,
         finishTime=contest.finish_time,
@@ -186,3 +189,48 @@ def add_blacklist(payload: AddBlacklistPayload, db: Session = Depends(get_db)):
 def delete_blacklist(payload: DeleteBlacklistPayload, db: Session = Depends(get_db)):
     crud_automations.delete_from_blacklist(db, payload.itemId)
     return {"success": True}
+
+
+@router.post("/reviews/fixStuckCycle", response_model=GenericSuccess)
+def fix_stuck_cycle(payload: ProjectIdPayload, db: Session = Depends(get_db)):
+    """
+    Ручное исправление «зависшего» цикла конкурса.
+    
+    Используется когда финализация прошла частично (delivery_log создан, но
+    статусы entries не обновились из-за бага атомарности).
+    Переводит все 'commented' entries в 'used', кроме тех, кто уже 'winner'.
+    """
+    import models
+    
+    contest = crud_automations.get_contest_settings(db, payload.projectId)
+    if not contest:
+        raise HTTPException(404, "Contest settings not found")
+    
+    # Получаем delivery_logs, чтобы понять, кто уже был победителем
+    delivery_logs = crud_automations.get_delivery_logs(db, payload.projectId)
+    winner_vk_ids = {log.user_vk_id for log in delivery_logs}
+    
+    # Получаем все entries в статусе 'commented'
+    stuck_entries = db.query(models.ReviewContestEntry).filter(
+        models.ReviewContestEntry.contest_id == contest.id,
+        models.ReviewContestEntry.status == 'commented'
+    ).all()
+    
+    if not stuck_entries:
+        return {"success": True, "message": "Нет зависших записей"}
+    
+    fixed_winners = 0
+    fixed_used = 0
+    
+    for entry in stuck_entries:
+        if entry.user_vk_id in winner_vk_ids:
+            entry.status = 'winner'
+            fixed_winners += 1
+        else:
+            entry.status = 'used'
+            fixed_used += 1
+    
+    db.commit()
+    
+    print(f"CONTEST FIX: Fixed {fixed_winners} winners + {fixed_used} used entries for project {payload.projectId}")
+    return {"success": True, "message": f"Исправлено: {fixed_winners} победителей, {fixed_used} использованных"}

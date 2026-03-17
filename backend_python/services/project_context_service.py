@@ -43,7 +43,7 @@ def get_all_data(db: Session) -> schemas.ProjectContextResponse:
         values=[schemas.ProjectContextValue.model_validate(v, from_attributes=True) for v in values]
     )
 
-def update_values(db: Session, values: List[Dict]):
+def update_values(db: Session, values: list):
     context_crud.update_values(db, values)
 
 def get_project_context(db: Session, project_id: str) -> schemas.ProjectSpecificContextResponse:

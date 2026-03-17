@@ -33,7 +33,7 @@ export const TokensBlock: React.FC<TokensBlockProps> = ({
     handleRemoveAdditionalToken,
 }) => {
     return (
-        <>
+        <div className="p-4 bg-gradient-to-r from-blue-50 to-sky-50 border border-blue-200 rounded-lg space-y-4">
             {/* ─── Основной токен сообщества ──────────────────── */}
             <div>
                 <label className="block text-sm font-medium text-gray-700">Основной токен сообщества</label>
@@ -140,6 +140,6 @@ export const TokensBlock: React.FC<TokensBlockProps> = ({
                     + Добавить токен
                 </button>
             </div>
-        </>
+        </div>
     );
 };

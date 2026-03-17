@@ -65,6 +65,7 @@ PostBase = base_models_module.PostBase
 ScheduledPost = base_models_module.ScheduledPost
 SystemPost = base_models_module.SystemPost
 SuggestedPost = base_models_module.SuggestedPost
+ProjectSummary = base_models_module.ProjectSummary
 Project = base_models_module.Project
 Note = base_models_module.Note
 Album = base_models_module.Album
@@ -258,6 +259,9 @@ BulkEditApplyRequest = bulk_edit_module.BulkEditApplyRequest
 BulkEditApplyResponse = bulk_edit_module.BulkEditApplyResponse
 BulkEditTaskStatus = bulk_edit_module.BulkEditTaskStatus
 TaskProgress = bulk_edit_module.TaskProgress
+
+# Payload для получения постов по IDs
+PostsByIdsPayload = api_payloads_module.PostsByIdsPayload
 TaskError = bulk_edit_module.TaskError
 FoundPost = bulk_edit_module.FoundPost
 PostToEdit = bulk_edit_module.PostToEdit

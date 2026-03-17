@@ -310,17 +310,37 @@ def publish_with_admin_priority(
     # Получаем приоритетный список токенов
     tokens_info = get_admin_tokens_for_group(group_id_int, include_non_admins=True)
     
-    # Если есть preferred_token — ставим его в начало
+    # Если есть preferred_token — определяем его позицию на основе admin-статуса
     if preferred_token:
+        # Проверяем, является ли preferred_token админом этой группы
+        existing = next((t for t in tokens_info if t.token == preferred_token), None)
+        is_preferred_admin = existing.is_admin if existing else False
+        
         # Убираем его из списка если уже есть
         tokens_info = [t for t in tokens_info if t.token != preferred_token]
-        # Добавляем в начало
-        tokens_info.insert(0, TokenInfo(
-            token=preferred_token,
-            name="Preferred Token",
-            is_admin=False,  # Не знаем точно
-            admin_level=99   # Высший приоритет
-        ))
+        
+        if is_preferred_admin:
+            # Админ — ставим первым (высший приоритет)
+            tokens_info.insert(0, TokenInfo(
+                token=preferred_token,
+                name="Preferred Token (admin)",
+                is_admin=True,
+                admin_level=99
+            ))
+        else:
+            # НЕ админ — ставим ПОСЛЕ всех админов, чтобы сначала пробовались админские токены
+            # (VK API молча удаляет вложения если токен не админ группы)
+            first_non_admin_idx = next(
+                (i for i, t in enumerate(tokens_info) if not t.is_admin),
+                len(tokens_info)
+            )
+            tokens_info.insert(first_non_admin_idx, TokenInfo(
+                token=preferred_token,
+                name="Preferred Token (non-admin)",
+                is_admin=False,
+                admin_level=0
+            ))
+            print(f"VK_SERVICE [PUBLISH GROUP {group_id_int}]: preferred_token НЕ админ — перемещён после {first_non_admin_idx} админ-токенов")
     
     if not tokens_info:
         raise VkApiError("Нет доступных токенов для публикации", -1)

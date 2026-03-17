@@ -1,7 +1,8 @@
 
-import React, { useState, useRef, useEffect } from 'react';
-import { SystemListInteraction } from '../../../shared/types';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { SystemListInteraction, SystemListPost } from '../../../shared/types';
 import { ImagePreviewModal } from '../../../shared/components/modals/ImagePreviewModal';
+import { getPostsByIds } from '../../../services/api/lists.api';
 
 interface InteractionTableProps {
     items: SystemListInteraction[];
@@ -16,6 +17,8 @@ interface InteractionTableProps {
 export const InteractionTable: React.FC<InteractionTableProps> = React.memo(({ items, isLoading, projectId, vkGroupId, listType, onLoadMore, isFetchingMore }) => {
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+    const [postsCache, setPostsCache] = useState<Record<string, SystemListPost[]>>({});
+    const [loadingPosts, setLoadingPosts] = useState<Record<string, boolean>>({});
     const observerTarget = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -36,9 +39,26 @@ export const InteractionTable: React.FC<InteractionTableProps> = React.memo(({ i
         };
     }, [onLoadMore]);
 
-    const toggleExpand = (id: string) => {
-        setExpandedRowId(prev => prev === id ? null : id);
-    };
+    const toggleExpand = useCallback((id: string, postIds?: number[]) => {
+        setExpandedRowId(prev => {
+            const newId = prev === id ? null : id;
+            // Подгружаем посты при раскрытии, если ещё не загружены
+            if (newId && postIds && postIds.length > 0 && !postsCache[id] && !loadingPosts[id]) {
+                setLoadingPosts(p => ({ ...p, [id]: true }));
+                getPostsByIds(projectId, postIds)
+                    .then(data => {
+                        setPostsCache(c => ({ ...c, [id]: data.items }));
+                    })
+                    .catch(() => {
+                        setPostsCache(c => ({ ...c, [id]: [] }));
+                    })
+                    .finally(() => {
+                        setLoadingPosts(p => ({ ...p, [id]: false }));
+                    });
+            }
+            return newId;
+        });
+    }, [projectId, postsCache, loadingPosts]);
 
     if (isLoading) {
         return (
@@ -122,7 +142,7 @@ export const InteractionTable: React.FC<InteractionTableProps> = React.memo(({ i
                             <React.Fragment key={item.id}>
                                 <tr 
                                     className={`transition-colors cursor-pointer ${expandedRowId === item.id ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}
-                                    onClick={() => toggleExpand(item.id)}
+                                    onClick={() => toggleExpand(item.id, item.post_ids)}
                                 >
                                     <td className="px-4 py-2 text-gray-400">
                                         <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform ${expandedRowId === item.id ? 'rotate-90 text-indigo-600' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -206,24 +226,108 @@ export const InteractionTable: React.FC<InteractionTableProps> = React.memo(({ i
                                 </tr>
                                 {expandedRowId === item.id && (
                                     <tr className="bg-gray-50/50">
-                                        <td colSpan={10} className="px-8 py-4 border-b border-gray-200">
-                                            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">История активности ({item.post_ids?.length || 0})</p>
-                                            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto custom-scrollbar">
-                                                {item.post_ids && item.post_ids.map(postId => (
-                                                    <a 
-                                                        key={postId}
-                                                        href={`https://vk.com/wall-${vkGroupId}_${postId}`}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="inline-flex items-center px-2 py-1 text-xs rounded border border-gray-300 bg-white text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300 transition-colors"
-                                                        title="Открыть пост в VK"
-                                                        onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                        Post #{postId}
-                                                    </a>
-                                                ))}
-                                                 {(!item.post_ids || item.post_ids.length === 0) && <span className="text-sm text-gray-400 italic">Нет данных о постах</span>}
-                                            </div>
+                                        <td colSpan={10} className="px-6 py-4 border-b border-gray-200">
+                                            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+                                                История активности ({item.post_ids?.length || 0})
+                                            </p>
+                                            {loadingPosts[item.id] ? (
+                                                <div className="flex items-center gap-2 py-4">
+                                                    <div className="loader h-5 w-5 border-t-indigo-500"></div>
+                                                    <span className="text-sm text-gray-400">Загрузка постов...</span>
+                                                </div>
+                                            ) : postsCache[item.id] && postsCache[item.id].length > 0 ? (
+                                                <div className="max-h-80 overflow-y-auto custom-scrollbar rounded-lg border border-gray-200">
+                                                    <table className="w-full text-xs">
+                                                        <thead className="bg-gray-100 sticky top-0">
+                                                            <tr>
+                                                                <th className="px-3 py-2 text-left font-medium text-gray-500 w-16">Фото</th>
+                                                                <th className="px-3 py-2 text-left font-medium text-gray-500">Текст поста</th>
+                                                                <th className="px-3 py-2 text-center font-medium text-gray-500 w-14">
+                                                                    <span title="Лайки">❤️</span>
+                                                                </th>
+                                                                <th className="px-3 py-2 text-center font-medium text-gray-500 w-14">
+                                                                    <span title="Комментарии">💬</span>
+                                                                </th>
+                                                                <th className="px-3 py-2 text-center font-medium text-gray-500 w-14">
+                                                                    <span title="Репосты">🔗</span>
+                                                                </th>
+                                                                <th className="px-3 py-2 text-center font-medium text-gray-500 w-14">
+                                                                    <span title="Просмотры">👁</span>
+                                                                </th>
+                                                                <th className="px-3 py-2 text-left font-medium text-gray-500 w-24">Дата</th>
+                                                                <th className="px-3 py-2 text-center font-medium text-gray-500 w-10">VK</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-gray-100">
+                                                            {postsCache[item.id].map(post => (
+                                                                <tr key={post.id} className="hover:bg-white transition-colors">
+                                                                    <td className="px-3 py-2">
+                                                                        {post.image_url ? (
+                                                                            <img 
+                                                                                src={post.image_url} 
+                                                                                alt="" 
+                                                                                loading="lazy"
+                                                                                className="w-12 h-12 rounded object-cover cursor-pointer hover:opacity-80"
+                                                                                onClick={(e) => { e.stopPropagation(); setPreviewImage(post.image_url!); }}
+                                                                            />
+                                                                        ) : (
+                                                                            <div className="w-12 h-12 rounded bg-gray-100 flex items-center justify-center text-gray-300">
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                                                </svg>
+                                                                            </div>
+                                                                        )}
+                                                                    </td>
+                                                                    <td className="px-3 py-2">
+                                                                        <p className="text-gray-700 line-clamp-2 max-w-md" title={post.text || ''}>
+                                                                            {post.text ? (post.text.length > 120 ? post.text.substring(0, 120) + '...' : post.text) : <span className="text-gray-300 italic">Без текста</span>}
+                                                                        </p>
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-center text-gray-600 font-medium">{post.likes_count}</td>
+                                                                    <td className="px-3 py-2 text-center text-gray-600 font-medium">{post.comments_count}</td>
+                                                                    <td className="px-3 py-2 text-center text-gray-600 font-medium">{post.reposts_count}</td>
+                                                                    <td className="px-3 py-2 text-center text-gray-600 font-medium">{post.views_count}</td>
+                                                                    <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                                                                        {post.date ? new Date(post.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-center">
+                                                                        <a 
+                                                                            href={post.vk_link || `https://vk.com/wall-${vkGroupId}_${(post as any).vk_post_id || post.vk_id}`}
+                                                                            target="_blank" 
+                                                                            rel="noopener noreferrer"
+                                                                            className="text-indigo-500 hover:text-indigo-700"
+                                                                            title="Открыть в VK"
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                                            </svg>
+                                                                        </a>
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            ) : item.post_ids && item.post_ids.length > 0 ? (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {item.post_ids.map(postId => (
+                                                        <a 
+                                                            key={postId}
+                                                            href={`https://vk.com/wall-${vkGroupId}_${postId}`}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-flex items-center px-2 py-1 text-xs rounded border border-gray-300 bg-white text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300 transition-colors"
+                                                            title="Открыть пост в VK"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            Post #{postId}
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <span className="text-sm text-gray-400 italic">Нет данных о постах</span>
+                                            )}
                                         </td>
                                     </tr>
                                 )}

@@ -22,6 +22,7 @@ import crud
 from database import SessionLocal
 from services.vk_api.api_client import call_vk_api as raw_vk_call
 from services import task_monitor, vk_service
+from services.lists.list_sync_utils import get_community_tokens
 from config import settings
 
 
@@ -32,6 +33,7 @@ class TokenWorkload:
     name: str  # Имя аккаунта для отображения
     admin_in_groups: List[str] = field(default_factory=list)  # ID групп, где токен - админ
     assigned_projects: List[dict] = field(default_factory=list)  # Назначенные проекты
+    all_tokens: List[str] = field(default_factory=list)  # Все токены для параллельной работы (community)
     
     @property
     def load(self) -> int:
@@ -186,37 +188,78 @@ def run_parallel_subscribers_refresh(
             task_monitor.update_task(task_id, "done", message="Нет активных проектов")
             return
         
-        projects_list = [
-            {'id': p.id, 'name': p.name, 'vk_id': p.vkProjectId}
-            for p in all_projects
-        ]
+        projects_list = []
+        # Разделяем проекты: с токеном сообщества и без
+        projects_with_community_token = []  # Обрабатываются своим токеном сообщества
+        projects_without_community_token = []  # Обрабатываются системными токенами
+        
+        for p in all_projects:
+            proj_data = {'id': p.id, 'name': p.name, 'vk_id': p.vkProjectId}
+            projects_list.append(proj_data)
+            
+            community_tokens = get_community_tokens(p)
+            if community_tokens:
+                projects_with_community_token.append({
+                    **proj_data,
+                    'community_tokens': community_tokens
+                })
+            else:
+                projects_without_community_token.append(proj_data)
+        
         total_projects = len(projects_list)
+        
+        print(f"PARALLEL_BULK: Всего {total_projects} проектов:")
+        print(f"   -> С токеном сообщества: {len(projects_with_community_token)}")
+        print(f"   -> Без токена сообщества (системные): {len(projects_without_community_token)}")
         
         task_monitor.update_task(task_id, "processing", loaded=0, total=total_projects,
                                   message=f"Анализ токенов и прав доступа...")
         
-        # 2. Собираем токены
+        # 2. Собираем системные токены (для проектов БЕЗ токена сообщества)
         tokens = get_all_tokens_with_names(db)
-        if not tokens:
+        
+        # Если нет ни community-токенов, ни системных — ошибка
+        if not tokens and not projects_with_community_token:
             task_monitor.update_task(task_id, "error", error="Нет доступных токенов")
             return
         
-        print(f"PARALLEL_BULK: Найдено {len(tokens)} токенов, {total_projects} проектов")
+        print(f"PARALLEL_BULK: Системных токенов: {len(tokens)}")
         
-        # 3. Проверяем админские права (это займёт время)
-        group_ids = [p['vk_id'] for p in projects_list]
-        admin_map = check_admin_rights_batch(tokens, group_ids)
+        # 3. Для проектов БЕЗ community-токена: проверяем админские права системных токенов
+        active_workloads = []
         
-        # ВАЖНО: Пауза после проверки админских прав!
-        # VK API нужно "остыть" после серии запросов groups.get
-        print("PARALLEL_BULK: Пауза 10 секунд для восстановления API лимитов...")
-        time.sleep(10)
+        if projects_without_community_token and tokens:
+            group_ids = [p['vk_id'] for p in projects_without_community_token]
+            admin_map = check_admin_rights_batch(tokens, group_ids)
+            
+            # ВАЖНО: Пауза после проверки админских прав!
+            print("PARALLEL_BULK: Пауза 10 секунд для восстановления API лимитов...")
+            time.sleep(10)
+            
+            # Распределяем проекты без community-токена по системным токенам
+            workloads = distribute_projects_to_tokens(tokens, projects_without_community_token, admin_map)
+            active_workloads = [wl for wl in workloads if wl.assigned_projects]
         
-        # 4. Распределяем проекты по токенам
-        workloads = distribute_projects_to_tokens(tokens, projects_list, admin_map)
+        # 4. Для проектов С community-токеном: создаём отдельные воркеры
+        #    Все community-токены передаются для параллельной загрузки внутри проекта
+        for proj in projects_with_community_token:
+            all_ct = proj['community_tokens']
+            wl = TokenWorkload(
+                token=all_ct[0],  # Основной токен (для совместимости)
+                name=f"Сообщество: {proj['name'][:30]}",
+                all_tokens=all_ct  # ВСЕ токены для параллельной работы
+            )
+            wl.assigned_projects.append({
+                'id': proj['id'],
+                'name': proj['name'],
+                'vk_id': proj['vk_id'],
+                'is_admin': True  # Community token = полный доступ к своей группе
+            })
+            active_workloads.append(wl)
         
-        # Фильтруем пустые воркеры
-        active_workloads = [wl for wl in workloads if wl.assigned_projects]
+        if not active_workloads:
+            task_monitor.update_task(task_id, "error", error="Не удалось распределить проекты по токенам")
+            return
         
         print(f"PARALLEL_BULK: Распределение проектов:")
         for wl in active_workloads:
@@ -267,9 +310,16 @@ def run_parallel_subscribers_refresh(
                     sub_task_id = f"{task_id}_w{worker_idx}_{project_id}"
                     task_monitor.start_task(sub_task_id, project_id, "subscribers_sync")
                     
-                    # ВАЖНО: Передаём ТОЛЬКО токен этого воркера, а не все токены!
-                    # Это предотвращает перегрузку API
-                    refresh_subscribers_task_single_token(sub_task_id, project_id, workload.token, workload.name)
+                    if workload.all_tokens and len(workload.all_tokens) > 1:
+                        # Community-токены: параллельная загрузка через все токены
+                        refresh_subscribers_task_multi_token(
+                            sub_task_id, project_id, workload.all_tokens, workload.name
+                        )
+                    else:
+                        # Системный токен: один токен = последовательная загрузка
+                        refresh_subscribers_task_single_token(
+                            sub_task_id, project_id, workload.token, workload.name
+                        )
                     
                     # Проверяем результат
                     sub_status = task_monitor.get_task_status(sub_task_id)
@@ -623,6 +673,238 @@ def refresh_subscribers_task_single_token(task_id: str, project_id: str, token: 
                     db_batch.close()
 
         # 3. Обновление СУЩЕСТВУЮЩИХ (обновляем last_seen)
+        if existing_ids:
+            BATCH_SIZE = 1000
+            for i in range(0, len(existing_ids), BATCH_SIZE):
+                batch_ids = existing_ids[i:i + BATCH_SIZE]
+                
+                updates = []
+                for vk_id in batch_ids:
+                    vk_data = vk_members_map.get(vk_id, {})
+                    updates.append({
+                        'vk_user_id': vk_id,
+                        'last_seen': vk_data.get('last_seen', {}).get('time') if vk_data.get('last_seen') else None,
+                        'platform': vk_data.get('last_seen', {}).get('platform') if vk_data.get('last_seen') else None,
+                        'photo_url': vk_data.get('photo_100'),
+                        'deactivated': vk_data.get('deactivated')
+                    })
+                
+                if updates:
+                    db_batch = SessionLocal()
+                    try:
+                        crud.bulk_update_subscriber_details(db_batch, project_id, updates)
+                    finally:
+                        db_batch.close()
+        
+        task_monitor.update_task(task_id, "done", 
+            loaded=total_fetched, 
+            total=total_vk_count,
+            message=f"+{len(new_ids)} / -{len(left_ids)}")
+        
+    except Exception as e:
+        task_monitor.update_task(task_id, "error", error=f"Save failed: {e}")
+
+
+def refresh_subscribers_task_multi_token(task_id: str, project_id: str, tokens: List[str], token_name: str):
+    """
+    Синхронизация подписчиков с использованием НЕСКОЛЬКИХ токенов (параллельно).
+    Используется для проектов с несколькими community-токенами.
+    
+    Логика:
+    1. Один лёгкий запрос для получения количества подписчиков
+    2. Разбивка на чанки
+    3. Параллельная загрузка чанков через все доступные токены
+    """
+    from services.lists.subscribers.config import EXECUTE_BATCH_SIZE
+    from services.lists.subscribers.workers import _fetch_batch_execute_members
+    from datetime import datetime, timezone
+    import uuid
+    
+    db = SessionLocal()
+    try:
+        project = crud.get_project_by_id(db, project_id)
+        if not project:
+            task_monitor.update_task(task_id, "error", error="Project not found")
+            return
+            
+        project_vk_id = project.vkProjectId
+        project_name = project.name
+        
+        db_ids_set = crud.get_all_subscriber_vk_ids(db, project_id)
+        
+    except Exception as e:
+        task_monitor.update_task(task_id, "error", error=f"Init failed: {e}")
+        return
+    finally:
+        db.close()
+    
+    # --- ЭТАП 2: ПАРАЛЛЕЛЬНОЕ СКАЧИВАНИЕ ИЗ VK ---
+    all_members = []
+    
+    try:
+        print(f"SERVICE [Multi Token]: Refreshing subscribers for '{project_name}' using {len(tokens)} community tokens")
+        
+        numeric_id = vk_service.resolve_vk_group_id(project_vk_id, tokens[0])
+        fields = 'sex,bdate,city,country,photo_100,domain,has_mobile,last_seen'
+        
+        # Разведка: один лёгкий запрос для определения количества
+        try:
+            initial_resp = raw_vk_call('groups.getMembers', {
+                'group_id': numeric_id, 
+                'count': 1, 
+                'access_token': tokens[0]
+            }, project_id=project_id)
+            total_vk_count = initial_resp.get('count', 0)
+        except Exception as e:
+            task_monitor.update_task(task_id, "error", error=f"Не удалось получить кол-во: {e}")
+            return
+        
+        if total_vk_count == 0:
+            task_monitor.update_task(task_id, "done", loaded=0, total=0, message="Нет подписчиков")
+            return
+        
+        # Разбиваем на чанки
+        tasks_params = []
+        current_offset = 0
+        while current_offset < total_vk_count:
+            remaining = total_vk_count - current_offset
+            chunk_size = min(remaining, EXECUTE_BATCH_SIZE)
+            tasks_params.append({"offset": current_offset, "count": chunk_size})
+            current_offset += chunk_size
+        
+        total_fetched = 0
+        max_workers = min(len(tokens), 15)
+        
+        # ПАРАЛЛЕЛЬНАЯ загрузка — распределяем чанки между всеми токенами
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_params = {}
+            for i, params in enumerate(tasks_params):
+                future = executor.submit(
+                    _fetch_batch_execute_members,
+                    tokens, i, numeric_id, params['offset'], params['count'], fields, project_id
+                )
+                future_to_params[future] = params
+            
+            for future in concurrent.futures.as_completed(future_to_params):
+                params = future_to_params[future]
+                try:
+                    items = future.result()
+                    all_members.extend(items)
+                    total_fetched += len(items)
+                    task_monitor.update_task(task_id, "fetching", loaded=total_fetched, total=total_vk_count)
+                except Exception as e:
+                    print(f"   [Multi Token] Chunk failed (offset {params['offset']}): {e}")
+        
+        # Проверяем порог
+        threshold = int(total_vk_count * 0.90)
+        if total_fetched < threshold:
+            task_monitor.update_task(task_id, "error", 
+                error=f"Скачано {total_fetched} из {total_vk_count} ({int(total_fetched/total_vk_count*100)}%)")
+            return
+            
+    except Exception as e:
+        task_monitor.update_task(task_id, "error", error=f"Download failed: {e}")
+        return
+    
+    # --- ЭТАП 3: СОХРАНЕНИЕ (идентичен single_token) ---
+    try:
+        task_monitor.update_task(task_id, "processing", message="Сохранение...")
+        
+        vk_members_map = {m['id']: m for m in all_members if 'id' in m}
+        vk_ids_set = set(vk_members_map.keys())
+        
+        new_ids = list(vk_ids_set - db_ids_set)
+        left_ids = list(db_ids_set - vk_ids_set)
+        existing_ids = list(vk_ids_set.intersection(db_ids_set))
+        
+        timestamp = datetime.now(timezone.utc)
+        
+        # 1. Сохраняем НОВЫХ подписчиков
+        if new_ids:
+            BATCH_SIZE = 1000
+            for i in range(0, len(new_ids), BATCH_SIZE):
+                batch_ids = new_ids[i:i + BATCH_SIZE]
+                new_subs = []
+                new_history = []
+                
+                for vk_id in batch_ids:
+                    vk_data = vk_members_map.get(vk_id, {})
+                    
+                    base_data = {
+                        "project_id": project_id,
+                        "vk_user_id": vk_id,
+                        "first_name": vk_data.get('first_name'),
+                        "last_name": vk_data.get('last_name'),
+                        "sex": vk_data.get('sex'),
+                        "photo_url": vk_data.get('photo_100'),
+                        "domain": vk_data.get('domain'),
+                        "bdate": vk_data.get('bdate'),
+                        "city": vk_data.get('city', {}).get('title') if vk_data.get('city') else None,
+                        "country": vk_data.get('country', {}).get('title') if vk_data.get('country') else None,
+                        "has_mobile": bool(vk_data.get('has_mobile')),
+                        "deactivated": vk_data.get('deactivated'),
+                        "last_seen": vk_data.get('last_seen', {}).get('time') if vk_data.get('last_seen') else None,
+                        "platform": vk_data.get('last_seen', {}).get('platform') if vk_data.get('last_seen') else None,
+                        "source": "manual"
+                    }
+
+                    subscriber_entry = base_data.copy()
+                    subscriber_entry["id"] = f"{project_id}_{vk_id}"
+                    subscriber_entry["added_at"] = timestamp
+                    new_subs.append(subscriber_entry)
+                    
+                    history_entry = base_data.copy()
+                    history_entry["id"] = str(uuid.uuid4())
+                    history_entry["event_date"] = timestamp
+                    new_history.append(history_entry)
+                
+                db_batch = SessionLocal()
+                try:
+                    crud.bulk_add_subscribers(db_batch, new_subs)
+                    crud.bulk_add_history_join(db_batch, new_history)
+                finally:
+                    db_batch.close()
+        
+        # 2. Удаляем УШЕДШИХ подписчиков
+        if left_ids:
+            BATCH_SIZE = 1000
+            for i in range(0, len(left_ids), BATCH_SIZE):
+                batch_ids = left_ids[i:i + BATCH_SIZE]
+                
+                db_batch = SessionLocal()
+                try:
+                    leavers_data = crud.get_subscribers_by_vk_ids(db_batch, project_id, batch_ids)
+                    
+                    leave_history = []
+                    for leaver in leavers_data:
+                        leave_history.append({
+                            "id": str(uuid.uuid4()),
+                            "project_id": project_id,
+                            "vk_user_id": leaver.vk_user_id,
+                            "first_name": leaver.first_name,
+                            "last_name": leaver.last_name,
+                            "sex": leaver.sex,
+                            "photo_url": leaver.photo_url,
+                            "domain": leaver.domain,
+                            "bdate": leaver.bdate,
+                            "city": leaver.city,
+                            "country": leaver.country,
+                            "has_mobile": leaver.has_mobile,
+                            "deactivated": leaver.deactivated,
+                            "last_seen": leaver.last_seen,
+                            "platform": leaver.platform,
+                            "event_date": timestamp,
+                            "source": "manual"
+                        })
+                    
+                    if leave_history:
+                        crud.bulk_add_history_leave(db_batch, leave_history)
+
+                    crud.bulk_delete_subscribers(db_batch, project_id, batch_ids)
+                finally:
+                    db_batch.close()
+
+        # 3. Обновление СУЩЕСТВУЮЩИХ
         if existing_ids:
             BATCH_SIZE = 1000
             for i in range(0, len(existing_ids), BATCH_SIZE):

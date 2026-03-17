@@ -45,10 +45,10 @@ interface ConversationsSidebarProps {
     activeProject?: Project | null;
     /** Открыть настройки проекта на секции «Интеграции» */
     onOpenIntegrations?: () => void;
-    /** Текущий фильтр по непрочитанным: 'all' | 'unread' | 'important' */
-    filterUnread?: 'all' | 'unread' | 'important';
+    /** Текущий фильтр по непрочитанным: 'all' | 'unread' | 'important' | 'chats' */
+    filterUnread?: 'all' | 'unread' | 'important' | 'chats';
     /** Колбэк смены фильтра непрочитанных */
-    onFilterUnreadChange?: (value: 'all' | 'unread' | 'important') => void;
+    onFilterUnreadChange?: (value: 'all' | 'unread' | 'important' | 'chats') => void;
     /** Колбэк «Прочитать все» — пометить все диалоги прочитанными */
     onMarkAllRead?: () => Promise<void>;
     // --- Метки (ярлыки) диалогов ---
@@ -66,6 +66,14 @@ interface ConversationsSidebarProps {
     onEditLabel?: (labelId: string, data: { name?: string; color?: string }) => Promise<void>;
     /** Колбэк: удалить метку */
     onRemoveLabel?: (labelId: string) => Promise<void>;
+    /** Групповые чаты (беседы) сообщества */
+    communityChats?: Conversation[];
+    /** Загружаются ли групповые чаты */
+    isCommunityChatsLoading?: boolean;
+    /** Идёт ли синхронизация чатов с VK API */
+    isCommunityChatsSyncing?: boolean;
+    /** Колбэк: синхронизировать чаты с VK API */
+    onSyncCommunityChats?: () => Promise<void>;
 }
 
 /**
@@ -99,6 +107,10 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
     onCreateLabel,
     onEditLabel,
     onRemoveLabel,
+    communityChats = [],
+    isCommunityChatsLoading = false,
+    isCommunityChatsSyncing = false,
+    onSyncCommunityChats,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showMarkAllReadConfirm, setShowMarkAllReadConfirm] = useState(false);
@@ -123,6 +135,9 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
     // не мерцает при переключении фильтров (в отличие от totalCount, семантика которого разная для all/unread)
     const unreadDialogsCount = totalUnreadCount;
 
+    // Подсчёт важных диалогов (помеченных звёздочкой)
+    const importantDialogsCount = useMemo(() => conversations.filter(c => c.isImportant).length, [conversations]);
+
     // Лог рендера сайдбара
     msgLog('SIDEBAR', `📝 ConversationsSidebar render: диалогов=${conversations.length}, непрочитанных=${unreadDialogsCount}, фильтр=${filterUnread}, активный=${activeConversationId || 'null'}, isLoading=${isLoading}`);
 
@@ -140,11 +155,29 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
 
     // Фильтрация диалогов: поиск по имени + фильтр непрочитанных + фильтр по метке
     const filteredConversations = useMemo(() => {
+        // При фильтре «Чаты» показываем групповые чаты вместо обычных диалогов
+        if (filterUnread === 'chats') {
+            let result = communityChats;
+            // Поиск по названию чата
+            if (searchQuery.trim()) {
+                const query = searchQuery.toLowerCase();
+                result = result.filter(c =>
+                    c.user.firstName.toLowerCase().includes(query)
+                );
+            }
+            return result;
+        }
+
         let result = conversations;
 
         // Фильтр по непрочитанным
         if (filterUnread === 'unread') {
             result = result.filter(c => c.unreadCount > 0);
+        }
+
+        // Фильтр по важным
+        if (filterUnread === 'important') {
+            result = result.filter(c => c.isImportant);
         }
 
         // Фильтр по метке
@@ -163,7 +196,7 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
         }
 
         return result;
-    }, [conversations, searchQuery, filterUnread, activeFilterLabelId]);
+    }, [conversations, communityChats, searchQuery, filterUnread, activeFilterLabelId]);
 
     // После рендера помечаем все текущие диалоги как «уже показанные»
     // (useEffect выполняется после paint → ID добавляются после первого отображения,
@@ -310,6 +343,16 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
                     <p className="text-xs text-red-500 truncate mt-0.5" title={mailingCollection.errorMessage}>
                         Ошибка сбора
                     </p>
+                ) : activeProject?.vkLink ? (
+                    <a
+                        href={activeProject.vkLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-gray-400 hover:text-indigo-600 truncate mt-0.5 block transition-colors"
+                        title={`Перейти в сообщество: ${projectName}`}
+                    >
+                        {projectName}
+                    </a>
                 ) : (
                     <p className="text-xs text-gray-400 truncate mt-0.5">{projectName}</p>
                 )}
@@ -390,7 +433,7 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
                     {/* Важные */}
                     <button
                         onClick={() => onFilterUnreadChange('important')}
-                        className={`p-2 flex items-center justify-center rounded-full transition-colors ${
+                        className={`relative p-2 flex items-center justify-center rounded-full transition-colors ${
                             filterUnread === 'important'
                                 ? 'text-amber-500 bg-amber-50'
                                 : 'text-gray-400 hover:text-amber-500 hover:bg-amber-50'
@@ -400,7 +443,45 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill={filterUnread === 'important' ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                         </svg>
+                        {/* Бейдж с количеством важных */}
+                        {importantDialogsCount > 0 && (
+                            <span className="absolute -top-0.5 -right-0.5 min-w-[12px] h-[12px] px-0.5 bg-amber-500 text-white text-[8px] font-bold rounded-full flex items-center justify-center">
+                                {importantDialogsCount > 99 ? '99+' : importantDialogsCount}
+                            </span>
+                        )}
                     </button>
+                    {/* Чаты (беседы) */}
+                    <button
+                        onClick={() => onFilterUnreadChange('chats')}
+                        className={`relative p-2 flex items-center justify-center rounded-full transition-colors ${
+                            filterUnread === 'chats'
+                                ? 'text-blue-600 bg-blue-50'
+                                : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                        }`}
+                        title="Групповые чаты (беседы)"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+
+                    </button>
+                    {/* Синхронизировать чаты — появляется когда активен фильтр "Чаты" */}
+                    {filterUnread === 'chats' && onSyncCommunityChats && (
+                        <button
+                            onClick={onSyncCommunityChats}
+                            disabled={isCommunityChatsSyncing}
+                            className={`p-2 flex items-center justify-center rounded-full transition-colors ${
+                                isCommunityChatsSyncing
+                                    ? 'text-blue-400 bg-blue-50 cursor-not-allowed'
+                                    : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50'
+                            }`}
+                            title={isCommunityChatsSyncing ? 'Синхронизация...' : 'Синхронизировать чаты из VK'}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${isCommunityChatsSyncing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                        </button>
+                    )}
                     {/* Прочитать все — сдвинуто вправо */}
                     {onMarkAllRead && (
                         <button
@@ -500,6 +581,31 @@ export const ConversationsSidebar: React.FC<ConversationsSidebarProps> = ({
                                 </svg>
                                 <p className="text-sm text-gray-400 text-center">Нет важных диалогов</p>
                                 <p className="text-xs text-gray-300 text-center mt-1">Пометьте диалог звёздочкой ★ в шапке чата</p>
+                            </div>
+                        ) : filterUnread === 'chats' ? (
+                            /* Нет групповых чатов */
+                            <div className="flex flex-col items-center justify-center py-12 px-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-blue-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                                <p className="text-sm text-gray-400 text-center">
+                                    {isCommunityChatsLoading || isCommunityChatsSyncing
+                                        ? 'Загрузка чатов...'
+                                        : 'Нет групповых чатов'}
+                                </p>
+                                <p className="text-xs text-gray-300 text-center mt-1">
+                                    {isCommunityChatsSyncing
+                                        ? 'Синхронизация с VK API...'
+                                        : 'Нажмите кнопку синхронизации для загрузки'}
+                                </p>
+                                {!isCommunityChatsLoading && !isCommunityChatsSyncing && onSyncCommunityChats && (
+                                    <button
+                                        onClick={onSyncCommunityChats}
+                                        className="mt-3 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium rounded-lg transition-colors"
+                                    >
+                                        Синхронизировать чаты
+                                    </button>
+                                )}
                             </div>
                         ) : (
                             /* Empty state: сообщения ещё не загружены */

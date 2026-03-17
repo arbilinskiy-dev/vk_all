@@ -4,6 +4,7 @@ import models
 from services import task_monitor
 from services.post_helpers import get_rounded_timestamp
 from database import SessionLocal
+from config import settings
 from services.lists.list_sync_utils import get_all_project_tokens, fetch_users_smart_parallel
 from crud.lists.utils import deduplicate_users
 
@@ -27,7 +28,17 @@ def refresh_subscriber_details_task(task_id: str, project_id: str, user_token: s
         deduplicate_users(db, models.ProjectMember, project_id)
         
         all_vk_ids = list(crud.get_all_subscriber_vk_ids(db, project_id))
-        unique_tokens = get_all_project_tokens(db, user_token)
+        # Приоритет: сервисный ключ (не тратит лимиты user-токенов).
+        # Fallback на user-токены если VK_SERVICE_KEY не настроен.
+        service_key = settings.vk_service_key
+        if service_key:
+            unique_tokens = [service_key]
+            use_service_key = True
+            print(f"SERVICE (Details): Используем VK_SERVICE_KEY для users.get")
+        else:
+            unique_tokens = get_all_project_tokens(db, user_token)
+            use_service_key = False
+            print(f"SERVICE (Details): VK_SERVICE_KEY не задан, fallback на user-токены ({len(unique_tokens)} шт.)")
     finally:
         db.close()
 
@@ -42,13 +53,18 @@ def refresh_subscriber_details_task(task_id: str, project_id: str, user_token: s
     # --- Phase 2: Network ---
     task_monitor.update_task(task_id, "fetching", loaded=0, total=len(all_vk_ids))
     
-    # Запрашиваем те же поля, что и при основной синхронизации
+    # Запрашиваем те же поля, что и при основной синхронизации.
+    # ВАЖНО: сервисный ключ НЕ возвращает поля country и has_mobile (ограничение VK API).
+    # Эти поля будут None при использовании сервисного ключа.
     fields = 'sex,bdate,city,country,photo_100,domain,has_mobile,last_seen,deactivated,is_closed,can_access_closed'
+    
+    # Сервисный ключ ТРЕБУЕТ lang=ru, иначе VK API отдаёт транслит (Latin).
+    extra_params = {'lang': 'ru'} if use_service_key else None
     
     def on_progress(loaded, total):
         task_monitor.update_task(task_id, "fetching", loaded=loaded, total=total)
 
-    fetched_users = fetch_users_smart_parallel(all_vk_ids, unique_tokens, fields, project_id, on_progress)
+    fetched_users = fetch_users_smart_parallel(all_vk_ids, unique_tokens, fields, project_id, on_progress, extra_params)
     
     # --- Phase 3: Write ---
     db = SessionLocal()

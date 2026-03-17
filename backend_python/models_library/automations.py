@@ -17,6 +17,7 @@ class ReviewContest(Base):
     # Условия завершения
     finish_condition = Column(String, default='date') # count, date, mixed
     target_count = Column(Integer, nullable=True)
+    target_count_mode = Column(String, default='exact') # exact | minimum | maximum
     finish_date = Column(String, nullable=True) # Legacy/Direct date
     finish_day_of_week = Column(Integer, nullable=True) # 1-7
     finish_time = Column(String, nullable=True) # HH:MM

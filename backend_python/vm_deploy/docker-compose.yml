@@ -10,7 +10,7 @@ services:
     volumes:
       - backend_data:/app/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/version"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/version', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3

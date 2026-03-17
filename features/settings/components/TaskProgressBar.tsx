@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import type { RefreshProgress } from '../../../services/api/lists.api';
 import type { ProjectFilter } from '../types';
-import { formatDuration, parseWorkersData, parseProjectsData } from '../utils/adminToolsUtils';
+import { formatDuration, parseWorkersData, parseProjectsData, parseSimpleProjectsData } from '../utils/adminToolsUtils';
 
 interface TaskProgressBarProps {
     /** Объект прогресса задачи */
@@ -42,13 +42,17 @@ export const TaskProgressBar: React.FC<TaskProgressBarProps> = ({ progress, labe
     const workersData = !hasProjects ? parseWorkersData(progress.sub_message) : null;
     const hasWorkers = workersData && workersData.length > 0;
     
-    // Старая логика для sub-progress (если нет воркеров и проектов)
-    const subPercent = !hasWorkers && !hasProjects && progress.sub_total && progress.sub_total > 0 
+    // Пробуем распарсить упрощённый формат (рассылка)
+    const simpleData = !hasProjects && !hasWorkers ? parseSimpleProjectsData(progress.sub_message) : null;
+    const hasSimpleProjects = simpleData && simpleData.length > 0;
+    
+    // Старая логика для sub-progress (если нет воркеров, проектов и простых проектов)
+    const subPercent = !hasWorkers && !hasProjects && !hasSimpleProjects && progress.sub_total && progress.sub_total > 0 
         ? Math.round((progress.sub_loaded || 0) / progress.sub_total * 100) 
         : 0;
     
-    // Показываем старый sub-progress только если нет воркеров и проектов
-    const hasOldSubProgress = !hasWorkers && !hasProjects && ((progress.sub_total && progress.sub_total > 0) || (progress.sub_message && !workersData && !projectsData));
+    // Показываем старый sub-progress только если нет воркеров, проектов и простого формата
+    const hasOldSubProgress = !hasWorkers && !hasProjects && !hasSimpleProjects && ((progress.sub_total && progress.sub_total > 0) || (progress.sub_message && !workersData && !projectsData));
     
     // Рассчитываем время выполнения
     const now = Date.now() / 1000;
@@ -198,6 +202,63 @@ export const TaskProgressBar: React.FC<TaskProgressBarProps> = ({ progress, labe
                             );
                         })}
                     </div>
+                </div>
+            )}
+            
+            {/* Компактный список проектов (формат рассылки) */}
+            {hasSimpleProjects && simpleData && (
+                <div className="mt-4 space-y-2">
+                    <button
+                        onClick={() => setIsProjectsExpanded(!isProjectsExpanded)}
+                        className="flex items-center gap-2 text-xs text-gray-600 font-medium hover:text-gray-800 transition-colors"
+                    >
+                        <svg 
+                            xmlns="http://www.w3.org/2000/svg" 
+                            className={`h-4 w-4 transition-transform ${isProjectsExpanded ? 'rotate-90' : ''}`} 
+                            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                        >
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                        <span>
+                            Проекты — {simpleData.filter(p => p.status === 'done').length}/{simpleData.length}
+                        </span>
+                        {simpleData.some(p => p.status === 'processing') && (
+                            <span className="text-blue-500">• {simpleData.filter(p => p.status === 'processing').length} в работе</span>
+                        )}
+                        {simpleData.some(p => p.status === 'error') && (
+                            <span className="text-red-500">• {simpleData.filter(p => p.status === 'error').length} ошибок</span>
+                        )}
+                    </button>
+
+                    {isProjectsExpanded && (
+                        <div className="space-y-1.5 max-h-60 overflow-y-auto custom-scrollbar">
+                            {simpleData.map((item, idx) => {
+                                const dotColor = item.status === 'done' ? 'bg-green-500' 
+                                    : item.status === 'error' ? 'bg-red-500' 
+                                    : 'bg-blue-500 animate-pulse';
+                                return (
+                                    <div key={idx} className="flex items-start gap-2 bg-gray-50 rounded-md px-3 py-2 border border-gray-100">
+                                        <div className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${dotColor}`} />
+                                        <div className="min-w-0 flex-1">
+                                            <span className="text-xs font-medium text-gray-700 block truncate" title={item.name}>
+                                                {item.name}
+                                            </span>
+                                            {item.message && (
+                                                <span className="text-[10px] text-gray-400 block truncate" title={item.message}>
+                                                    {item.message}
+                                                </span>
+                                            )}
+                                            {item.status === 'error' && item.error && (
+                                                <span className="text-[10px] text-red-500 block truncate" title={item.error}>
+                                                    {item.error}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             )}
             

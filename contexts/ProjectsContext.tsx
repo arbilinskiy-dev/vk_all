@@ -1,13 +1,14 @@
 
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import { Project, AllPosts, ScheduledPost, SuggestedPost, Note, SystemPost, GlobalVariableDefinition, ProjectGlobalVariableValue, ContestStatus, UnifiedStory } from '../shared/types';
+import React, { createContext, useState, useEffect, useContext, useRef, useCallback } from 'react';
+import { Project, ProjectSummary, AllPosts, ScheduledPost, SuggestedPost, Note, SystemPost, GlobalVariableDefinition, ProjectGlobalVariableValue, ContestStatus, UnifiedStory } from '../shared/types';
 import { AppView } from '../App';
 import { useDataInitialization } from './hooks/useDataInitialization';
 import { useUpdatePolling } from './hooks/useUpdatePolling';
 import { useDataRefreshers } from './hooks/useDataRefreshers';
+import * as api from '../services/api';
 
 interface IProjectsContext {
-    projects: Project[];
+    projects: ProjectSummary[];
     allPosts: AllPosts;
     allScheduledPosts: Record<string, ScheduledPost[]>;
     allSuggestedPosts: Record<string, SuggestedPost[]>;
@@ -41,6 +42,7 @@ interface IProjectsContext {
     // Functions
     handleUpdateProjectSettings: (updatedProject: Project) => Promise<void>;
     handleForceRefreshProjects: () => Promise<void>;
+    getFullProject: (projectId: string) => Promise<Project>;
     handleRefreshForSidebar: (projectId: string, activeView: AppView, silent?: boolean) => Promise<number>;
     handleBulkRefresh: (projectIds: string[]) => Promise<void>;
     handleSystemPostUpdate: (projectIds: string[]) => Promise<void>; // Новая функция
@@ -68,7 +70,11 @@ export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const { isInitialLoading, isBackgroundLoading, initialData } = useDataInitialization();
 
     // 2. Инициализация состояний на основе данных из хука
-    const [projects, setProjects] = useState<Project[]>(initialData.projects);
+    // Ref для отслеживания ссылки на initialData.projects — чтобы фоновые чанки (Фаза 2)
+    // не перезатирали projects, обновлённые через handleForceRefreshProjects
+    const prevInitialProjectsRef = useRef(initialData.projects);
+    const [projects, setProjects] = useState<ProjectSummary[]>(initialData.projects);
+    const [projectDetailsCache, setProjectDetailsCache] = useState<Record<string, Project>>({});
     const [allPosts, setAllPosts] = useState<AllPosts>(initialData.allPosts);
     const [allScheduledPosts, setAllScheduledPosts] = useState<Record<string, ScheduledPost[]>>(initialData.allScheduledPosts);
     const [allSuggestedPosts, setAllSuggestedPosts] = useState<Record<string, SuggestedPost[]>>(initialData.allSuggestedPosts);
@@ -83,7 +89,14 @@ export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const [storiesAutomationStatuses, setStoriesAutomationStatuses] = useState<Record<string, boolean>>(initialData.storiesAutomationStatuses || {});
 
     useEffect(() => {
-        setProjects(initialData.projects);
+        // Обновляем projects ТОЛЬКО когда ссылка на массив реально изменилась.
+        // Фаза 2 (mergeChunkData) создаёт новый объект initialData, но НЕ меняет projects —
+        // без этой проверки каждый чанк перезатирал бы projects данными из Фазы 1,
+        // отменяя изменения от handleForceRefreshProjects (баг DLVRY ID).
+        if (initialData.projects !== prevInitialProjectsRef.current) {
+            setProjects(initialData.projects);
+            prevInitialProjectsRef.current = initialData.projects;
+        }
         setAllPosts(initialData.allPosts);
         setAllScheduledPosts(initialData.allScheduledPosts);
         setAllSuggestedPosts(initialData.allSuggestedPosts);
@@ -128,6 +141,16 @@ export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         updatedProjectIds, setUpdatedProjectIds,
         addRecentRefresh,
     });
+
+    // Загрузка полных данных проекта с кешированием
+    const getFullProject = useCallback(async (projectId: string): Promise<Project> => {
+        if (projectDetailsCache[projectId]) {
+            return projectDetailsCache[projectId];
+        }
+        const fullProject = await api.getProjectDetails(projectId);
+        setProjectDetailsCache(prev => ({ ...prev, [projectId]: fullProject }));
+        return fullProject;
+    }, [projectDetailsCache]);
     
     const value = {
         ...states,
@@ -142,6 +165,7 @@ export const ProjectsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         isBackgroundLoading, // Флаг фоновой загрузки для UI индикаторов
         // FIX: Provide `setAllSuggestedPosts` in the context value.
         setAllSuggestedPosts,
+        getFullProject,
     };
 
     return <ProjectsContext.Provider value={value as IProjectsContext}>{children}</ProjectsContext.Provider>;

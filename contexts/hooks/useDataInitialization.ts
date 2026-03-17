@@ -1,11 +1,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Project, AllPosts, ScheduledPost, SuggestedPost, Note, SystemPost, GlobalVariableDefinition, ProjectGlobalVariableValue, ContestStatus, UnifiedStory } from '../../shared/types';
+import { ProjectSummary, AllPosts, ScheduledPost, SuggestedPost, Note, SystemPost, GlobalVariableDefinition, ProjectGlobalVariableValue, ContestStatus, UnifiedStory } from '../../shared/types';
 import * as api from '../../services/api';
 
 // Тип данных, возвращаемых хуком
 export interface InitialDataState {
-    projects: Project[];
+    projects: ProjectSummary[];
     allPosts: AllPosts;
     allScheduledPosts: Record<string, ScheduledPost[]>;
     allSuggestedPosts: Record<string, SuggestedPost[]>;
@@ -57,8 +57,10 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 }
 
 // Утилита: вызывает API по чанкам и мержит результаты
-// Максимум MAX_CONCURRENT параллельных запросов, чтобы не перегрузить сервер
-const MAX_CONCURRENT = 5;
+// Максимум MAX_CONCURRENT параллельных запросов, чтобы не перегрузить сервер.
+// Снижено с 5 до 2 — при 154 проектах 5 параллельных чанков × 7 типов данных
+// = ~35 одновременных запросов, что исчерпывает DB connection pool.
+const MAX_CONCURRENT = 2;
 
 async function fetchInChunks<T>(
     projectIds: string[],
@@ -85,8 +87,9 @@ async function fetchInChunks<T>(
 
 // Размер чанка для тяжёлых эндпоинтов (posts, stories)
 // Лимит ответа Yandex Cloud Serverless Containers: ~3.5 МБ
-// 10 проектов ≈ 1.5 МБ, безопасный запас ×2
-const HEAVY_CHUNK_SIZE = 10;
+// Увеличено с 10 до 25 — при 154 проектах это 7 чанков вместо 16,
+// что в сочетании с MAX_CONCURRENT=2 даёт ~14 запросов вместо ~80.
+const HEAVY_CHUNK_SIZE = 25;
 
 export const useDataInitialization = () => {
     const [isInitialLoading, setIsInitialLoading] = useState(true);

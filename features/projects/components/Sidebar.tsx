@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Project } from '../../../shared/types';
+import { ProjectSummary } from '../../../shared/types';
 import { TeamFilter, ContentFilter, StoriesFilter, ContestFilter, CallbackFilter, UnreadDialogsFilter } from '../types';
 import { AppView } from '../../../App';
 import { ProjectListItem } from './ProjectListItem';
@@ -11,7 +11,7 @@ import { useProjects } from '../../../contexts/ProjectsContext'; // Import conte
 import { useAuth } from '../../../features/auth/contexts/AuthContext';
 
 export const Sidebar: React.FC<{
-    projects: Project[];
+    projects: ProjectSummary[];
     activeProjectId: string | null;
     activeView: AppView;
     scheduledPostCounts: Record<string, number>;
@@ -26,7 +26,7 @@ export const Sidebar: React.FC<{
     projectPermissionErrors: Record<string, string | null>;
     updatedProjectIds: Set<string>;
     onSelectProject: (id: string | null) => void;
-    onOpenSettings: (project: Project) => void;
+    onOpenSettings: (project: ProjectSummary) => void;
     onRefreshProject: (projectId: string, view: AppView, silent?: boolean) => Promise<number>;
     onForceRefresh: () => Promise<void>;
 }> = ({ 
@@ -142,13 +142,13 @@ export const Sidebar: React.FC<{
     };
 
     const { filteredEnabledProjects, filteredDisabledProjects } = useMemo(() => {
-        const checkVisibility = (p: Project): boolean => {
+        const checkVisibility = (p: ProjectSummary): boolean => {
             // Общие фильтры
             if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase())) {
                 return false;
             }
             if (teamFilter !== 'All') {
-                const projectTeams = p.teams && p.teams.length > 0 ? p.teams : (p.team ? [p.team] : []);
+                const projectTeams = p.teams && p.teams.length > 0 ? p.teams : [];
                 if (teamFilter === 'NoTeam' && projectTeams.length > 0) return false;
                 if (teamFilter !== 'NoTeam' && !projectTeams.includes(teamFilter)) return false;
             }
@@ -199,8 +199,8 @@ export const Sidebar: React.FC<{
             return true;
         };
 
-        const enabled: Project[] = [];
-        const disabled: Project[] = [];
+        const enabled: ProjectSummary[] = [];
+        const disabled: ProjectSummary[] = [];
         projects.forEach(p => {
             if (checkVisibility(p)) {
                 (p.disabled ? disabled : enabled).push(p);
@@ -299,7 +299,7 @@ export const Sidebar: React.FC<{
     // Определяем, показывать ли счётчик постов (только в контент-модуле)
     const isContentView = activeView === 'schedule' || activeView === 'suggested';
 
-    const renderProjectList = (projectList: Project[], startIndex: number = 0) => {
+    const renderProjectList = (projectList: ProjectSummary[], startIndex: number = 0) => {
         return projectList.map((p, i) => (
              <ProjectListItem
                 key={p.id}

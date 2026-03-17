@@ -258,6 +258,14 @@ export const clearListData = async (projectId: string, listType: string): Promis
     return callApi('lists/system/clear', { projectId, listType });
 };
 
+/** Получить данные постов по списку vk_post_id */
+export const getPostsByIds = async (projectId: string, postIds: number[]): Promise<{ items: SystemListPost[] }> => {
+    const res = await callApi<{ items: any[] }>('lists/system/getPostsByIds', { projectId, postIds });
+    return {
+        items: (res.items || []).map(p => ({ ...p, vk_id: p.vk_post_id ?? p.vk_id }))
+    };
+};
+
 // --- Active Tasks ---
 /**
  * Получает список активных задач для проекта.

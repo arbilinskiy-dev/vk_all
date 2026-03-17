@@ -2,6 +2,7 @@
 import { PhotoAttachment } from '../../../shared/types';
 
 export type FinishConditionType = 'count' | 'date' | 'mixed';
+export type TargetCountMode = 'exact' | 'minimum' | 'maximum';
 
 export interface ContestSettings {
     isActive: boolean; // Тумблер активности
@@ -10,6 +11,7 @@ export interface ContestSettings {
     
     finishCondition: FinishConditionType;
     targetCount?: number;
+    targetCountMode?: TargetCountMode; // Режим интерпретации targetCount (default: 'exact')
     finishDate?: string; // Legacy (можно оставить для совместимости или удалить)
     
     // Новые поля для периодичности

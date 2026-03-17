@@ -17,7 +17,7 @@ export type PostsLimit = '100' | '1000' | 'all';
 export type PostsMode = 'limit' | 'actual';
 
 /** Какая задача раскрыта в таблице */
-export type ExpandedTask = 'subscribers' | 'posts' | null;
+export type ExpandedTask = 'subscribers' | 'posts' | 'mailing' | null;
 
 /** Фильтр проектов внутри прогресс-бара */
 export type ProjectFilter = 'all' | 'processing' | 'done' | 'error' | 'skipped';

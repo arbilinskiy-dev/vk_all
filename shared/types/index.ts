@@ -1,30 +1,33 @@
 
-export interface Project {
+export interface ProjectSummary {
     id: string;
     name: string;
-    team?: string;   // Устаревшее поле, сохранено для обратной совместимости
-    teams?: string[]; // Массив команд проекта
+    teams?: string[];
     disabled?: boolean;
     archived?: boolean;
     sort_order?: number;
-    notes?: string;
-    
+
     // VK specific
     vkGroupName?: string;
     vkGroupShortName?: string;
     vkLink?: string;
     vkProjectId?: number;
-    avatar_url?: string; // Новое поле для аватарки
+    avatar_url?: string;
 
-    // Settings
+    // Callback / DLVRY filters
     communityToken?: string;
-    additional_community_tokens?: string[];
     vk_confirmation_code?: string;
-    
-    variables?: string;
-    
-    // DLVRY Integration
     dlvry_affiliate_id?: string;
+}
+
+export interface Project extends ProjectSummary {
+    team?: string;   // Устаревшее поле, сохранено для обратной совместимости
+    notes?: string;
+    additional_community_tokens?: string[];
+    variables?: string;
+    last_market_update?: string;
+    dlvry_affiliates_count?: number;  // Количество привязанных филиалов DLVRY
+    dlvry_affiliate_ids?: string[];    // Список affiliate_id для отображения в таблице
 }
 
 export interface User {

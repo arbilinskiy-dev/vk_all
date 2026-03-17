@@ -3,7 +3,8 @@
 DLVRY шлёт webhook с JSON заказа → мы сохраняем в БД.
 """
 
-from sqlalchemy import Column, String, Integer, Float, Boolean, Text, DateTime, Index
+from sqlalchemy import Column, String, Integer, Float, Boolean, Text, DateTime, Index, BigInteger, ForeignKey
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
 
@@ -132,6 +133,11 @@ class DlvryOrder(Base):
     # День недели (пн=1, вс=7)
     order_weekday = Column(Integer, nullable=True)
 
+    # ── Связь с VK-профилем ────────────────────────────────────
+    # FK на vk_profiles.id (заполняется при синке, если vk_user_id != '')
+    vk_profile_id = Column(BigInteger, ForeignKey("vk_profiles.id", ondelete="SET NULL"), nullable=True, index=True)
+    vk_profile = relationship("VkProfile", foreign_keys=[vk_profile_id], lazy="joined")
+
     # ── Сырой JSON ────────────────────────────────────────────
     # Полный JSON запроса (для дебага и бэкфилла)
     raw_json = Column(Text, nullable=True)
@@ -150,6 +156,8 @@ class DlvryOrder(Base):
         Index('ix_dlvry_orders_affiliate_date', 'affiliate_id', 'order_date'),
         # Индекс для поиска по группе VK
         Index('ix_dlvry_orders_vk_group_date', 'vk_group_id', 'order_date'),
+        # Составной индекс для выборок по проекту + дата (основной фильтр на фронтенде)
+        Index('ix_dlvry_orders_project_date', 'project_id', 'order_date'),
     )
 
 

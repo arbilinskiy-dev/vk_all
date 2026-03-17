@@ -272,3 +272,188 @@ def refresh_all_posts_task(task_id: str, user_token: str, limit: str = '1000', m
     
     # Запускаем параллельное обновление постов
     run_parallel_posts_refresh_v2(task_id, user_token, limit, mode)
+
+
+def refresh_all_mailing_task(task_id: str):
+    """
+    Фоновая задача для обновления рассылки (dialogs) ВСЕХ проектов с community-токенами.
+    
+    Логика:
+    1. Собирает все активные проекты, у которых есть хотя бы один community-токен
+    2. Параллельно обрабатывает до MAX_PARALLEL_COMMUNITIES сообществ одновременно
+    3. Каждый проект использует свои community-токены для параллельного сбора батчей
+    4. Между запусками проектов — задержка STAGGER_DELAY_SEC для rate-limit
+    5. Прогресс обновляется потокобезопасно через lock
+    """
+    from services.lists.list_sync_mailing import refresh_mailing_task
+    from services.lists.list_sync_utils import get_community_tokens
+    import uuid
+    import threading
+
+    # === Настройки параллелизма ===
+    MAX_PARALLEL_COMMUNITIES = 5   # Сколько сообществ обрабатываем одновременно
+    STAGGER_DELAY_SEC = 1.0        # Задержка между запуском каждого сообщества (rate-limit)
+
+    # Собираем проекты с community-токенами
+    db = SessionLocal()
+    try:
+        projects_raw = crud.get_all_projects(db)
+        projects_with_tokens = []
+        for p in projects_raw:
+            tokens = get_community_tokens(p)
+            if tokens:
+                projects_with_tokens.append({
+                    "id": p.id,
+                    "name": p.name,
+                    "vk_id": str(p.vkId) if p.vkId else "",
+                    "tokens_count": len(tokens)
+                })
+    finally:
+        db.close()
+
+    total = len(projects_with_tokens)
+    if total == 0:
+        task_monitor.update_task(task_id, "done", message="Нет проектов с community-токенами")
+        return
+
+    task_monitor.update_task(task_id, "fetching", message=f"Найдено {total} проектов с community-токенами", loaded=0, total=total)
+
+    # Потокобезопасное состояние прогресса
+    lock = threading.Lock()
+    completed = [0]  # mutable для замыкания
+    errors = [0]
+    # Формат v2: словари с project_id для совместимости с фронтенд-таблицей
+    project_results = []
+
+    def _build_sub_message():
+        """Формирует JSON с детализацией по проектам для sub_message (формат v2)."""
+        return json.dumps(project_results, ensure_ascii=False)
+
+    def _update_progress(message=None):
+        """Потокобезопасное обновление прогресса главной задачи."""
+        with lock:
+            msg = message or f"Обработано {completed[0]}/{total} проектов"
+            task_monitor.update_task(task_id, "fetching",
+                message=msg,
+                loaded=completed[0], total=total,
+                sub_message=_build_sub_message()
+            )
+
+    def _process_one_project(project_info: dict) -> None:
+        """Обрабатывает один проект (вызывается из ThreadPoolExecutor)."""
+        project_id = project_info["id"]
+        project_name = project_info["name"]
+        project_vk_id = project_info.get("vk_id", "")
+        tokens_count = project_info["tokens_count"]
+
+        # Создаём запись в формате v2
+        progress_entry = {
+            "project_id": project_id,
+            "project_name": project_name,
+            "vk_id": project_vk_id,
+            "status": "processing",
+            "token_name": f"{tokens_count} токенов",
+            "loaded": 0,
+            "total": 0,
+            "added": 0,
+            "left": 0,
+            "error": "",
+            "is_admin": False
+        }
+
+        with lock:
+            project_results.append(progress_entry)
+            _idx = len(project_results) - 1
+        _update_progress(f"Обработка: {project_name} ({tokens_count} токенов)...")
+
+        sub_task_id = str(uuid.uuid4())
+        task_monitor.start_task(sub_task_id, project_id, "refresh_mailing")
+
+        # Фоновый polling подзадачи для проброса loaded/total
+        polling_active = [True]
+        def _poll_sub_task():
+            while polling_active[0]:
+                time.sleep(2)
+                if not polling_active[0]:
+                    break
+                sub = task_monitor.get_task_status(sub_task_id)
+                if sub:
+                    with lock:
+                        project_results[_idx]["loaded"] = sub.get("loaded", 0)
+                        project_results[_idx]["total"] = sub.get("total", 0)
+                        sub_status = sub.get("status", "")
+                        if sub_status == "fetching":
+                            project_results[_idx]["status"] = "fetching"
+                        elif sub_status == "processing":
+                            project_results[_idx]["status"] = "saving"
+                    _update_progress()
+
+        poll_thread = threading.Thread(target=_poll_sub_task, daemon=True)
+        poll_thread.start()
+
+        try:
+            refresh_mailing_task(sub_task_id, project_id)
+            sub_status = task_monitor.get_task_status(sub_task_id)
+            
+            with lock:
+                if sub_status and sub_status.get("status") == "error":
+                    errors[0] += 1
+                    project_results[_idx]["status"] = "error"
+                    project_results[_idx]["error"] = sub_status.get("error", "")
+                else:
+                    sub_loaded = sub_status.get("loaded", 0) if sub_status else 0
+                    sub_total = sub_status.get("total", 0) if sub_status else 0
+                    sub_msg = sub_status.get("message", "") if sub_status else ""
+                    project_results[_idx]["status"] = "done"
+                    project_results[_idx]["loaded"] = sub_loaded
+                    project_results[_idx]["total"] = sub_total
+                completed[0] += 1
+        except Exception as e:
+            with lock:
+                errors[0] += 1
+                project_results[_idx]["status"] = "error"
+                project_results[_idx]["error"] = str(e)
+                completed[0] += 1
+        finally:
+            polling_active[0] = False
+        
+        _update_progress()
+
+    # === Параллельная обработка проектов ===
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_PARALLEL_COMMUNITIES) as executor:
+        futures = []
+        for i, project_info in enumerate(projects_with_tokens):
+            # Проверяем отмену перед запуском очередного
+            if task_monitor.is_task_cancelled(task_id):
+                break
+            
+            future = executor.submit(_process_one_project, project_info)
+            futures.append(future)
+            
+            # Задержка между запусками для rate-limit (не ждём после последнего)
+            if i < len(projects_with_tokens) - 1:
+                time.sleep(STAGGER_DELAY_SEC)
+
+        # Ждём завершения всех запущенных
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                future.result()
+            except Exception:
+                pass  # Ошибки уже обработаны внутри _process_one_project
+
+    # Проверяем отмену
+    if task_monitor.is_task_cancelled(task_id):
+        with lock:
+            task_monitor.update_task(task_id, "done", message=f"Отменено. Обработано {completed[0]}/{total}",
+                                     loaded=completed[0], total=total, sub_message=_build_sub_message())
+        task_monitor.clear_cancellation(task_id)
+        return
+
+    # Финальный статус
+    with lock:
+        err = errors[0]
+        done = completed[0] - err
+    msg = f"Готово: {done} успешно"
+    if err > 0:
+        msg += f", {err} с ошибками"
+    task_monitor.update_task(task_id, "done", message=msg, loaded=total, total=total, sub_message=_build_sub_message())

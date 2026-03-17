@@ -71,8 +71,9 @@ def token_worker(
             log_pool_status(f"BEFORE_PROJECT:{project_name}")
             
             # Обрабатываем проект с замером времени
+            community_tokens = state.community_tokens_map.get(project_id, [])
             with OperationTimer(f"process_project", f"{token_name}:{project_name}") as timer:
-                success = process_single_project(state, project_id, token, token_name)
+                success = process_single_project(state, project_id, token, token_name, community_tokens)
             
             if not success:
                 # Flood control — отключаем токен

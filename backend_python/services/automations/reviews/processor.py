@@ -57,14 +57,19 @@ def process_new_participants(db: Session, project_id: str) -> dict:
     errors_now = 0
     target_limit = contest.target_count if contest.target_count else 0
     is_limit_active = contest.finish_condition in ['count', 'mixed']
+    count_mode = getattr(contest, 'target_count_mode', 'exact') or 'exact'
+    
+    # Режим minimum — нумеруем ВСЕХ без ограничения (лимит только для проверки при финализации)
+    # Режимы exact и maximum — нумеруем до target_limit и останавливаемся
+    should_cap = count_mode in ('exact', 'maximum')
 
-    print(f"CONTEST: Processing entries for project {project_id}. Found {len(new_entries)} new. Current max: {max_number}. Limit: {target_limit if is_limit_active else 'None'}")
+    print(f"CONTEST: Processing entries for project {project_id}. Found {len(new_entries)} new. Current max: {max_number}. Limit: {target_limit if is_limit_active else 'None'}. Mode: {count_mode}")
 
     for entry in new_entries:
         # Проверка лимита:
-        # Если условие "по количеству" и мы уже достигли лимита (с учетом тех, кого обработали в этом цикле)
-        if is_limit_active and (current_processed_count + processed_now) >= target_limit:
-            print(f"CONTEST: Target limit ({target_limit}) reached. Stopping numbering.")
+        # Если условие "по количеству", режим с капом (exact/maximum) и мы уже достигли лимита
+        if is_limit_active and should_cap and (current_processed_count + processed_now) >= target_limit:
+            print(f"CONTEST: Target limit ({target_limit}) reached (mode={count_mode}). Stopping numbering.")
             break
         
         current_number = max_number + 1
@@ -109,5 +114,6 @@ def process_new_participants(db: Session, project_id: str) -> dict:
     return {
         "processed": processed_now,
         "errors": errors_now,
-        "limit_reached": is_limit_active and (current_processed_count + processed_now) >= target_limit
+        "limit_reached": is_limit_active and should_cap and (current_processed_count + processed_now) >= target_limit,
+        "count_mode": count_mode
     }

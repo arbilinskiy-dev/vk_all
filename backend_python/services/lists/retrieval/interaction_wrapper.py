@@ -17,11 +17,12 @@ class InteractionUserResult:
     Все поля профиля проксируются из VkProfile, агрегированные поля вычислены из GROUP BY.
     """
     
-    def __init__(self, vk_profile, interaction_count, last_interaction_date, project_id):
+    def __init__(self, vk_profile, interaction_count, last_interaction_date, project_id, post_ids=None):
         self._vk_profile = vk_profile
         self._interaction_count = interaction_count
         self._last_interaction_date = last_interaction_date
         self._project_id = project_id
+        self._post_ids = post_ids or []
     
     # ── Служебные поля ─────────────────────────────────────────
     @property
@@ -45,8 +46,8 @@ class InteractionUserResult:
     
     @property
     def post_ids(self):
-        """Список post_ids. В агрегированном режиме недоступен напрямую — возвращаем пустой JSON."""
-        return "[]"
+        """Список vk_post_id, с которыми пользователь взаимодействовал."""
+        return self._post_ids
     
     @property
     def last_post_id(self):

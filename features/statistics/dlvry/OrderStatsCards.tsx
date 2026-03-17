@@ -30,7 +30,7 @@ export const OrderStatsCards: React.FC<OrderStatsCardsProps> = ({ stats, isLoadi
         { label: 'Всего заказов', value: String(stats.total_orders), color: 'text-gray-900' },
         { label: 'Общая выручка', value: `${formatMoney(stats.total_revenue)} ₽`, color: 'text-indigo-600' },
         { label: 'Средний чек', value: `${formatMoney(stats.avg_check)} ₽`, color: 'text-indigo-600' },
-        { label: 'Заказов сегодня', value: String(stats.orders_today), color: 'text-green-600' },
+        { label: 'Заказов сегодня', value: String(stats.orders_today ?? 0), color: 'text-green-600' },
     ];
 
     return (

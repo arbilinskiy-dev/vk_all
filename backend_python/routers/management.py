@@ -16,7 +16,8 @@ router = APIRouter(prefix="/management", tags=["Database Management"])
 @router.post("/getAllProjects", response_model=List[schemas.Project])
 def get_all_projects(db: Session = Depends(get_db)):
     """Возвращает полный список всех АКТИВНЫХ проектов для страницы управления."""
-    return management_service.get_all_projects_for_management(db)
+    data = management_service.get_all_projects_for_management(db)
+    return data
 
 @router.post("/getArchivedProjects", response_model=List[schemas.Project])
 def get_archived_projects(db: Session = Depends(get_db)):
@@ -63,7 +64,8 @@ def promote_to_admins(payload: schemas.PromoteToAdminsPayload, db: Session = Dep
         db, 
         group_ids=payload.group_ids, 
         user_ids=payload.user_ids, 
-        role=payload.role
+        role=payload.role,
+        include_env_token=payload.include_env_token
     )
 
 @router.post("/administered-groups/{group_id}/sync-admins", response_model=schemas.AdministeredGroup)
@@ -149,6 +151,31 @@ def refresh_all_posts(payload: schemas.RefreshAllPostsPayload, background_tasks:
         settings.vk_user_token,
         payload.limit or '1000',
         payload.mode or 'limit'
+    )
+    
+    return {"taskId": new_task_id}
+
+
+@router.post("/refresh-all-mailing", response_model=schemas.TaskStartResponse)
+def refresh_all_mailing(background_tasks: BackgroundTasks):
+    """
+    Запускает фоновую задачу для обновления рассылки (dialogs) ВСЕХ проектов с community-токенами.
+    Каждый проект использует свои community-токены для параллельного сбора.
+    """
+    PROJECT_ID_GLOBAL = "GLOBAL"
+    TASK_TYPE = "refresh_all_mailing"
+    
+    # Проверяем, не запущена ли уже
+    existing_task_id = task_monitor.get_active_task_id(PROJECT_ID_GLOBAL, TASK_TYPE)
+    if existing_task_id:
+        return {"taskId": existing_task_id}
+    
+    new_task_id = str(uuid.uuid4())
+    task_monitor.start_task(new_task_id, PROJECT_ID_GLOBAL, TASK_TYPE)
+    
+    background_tasks.add_task(
+        admin_tools_service.refresh_all_mailing_task,
+        new_task_id
     )
     
     return {"taskId": new_task_id}

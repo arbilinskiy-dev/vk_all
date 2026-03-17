@@ -25,6 +25,21 @@ export interface DlvryOrder {
     status: string | null;
     items_count: number | null;
     created_at: string | null;
+    // Расширенные поля для переключаемых групп колонок
+    cost: number | null;
+    discount: number | null;
+    delivery_price: number | null;
+    subtotal: number | null;
+    payment_bonus: number | null;
+    markup: number | null;
+    vk_platform: string | null;
+    vk_user_id: string | null;
+    address_city: string | null;
+    persons: number | null;
+    items_total_qty: number | null;
+    promocode: string | null;
+    comment: string | null;
+    is_preorder: boolean;
 }
 
 /** Позиция заказа */
@@ -77,6 +92,12 @@ export interface DlvryOrderDetail {
         items_json: string | null;
         raw_json: string | null;
         created_at: string | null;
+        // Расширенные поля
+        cost: number | null;
+        payment_bonus: number | null;
+        markup: number | null;
+        persons: number | null;
+        items_total_qty: number | null;
     };
     items: DlvryOrderItem[];
 }
@@ -203,5 +224,254 @@ export async function clearDlvryWebhookLogs(): Promise<{ deleted: number }> {
     const url = `${API_BASE_URL}/dlvry/webhook-logs`;
     const res = await fetch(url, { method: 'DELETE', headers: getAuthHeaders() });
     if (!res.ok) throw new Error(`Ошибка очистки логов: ${res.status}`);
+    return res.json();
+}
+
+// =============================================================================
+// Синхронизация заказов из DLVRY hl-orders API
+// =============================================================================
+
+/** Результат инкрементальной синхронизации заказов */
+export interface DlvryOrdersSyncResult {
+    success: boolean;
+    new_orders: number;
+    skipped_duplicates: number;
+    total_revenue: number;
+    date_from: string;
+    date_to: string;
+    error?: string | null;
+}
+
+/** Событие прогресса полной загрузки заказов (чанк) */
+export interface DlvryOrdersFullSyncEvent {
+    chunk: number;
+    new_orders: number;
+    total_new: number;
+    total_skipped: number;
+    total_revenue: number;
+    date_from: string;
+    date_to: string;
+    done: boolean;
+    success?: boolean;
+    error?: string | null;
+}
+
+/**
+ * Инкрементальная синхронизация заказов из DLVRY API.
+ */
+export async function syncDlvryOrders(params: {
+    project_id?: string;
+    affiliate_id?: string;
+    date_from?: string;
+    date_to?: string;
+} = {}): Promise<DlvryOrdersSyncResult> {
+    const query = new URLSearchParams();
+    if (params.project_id) query.set('project_id', params.project_id);
+    if (params.affiliate_id) query.set('affiliate_id', params.affiliate_id);
+    if (params.date_from) query.set('date_from', params.date_from);
+    if (params.date_to) query.set('date_to', params.date_to);
+
+    const qs = query.toString();
+    const url = `${API_BASE_URL}/dlvry/orders/sync${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, { method: 'POST', headers: getAuthHeaders() });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Ошибка синхронизации заказов: ${res.status}`);
+    }
+    return res.json();
+}
+
+/**
+ * Полная загрузка заказов с SSE-стримингом прогресса.
+ */
+export async function syncDlvryOrdersFullStream(
+    params: { project_id: string },
+    onProgress: (event: DlvryOrdersFullSyncEvent) => void,
+    signal?: AbortSignal,
+): Promise<void> {
+    const query = new URLSearchParams();
+    query.set('project_id', params.project_id);
+
+    const url = `${API_BASE_URL}/dlvry/orders/sync-full-stream?${query}`;
+    const res = await fetch(url, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        signal,
+    });
+
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `Ошибка полной загрузки заказов: ${res.status}`);
+    }
+
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() ?? '';
+
+        for (const part of parts) {
+            const line = part.trim();
+            if (line.startsWith('data: ')) {
+                try {
+                    const event: DlvryOrdersFullSyncEvent = JSON.parse(line.slice(6));
+                    onProgress(event);
+                } catch {
+                    // skip malformed events
+                }
+            }
+        }
+    }
+
+    // Остаток буфера
+    if (buffer.trim().startsWith('data: ')) {
+        try {
+            const event: DlvryOrdersFullSyncEvent = JSON.parse(buffer.trim().slice(6));
+            onProgress(event);
+        } catch {
+            // skip
+        }
+    }
+}
+
+
+// =============================================================================
+// Аналитика товаров
+// =============================================================================
+
+/** Товар с агрегированной статистикой продаж */
+export interface DlvryProductAnalytics {
+    dlvry_item_id: string;
+    name: string;
+    code: string;
+    sku_title: string;
+    total_qty: number;
+    orders_count: number;
+    total_revenue: number;
+    avg_price: number;
+    min_price: number;
+    max_price: number;
+}
+
+/** Ответ списка товаров */
+export interface DlvryProductsListResponse {
+    products: DlvryProductAnalytics[];
+    total: number;
+    skip: number;
+    limit: number;
+}
+
+/** Сводка по товарам */
+export interface DlvryProductsSummary {
+    unique_products: number;
+    total_qty: number;
+    total_revenue: number;
+    total_orders: number;
+    avg_qty_per_order: number;
+    avg_revenue_per_product: number;
+}
+
+/** Параметры запроса товаров */
+export interface DlvryProductsFilter {
+    project_id?: string;
+    affiliate_id?: string;
+    date_from?: string;
+    date_to?: string;
+    search?: string;
+    sort_by?: string;
+    sort_dir?: string;
+    skip?: number;
+    limit?: number;
+}
+
+/**
+ * Получить список товаров с агрегированной статистикой продаж.
+ */
+export async function fetchDlvryProducts(filter: DlvryProductsFilter = {}): Promise<DlvryProductsListResponse> {
+    const params = new URLSearchParams();
+    if (filter.project_id) params.set('project_id', filter.project_id);
+    if (filter.affiliate_id) params.set('affiliate_id', filter.affiliate_id);
+    if (filter.date_from) params.set('date_from', filter.date_from);
+    if (filter.date_to) params.set('date_to', filter.date_to);
+    if (filter.search) params.set('search', filter.search);
+    if (filter.sort_by) params.set('sort_by', filter.sort_by);
+    if (filter.sort_dir) params.set('sort_dir', filter.sort_dir);
+    if (filter.skip !== undefined) params.set('skip', String(filter.skip));
+    if (filter.limit !== undefined) params.set('limit', String(filter.limit));
+
+    const qs = params.toString();
+    const url = `${API_BASE_URL}/dlvry/products${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`Ошибка загрузки товаров: ${res.status}`);
+    return res.json();
+}
+
+/**
+ * Получить сводную статистику по товарам.
+ */
+export async function fetchDlvryProductsSummary(params: {
+    project_id?: string;
+    affiliate_id?: string;
+    date_from?: string;
+    date_to?: string;
+} = {}): Promise<DlvryProductsSummary> {
+    const query = new URLSearchParams();
+    if (params.project_id) query.set('project_id', params.project_id);
+    if (params.affiliate_id) query.set('affiliate_id', params.affiliate_id);
+    if (params.date_from) query.set('date_from', params.date_from);
+    if (params.date_to) query.set('date_to', params.date_to);
+
+    const qs = query.toString();
+    const url = `${API_BASE_URL}/dlvry/products/summary${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`Ошибка загрузки сводки товаров: ${res.status}`);
+    return res.json();
+}
+
+// ─── Сопутствующие товары (co-occurrence) ─────────────────────────
+
+export interface DlvryRelatedProduct {
+    dlvry_item_id: string;
+    name: string;
+    co_orders: number;
+    pct: number;
+    avg_qty: number;
+}
+
+export interface DlvryProductRelatedResponse {
+    target_orders_count: number;
+    related: DlvryRelatedProduct[];
+}
+
+/**
+ * Получить сопутствующие товары — что берут вместе с данным товаром.
+ */
+export async function fetchDlvryProductRelated(
+    itemId: string,
+    params: {
+        project_id?: string;
+        affiliate_id?: string;
+        date_from?: string;
+        date_to?: string;
+        limit?: number;
+    } = {},
+): Promise<DlvryProductRelatedResponse> {
+    const query = new URLSearchParams();
+    if (params.project_id) query.set('project_id', params.project_id);
+    if (params.affiliate_id) query.set('affiliate_id', params.affiliate_id);
+    if (params.date_from) query.set('date_from', params.date_from);
+    if (params.date_to) query.set('date_to', params.date_to);
+    if (params.limit) query.set('limit', String(params.limit));
+
+    const qs = query.toString();
+    const url = `${API_BASE_URL}/dlvry/products/${encodeURIComponent(itemId)}/related${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error(`Ошибка загрузки сопутствующих товаров: ${res.status}`);
     return res.json();
 }

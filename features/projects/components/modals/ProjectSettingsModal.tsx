@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Project } from '../../../../shared/types';
+import { Project, ProjectSummary } from '../../../../shared/types';
 import { useProjectSettingsManager } from '../../hooks/useProjectSettingsManager';
 import { VariablesEditor } from './VariablesEditor';
 import { GlobalVariablesEditor } from './GlobalVariablesEditor';
@@ -20,7 +20,7 @@ export type AccordionSectionKey = 'name' | 'team' | 'notes' | 'variables' | 'glo
 
 
 export const ProjectSettingsModal: React.FC<{ 
-    project: Project, 
+    project: ProjectSummary, 
     uniqueTeams: string[],
     onClose: () => void, 
     onSave: (updatedProject: Project) => Promise<void>,

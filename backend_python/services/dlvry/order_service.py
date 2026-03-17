@@ -128,9 +128,15 @@ def _safe_int(val, default=0) -> int:
         return default
 
 
-def parse_items(items: Optional[list]) -> Tuple[List[dict], str, int, int]:
+def parse_items(
+    items: Optional[list],
+    catalog: Optional[dict] = None,
+) -> Tuple[List[dict], str, int, int]:
     """
     Парсит массив товаров из DLVRY.
+    
+    catalog — опциональный маппинг {item_id: name} из /affiliates/{id}/items.
+    Используется как fallback, когда hl-orders API не возвращает name.
     
     Returns:
         (items_data, items_text, items_count, items_total_qty)
@@ -151,8 +157,12 @@ def parse_items(items: Optional[list]) -> Tuple[List[dict], str, int, int]:
             continue
 
         data = item.get('data', {}) or {}
+        item_id = str(item.get('id') or '')
         
+        # Имя: из data.name → item.title → каталог по id → пусто
         name = data.get('name') or item.get('title') or ''
+        if not name and catalog and item_id:
+            name = catalog.get(item_id, '')
         qty = _safe_int(data.get('quantity') or item.get('quantity'), 1)
         total_qty += qty
 
@@ -186,6 +196,7 @@ def process_dlvry_webhook(
     payload: dict,
     raw_json: str,
     remote_ip: Optional[str] = None,
+    catalog: Optional[dict] = None,
 ) -> dict:
     """
     Обрабатывает входящий webhook от DLVRY.
@@ -218,10 +229,15 @@ def process_dlvry_webhook(
         return {"success": True, "order_id": str(dlvry_order_id), "message": "Дубликат — заказ уже существует", "is_duplicate": True}
 
     # ── Привязка к проекту по affiliate_id ────────────────────
-    project = db.query(Project).filter(Project.dlvry_affiliate_id == str(affiliate_id)).first()
-    project_id = project.id if project else None
-    if not project:
-        logger.warning(f"[DLVRY] Проект для affiliate_id={affiliate_id} не найден — заказ будет сохранён без привязки")
+    # Сначала ищем через новую таблицу филиалов, fallback на Project.dlvry_affiliate_id
+    from crud.dlvry_affiliate_crud import find_project_id_by_affiliate_id
+    project_id = find_project_id_by_affiliate_id(db, str(affiliate_id))
+    if not project_id:
+        # Fallback: старое поле
+        project = db.query(Project).filter(Project.dlvry_affiliate_id == str(affiliate_id)).first()
+        project_id = project.id if project else None
+        if not project:
+            logger.warning(f"[DLVRY] Проект для affiliate_id={affiliate_id} не найден — заказ будет сохранён без привязки")
 
     # ── Парсинг данных ────────────────────────────────────────
     try:
@@ -238,7 +254,7 @@ def process_dlvry_webhook(
         address_full = format_address(address)
         
         # Товары
-        items_data, items_text, items_count, items_total_qty = parse_items(payload.get('items'))
+        items_data, items_text, items_count, items_total_qty = parse_items(payload.get('items'), catalog=catalog)
         
         # Источник
         source = payload.get('source') or {}

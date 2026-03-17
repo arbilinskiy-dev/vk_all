@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Project } from '../../../../shared/types';
-import { ChatMessageData, ConversationUser, MessageSearchFilter, ChatDisplayFilters } from '../../types';
+import { ChatMessageData, ChatActionData, ConversationUser, MessageSearchFilter, ChatDisplayFilters } from '../../types';
 import { ManagerFocusInfo } from '../../hooks/chat/useTypingState';
 import { ChatHeader } from './ChatHeader';
 import { DialogLabel } from '../../../../services/api/dialog_labels.api';
@@ -16,7 +16,7 @@ interface ChatViewProps {
     /** Массив сообщений диалога */
     messages: ChatMessageData[];
     /** Колбэк отправки сообщения */
-    onSendMessage?: (text: string, attachments?: File[], senderId?: string, senderName?: string) => Promise<boolean>;
+    onSendMessage?: (text: string, attachments?: File[], replyTo?: number, forwardMessages?: string, optimisticReply?: ChatMessageData['replyMessage'], optimisticForwarded?: ChatMessageData['forwardedMessages']) => Promise<boolean>;
     /** Текущий проект (для переменных и emoji в ChatInput) */
     project?: Project | null;
     /** ID проекта */
@@ -76,6 +76,12 @@ interface ChatViewProps {
     onAssignLabel?: (labelId: string) => void;
     /** Снять метку */
     onUnassignLabel?: (labelId: string) => void;
+    /** Колбэк: открыть модал пересылки выбранных сообщений в групповой чат */
+    onForwardToChat?: (messages: ChatMessageData[]) => void;
+    /** Действия менеджеров в диалоге (для хронологии) */
+    chatActions?: ChatActionData[];
+    /** Колбэк навигации к диалогу с пользователем в нашей системе */
+    onNavigateToDialog?: (vkUserId: number) => void;
 }
 
 /**
@@ -115,6 +121,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
     assignedLabelIds = [],
     onAssignLabel,
     onUnassignLabel,
+    onForwardToChat,
+    chatActions = [],
+    onNavigateToDialog,
 }) => {
     // Локальный текст поиска (для мгновенного отображения в input)
     const [searchQuery, setSearchQuery] = useState('');
@@ -153,6 +162,23 @@ export const ChatView: React.FC<ChatViewProps> = ({
         hideKeyboard: false,
         hideBotMessages: false,
     });
+
+    // Выбранные сообщения для ответа/пересылки (мультивыбор)
+    const [selectedMessages, setSelectedMessages] = useState<ChatMessageData[]>([]);
+
+    // Переключение выбора сообщения
+    const handleToggleSelect = useCallback((message: ChatMessageData) => {
+        setSelectedMessages(prev => {
+            const exists = prev.some(m => m.id === message.id);
+            if (exists) return prev.filter(m => m.id !== message.id);
+            return [...prev, message];
+        });
+    }, []);
+
+    // Сброс выбора при смене диалога
+    useEffect(() => {
+        setSelectedMessages([]);
+    }, [user.id]);
 
     // Фильтрованные сообщения (клиентская фильтрация только для UI-фильтров: hideBotMessages)
     // Фильтры direction и search теперь обрабатываются сервером
@@ -208,10 +234,31 @@ export const ChatView: React.FC<ChatViewProps> = ({
         }
     }, [user.id, isLoading, messages.length]);
 
-    /** Отправка сообщения через бэкенд */
+    /** Отправка сообщения через бэкенд: 1 сообщение → reply_to, 2+ → forward_messages */
     const handleSendMessage = async (text: string, attachments?: File[]) => {
         if (onSendMessage) {
-            await onSendMessage(text, attachments);
+            if (selectedMessages.length === 1) {
+                const msg = selectedMessages[0];
+                const replyToId = Number(msg.id);
+                const optimisticReply: ChatMessageData['replyMessage'] = {
+                    id: msg.id,
+                    text: msg.text,
+                    direction: msg.direction,
+                };
+                await onSendMessage(text, attachments, replyToId, undefined, optimisticReply);
+            } else if (selectedMessages.length > 1) {
+                const forwardIds = selectedMessages.map(m => m.id).join(',');
+                const optimisticForwarded: ChatMessageData['forwardedMessages'] = selectedMessages.map(m => ({
+                    id: m.id,
+                    text: m.text,
+                    direction: m.direction,
+                    timestamp: m.timestamp,
+                }));
+                await onSendMessage(text, attachments, undefined, forwardIds, undefined, optimisticForwarded);
+            } else {
+                await onSendMessage(text, attachments);
+            }
+            setSelectedMessages([]);
         }
     };
 
@@ -298,11 +345,15 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     )}
                     <ChatMessageList
                         messages={filteredMessages}
+                        chatActions={chatActions}
                         isLoadingMore={isLoadingMore}
                         hasMore={hasMore}
                         onLoadMore={onLoadMore}
                         searchQuery={searchQuery}
                         displayFilters={displayFilters}
+                        onReplyMessage={handleToggleSelect}
+                        selectedMessageIds={selectedMessages.map(m => m.id)}
+                        onNavigateToDialog={onNavigateToDialog}
                     />
                     {/* Индикатор результатов поиска */}
                     {isSearchActive && (
@@ -348,6 +399,23 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 </div>
             )}
 
+            {/* Кнопка «Переслать в чат» — при выбранных сообщениях */}
+            {selectedMessages.length > 0 && onForwardToChat && (
+                <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2 border-t border-gray-100 bg-indigo-50/50">
+                    <button
+                        onClick={() => onForwardToChat(selectedMessages)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-600 bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-colors"
+                        title="Переслать выбранные сообщения в групповой чат"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                        Переслать в чат
+                        <span className="text-indigo-400">({selectedMessages.length})</span>
+                    </button>
+                </div>
+            )}
+
             {/* Поле ввода */}
             <ChatInput
                 onSendMessage={handleSendMessage}
@@ -358,6 +426,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
                 currentUserId={Number(user.id) || null}
                 pendingTemplate={pendingTemplate}
                 onSaveAsTemplate={onSaveAsTemplate}
+                replyToMessage={selectedMessages.length > 0 ? selectedMessages[0] : null}
+                selectedMessages={selectedMessages}
+                onCancelReply={() => setSelectedMessages([])}
+                onRemoveSelected={(id: string) => setSelectedMessages(prev => prev.filter(m => m.id !== id))}
             />
         </div>
     );

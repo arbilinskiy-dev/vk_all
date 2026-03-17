@@ -17,6 +17,8 @@ import {
 
 interface UseDlvryDailyStatsParams {
     projectId: string | null;
+    /** Опциональный ID филиала для drill-down */
+    affiliateId?: string | null;
     /** Начальное значение dateFrom (YYYY-MM-DD). Если передано — первый fetch уже с фильтром. */
     initialDateFrom?: string;
     /** Начальное значение dateTo (YYYY-MM-DD). */
@@ -64,7 +66,7 @@ interface UseDlvryDailyStatsResult {
 
 const PAGE_SIZE = 50;
 
-export function useDlvryDailyStats({ projectId, initialDateFrom, initialDateTo }: UseDlvryDailyStatsParams): UseDlvryDailyStatsResult {
+export function useDlvryDailyStats({ projectId, affiliateId, initialDateFrom, initialDateTo }: UseDlvryDailyStatsParams): UseDlvryDailyStatsResult {
     const [days, setDays] = useState<DlvryDayStat[]>([]);
     const [aggregated, setAggregated] = useState<DlvryAggregated | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -88,17 +90,19 @@ export function useDlvryDailyStats({ projectId, initialDateFrom, initialDateTo }
     // Загрузка доступных месяцев (не зависит от дат — нужно знать все существующие)
     const refreshAvailableMonths = useCallback(() => {
         if (!projectId) { setAvailableMonths(new Set()); return; }
-        fetchAvailableMonths({ project_id: projectId })
+        const params: { project_id: string; affiliate_id?: string } = { project_id: projectId };
+        if (affiliateId) params.affiliate_id = affiliateId;
+        fetchAvailableMonths(params)
             .then(list => {
                 const set = new Set(list.map(m => `${m.year}-${m.month}`));
                 setAvailableMonths(set);
             })
             .catch(() => { /* тихо */ });
-    }, [projectId]);
+    }, [projectId, affiliateId]);
 
     useEffect(() => { refreshAvailableMonths(); }, [refreshAvailableMonths]);
 
-    // Сброс данных при смене проекта (даты НЕ сбрасываем — управляются компонентом-потребителем)
+    // Сброс данных при смене проекта или филиала (даты НЕ сбрасываем)
     useEffect(() => {
         setDays([]);
         setAggregated(null);
@@ -106,7 +110,7 @@ export function useDlvryDailyStats({ projectId, initialDateFrom, initialDateTo }
         setLastSyncResult(null);
         setHasMore(false);
         setTotalCount(0);
-    }, [projectId]);
+    }, [projectId, affiliateId]);
 
     // Загрузка первой страницы из БД
     useEffect(() => {
@@ -124,6 +128,7 @@ export function useDlvryDailyStats({ projectId, initialDateFrom, initialDateTo }
 
         fetchDlvryDailyStats({
             project_id: projectId,
+            affiliate_id: affiliateId || undefined,
             date_from: dateFrom || undefined,
             date_to: dateTo || undefined,
             limit: PAGE_SIZE,
@@ -145,7 +150,7 @@ export function useDlvryDailyStats({ projectId, initialDateFrom, initialDateTo }
             });
 
         return () => { cancelled = true; };
-    }, [projectId, dateFrom, dateTo, refreshKey]);
+    }, [projectId, affiliateId, dateFrom, dateTo, refreshKey]);
 
     // Подгрузка следующей порции
     const loadMore = useCallback(() => {
@@ -156,6 +161,7 @@ export function useDlvryDailyStats({ projectId, initialDateFrom, initialDateTo }
 
         fetchDlvryDailyStats({
             project_id: projectId,
+            affiliate_id: affiliateId || undefined,
             date_from: dateFrom || undefined,
             date_to: dateTo || undefined,
             limit: PAGE_SIZE,
@@ -173,7 +179,7 @@ export function useDlvryDailyStats({ projectId, initialDateFrom, initialDateTo }
                 setIsLoadingMore(false);
                 loadingMoreRef.current = false;
             });
-    }, [projectId, dateFrom, dateTo, days.length, hasMore]);
+    }, [projectId, affiliateId, dateFrom, dateTo, days.length, hasMore]);
 
     // Синхронизация из DLVRY API
     const syncFromApi = useCallback(async (forceFull = false) => {
@@ -232,7 +238,7 @@ export function useDlvryDailyStats({ projectId, initialDateFrom, initialDateTo }
                 setIsSyncing(false);
             }
         }
-    }, [projectId, dateFrom, dateTo, refresh]);
+    }, [projectId, affiliateId, dateFrom, dateTo, refresh]);
 
     return {
         days,

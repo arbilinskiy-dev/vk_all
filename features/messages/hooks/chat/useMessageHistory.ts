@@ -13,13 +13,14 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ChatMessageData, MailingUserInfo, MessageAttachment } from '../../types';
+import { ChatMessageData, ChatActionData, MailingUserInfo, MessageAttachment } from '../../types';
 import {
     getMessageHistory,
     loadAllMessages,
     sendMessage as apiSendMessage,
     uploadMessageAttachment,
     VkMessageItem,
+    getChatActions,
 } from '../../../../services/api/messages.api';
 import { msgLog, msgWarn, msgGroup, msgGroupEnd, fmtUser, fmtProject } from '../../utils/messagesLogger';
 
@@ -83,6 +84,10 @@ export function useMessageHistory({
     const [userInfoFromHistory, setUserInfoFromHistory] = useState<MailingUserInfo | null>(null);
     /** Статистика по направлению сообщений */
     const [messageStats, setMessageStats] = useState<MessageStats | null>(null);
+    /** Профили участников группового чата (from_id → имя) */
+    const profilesMapRef = useRef<Map<number, string>>(new Map());
+    /** Действия менеджеров в этом диалоге (chat_enter, label_assign и т.д.) */
+    const [chatActions, setChatActions] = useState<ChatActionData[]>([]);
 
     // Рефы для предотвращения race conditions
     const loadingRef = useRef(false);
@@ -115,6 +120,7 @@ export function useMessageHistory({
         );
         setTrackedParamsKey(paramsKey);
         setMessages([]);
+        setChatActions([]);
         setIsLoading(hasParams);
         setError(null);
         setTotalCount(0);
@@ -257,10 +263,26 @@ export function useMessageHistory({
                 setUserInfoFromHistory(null);
             }
 
+            // Сохраняем профили участников группового чата (от extended=1)
+            if (data.profiles && Array.isArray(data.profiles)) {
+                const map = new Map<number, string>();
+                for (const p of data.profiles) {
+                    map.set(p.id, [p.first_name, p.last_name].filter(Boolean).join(' '));
+                }
+                profilesMapRef.current = map;
+            }
+
             // VK API возвращает от новых к старым — переворачиваем
             const mapped = autoMarkReadByIncoming(
                 data.items
-                    .map(item => mapVkMessage(item, groupId))
+                    .map(item => {
+                        const msg = mapVkMessage(item, groupId);
+                        // Обогащаем именем отправителя из профилей (для групповых чатов)
+                        if (msg.fromId && profilesMapRef.current.size > 0) {
+                            msg.senderName = profilesMapRef.current.get(msg.fromId);
+                        }
+                        return msg;
+                    })
                     .reverse()
             );
 
@@ -283,6 +305,21 @@ export function useMessageHistory({
             if (data.items.length > 0) {
                 setLastRawVkItem(data.items[0]);
             }
+
+            // Загружаем действия менеджеров для этого диалога (фоновый запрос, не блокирует UI)
+            getChatActions(projectId, userId, 200).then(actionsResp => {
+                // Проверяем race condition
+                if (myRequestId !== requestIdRef.current) return;
+                const actions: ChatActionData[] = (actionsResp.actions || []).map((a: any) => ({
+                    id: String(a.id),
+                    action_type: a.action_type,
+                    manager_id: a.manager_id || '',
+                    manager_name: a.manager_name,
+                    timestamp: a.timestamp,
+                    metadata: a.metadata || {},
+                }));
+                setChatActions(actions);
+            }).catch(() => { /* действия — некритичная функция */ });
         } catch (err: any) {
             if (currentUserIdRef.current !== userId) {
                 msgGroupEnd('HISTORY');
@@ -319,7 +356,13 @@ export function useMessageHistory({
             if (currentUserIdRef.current !== userId) return;
 
             const mapped = data.items
-                .map(item => mapVkMessage(item, groupId))
+                .map(item => {
+                    const msg = mapVkMessage(item, groupId);
+                    if (msg.fromId && profilesMapRef.current.size > 0) {
+                        msg.senderName = profilesMapRef.current.get(msg.fromId);
+                    }
+                    return msg;
+                })
                 .reverse();
 
             // Автопрочтение: объединяем старые + существующие и пересчитываем
@@ -378,7 +421,13 @@ export function useMessageHistory({
 
             const mapped = autoMarkReadByIncoming(
                 data.items
-                    .map(item => mapVkMessage(item, groupId))
+                    .map(item => {
+                        const msg = mapVkMessage(item, groupId);
+                        if (msg.fromId && profilesMapRef.current.size > 0) {
+                            msg.senderName = profilesMapRef.current.get(msg.fromId);
+                        }
+                        return msg;
+                    })
                     .reverse()
             );
 
@@ -412,7 +461,7 @@ export function useMessageHistory({
      * Оптимистичное обновление: сразу добавляем в UI, потом подтверждаем с сервера.
      * attachments — загрузка фото через VK API (photos.getMessagesUploadServer → send).
      */
-    const handleSendMessage = useCallback(async (text: string, attachments?: File[], senderId?: string, senderName?: string): Promise<boolean> => {
+    const handleSendMessage = useCallback(async (text: string, attachments?: File[], senderId?: string, senderName?: string, replyTo?: number, forwardMessages?: string, optimisticReply?: ChatMessageData['replyMessage'], optimisticForwarded?: ChatMessageData['forwardedMessages']): Promise<boolean> => {
         const trimmed = text.trim();
         const hasFiles = attachments && attachments.length > 0;
         if (!projectId || !userId || !groupId || (!trimmed && !hasFiles)) return false;
@@ -445,6 +494,8 @@ export function useMessageHistory({
             isRead: false,
             sentByName: senderName || undefined,
             attachments: localPreviews.length > 0 ? localPreviews : undefined,
+            replyMessage: optimisticReply,
+            forwardedMessages: optimisticForwarded,
         };
         setMessages(prev => [...prev, optimisticMsg]);
         setIsSending(true);
@@ -505,7 +556,7 @@ export function useMessageHistory({
             }
 
             // Шаг 2: Отправляем сообщение с attachment строкой
-            const result = await apiSendMessage(projectId, userId, trimmed, senderId, senderName, attachmentStr);
+            const result = await apiSendMessage(projectId, userId, trimmed, senderId, senderName, attachmentStr, replyTo, forwardMessages);
             
             if (currentUserIdRef.current !== userId) return true;
 
@@ -530,10 +581,17 @@ export function useMessageHistory({
                     const bestAtts = incomingAtts.length >= existingAtts.length
                         ? (incomingAtts.length > 0 ? incomingAtts : existingAtts)
                         : existingAtts;
+                    // Сохраняем цитаты/пересылки: если incoming не содержит — оставляем из existing (оптимистичные)
+                    const bestReply = incoming.replyMessage || existing.replyMessage;
+                    const bestForwarded = incoming.forwardedMessages?.length
+                        ? incoming.forwardedMessages
+                        : existing.forwardedMessages;
                     return {
                         ...existing,
                         ...incoming,
                         attachments: bestAtts.length > 0 ? bestAtts : undefined,
+                        replyMessage: bestReply,
+                        forwardedMessages: bestForwarded,
                     };
                 };
 
@@ -594,7 +652,23 @@ export function useMessageHistory({
                 if (messageData.attachments && messageData.attachments.length > 0
                     && (!existing.attachments || existing.attachments.length === 0)) {
                     msgLog('HISTORY', `addIncomingMessage: msg_id=${messageData.id} уже есть, мёржим вложения (${messageData.attachments.length} шт.)`);
-                    return prev.map((m, i) => i === existingIdx ? { ...m, attachments: messageData.attachments } : m);
+                    return prev.map((m, i) => i === existingIdx ? {
+                        ...m,
+                        attachments: messageData.attachments,
+                        // Сохраняем цитаты/пересылки при мерже
+                        replyMessage: m.replyMessage || messageData.replyMessage,
+                        forwardedMessages: m.forwardedMessages?.length ? m.forwardedMessages : messageData.forwardedMessages,
+                    } : m);
+                }
+                // Даже если вложения не мёржим — мёржим цитаты/пересылки если у existing их нет
+                if ((!existing.replyMessage && messageData.replyMessage)
+                    || (!existing.forwardedMessages?.length && messageData.forwardedMessages?.length)) {
+                    msgLog('HISTORY', `addIncomingMessage: msg_id=${messageData.id} уже есть, мёржим цитаты/пересылки`);
+                    return prev.map((m, i) => i === existingIdx ? {
+                        ...m,
+                        replyMessage: m.replyMessage || messageData.replyMessage,
+                        forwardedMessages: m.forwardedMessages?.length ? m.forwardedMessages : messageData.forwardedMessages,
+                    } : m);
                 }
                 msgLog('HISTORY', `addIncomingMessage: msg_id=${messageData.id} уже есть, пропуск`);
                 return prev;
@@ -622,10 +696,17 @@ export function useMessageHistory({
                     const bestAtts = sseAtts.length >= tempAtts.length
                         ? (sseAtts.length > 0 ? sseAtts : tempAtts)
                         : tempAtts;
+                    // Сохраняем цитаты/пересылки: если SSE не содержит — оставляем из temp (оптимистичные)
+                    const bestReply = messageData.replyMessage || tempMsg.replyMessage;
+                    const bestForwarded = messageData.forwardedMessages?.length
+                        ? messageData.forwardedMessages
+                        : tempMsg.forwardedMessages;
                     const merged: ChatMessageData = {
                         ...tempMsg,
                         ...messageData,
                         attachments: bestAtts.length > 0 ? bestAtts : undefined,
+                        replyMessage: bestReply,
+                        forwardedMessages: bestForwarded,
                     };
                     return prev.map((m, i) => i === tempIdx ? merged : m);
                 }
@@ -700,6 +781,11 @@ export function useMessageHistory({
 
     const hasMore = offset < totalCount;
 
+    /** Добавить новое действие менеджера из SSE */
+    const addChatAction = useCallback((action: ChatActionData) => {
+        setChatActions(prev => [...prev, action]);
+    }, []);
+
     return {
         messages,
         isLoading,
@@ -721,5 +807,7 @@ export function useMessageHistory({
         lastRawVkItem,
         userInfoFromHistory,
         messageStats,
+        chatActions,
+        addChatAction,
     };
 }

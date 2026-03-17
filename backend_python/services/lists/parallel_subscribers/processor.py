@@ -7,8 +7,9 @@
 import time
 import uuid
 import logging
+import concurrent.futures
 from datetime import datetime, timezone
-from typing import Set
+from typing import List, Optional, Set
 
 import crud
 from database import SessionLocal
@@ -28,21 +29,25 @@ def process_single_project(
     state: BulkRefreshState, 
     project_id: str, 
     token: str, 
-    token_name: str
+    token_name: str,
+    community_tokens: Optional[List[str]] = None
 ) -> bool:
     """
     Обрабатывает подписчиков одного проекта.
     
     Выполняет полный цикл: инициализация -> скачивание -> сохранение.
+    Если есть community-токены — использует их в приоритете (с параллелизацией).
+    При flood control на community-токенах — fallback на системный token.
     
     Args:
         state: Общее состояние задачи
         project_id: ID проекта
-        token: Токен VK
+        token: Системный токен VK (fallback)
         token_name: Имя токена для логов
+        community_tokens: Список community-токенов проекта (приоритетные)
         
     Returns:
-        True если успешно, False если flood control (токен нужно отключить)
+        True если успешно, False если flood control на системном токене
     """
     state.update_project(project_id, status=ProjectStatus.PROCESSING)
     update_task_progress(state)
@@ -56,7 +61,8 @@ def process_single_project(
     
     # === ЭТАП 2: СКАЧИВАНИЕ ПОДПИСЧИКОВ ===
     fetch_result = _fetch_project_subscribers(
-        state, project_id, project_vk_id, project_name, token, token_name
+        state, project_id, project_vk_id, project_name, token, token_name,
+        community_tokens=community_tokens
     )
     
     if fetch_result is None:
@@ -119,43 +125,55 @@ def _fetch_project_subscribers(
     project_vk_id: str,
     project_name: str,
     token: str,
-    token_name: str
+    token_name: str,
+    community_tokens: Optional[List[str]] = None
 ):
     """
     Скачивает подписчиков проекта из VK.
     
+    Приоритет: community-токены (параллельно) → системный токен (fallback).
+    При flood control на community-токенах — переключается на системный.
+    При flood control на системном — возвращает None (токен отключат).
+    
     Returns:
-        - None: flood control (нужно отключить токен)
+        - None: flood control на системном токене (нужно отключить)
         - []: пусто или ошибка
         - list: успешно скачанные подписчики
     """
     all_members = []
     
+    # Определяем токены для работы: community в приоритете, иначе системный
+    if community_tokens:
+        active_tokens = community_tokens
+        using_community = True
+        print(f"   [{token_name}] Обработка: {project_name} (community-токены: {len(community_tokens)})")
+    else:
+        active_tokens = [token]
+        using_community = False
+        print(f"   [{token_name}] Обработка: {project_name}")
+    
     try:
         state.update_project(project_id, status=ProjectStatus.FETCHING)
         update_task_progress(state)
         
-        print(f"   [{token_name}] Обработка: {project_name}")
-        
-        numeric_id = vk_service.resolve_vk_group_id(project_vk_id, token)
+        numeric_id = vk_service.resolve_vk_group_id(project_vk_id, active_tokens[0])
         fields = 'sex,bdate,city,country,photo_100,domain,has_mobile,last_seen'
         
         # Получаем количество подписчиков
-        try:
-            initial_resp = raw_vk_call('groups.getMembers', {
-                'group_id': numeric_id, 
-                'count': 1, 
-                'access_token': token
-            }, project_id=project_id)
-            total_vk_count = initial_resp.get('count', 0)
-        except VkApiError as e:
-            if e.code == 9:
-                print(f"   [{token_name}] FLOOD CONTROL при получении count!")
-                return None
-            state.mark_project_error(project_id, f"VK Error {e.code}: {e}")
-            return []
-        except Exception as e:
-            state.mark_project_error(project_id, f"Ошибка получения count: {e}")
+        total_vk_count = _get_member_count(active_tokens, numeric_id, project_id)
+        if total_vk_count is None and using_community:
+            # Flood control на community-токенах при count → fallback на системный
+            print(f"   [{token_name}] Flood control на community-токенах при count, fallback на системный")
+            total_vk_count = _get_member_count([token], numeric_id, project_id)
+            if total_vk_count is None:
+                return None  # Flood control и на системном — отключаем токен
+            active_tokens = [token]
+            using_community = False
+        elif total_vk_count is None:
+            return None  # Flood control на системном — отключаем токен
+        
+        if total_vk_count == -1:
+            state.mark_project_error(project_id, "Не удалось получить count")
             return []
         
         state.update_project(project_id, total=total_vk_count)
@@ -175,33 +193,88 @@ def _fetch_project_subscribers(
             current_offset += chunk_size
         
         total_fetched = 0
+        remaining_failed = []  # Чанки для финального retry
         
-        # Загрузка чанков
-        for i, params in enumerate(tasks_params):
-            try:
-                items = _fetch_batch_execute_members(
-                    [token],
-                    i, 
-                    numeric_id, 
-                    params['offset'], 
-                    params['count'], 
-                    fields, 
-                    project_id
+        # --- Загрузка чанков (параллельно если >1 токена, последовательно если 1) ---
+        if len(active_tokens) > 1:
+            # Параллельная загрузка на нескольких community-токенах
+            all_members, total_fetched, failed_chunks, flood_detected = _fetch_chunks_parallel(
+                active_tokens, tasks_params, numeric_id, fields, project_id,
+                state, token_name
+            )
+            
+            # Flood control на community-токенах → fallback на системный для оставшихся чанков
+            if flood_detected and using_community and failed_chunks:
+                print(f"   [{token_name}] Flood control на community, fallback на системный для {len(failed_chunks)} чанков")
+                active_tokens = [token]
+                using_community = False
+                time.sleep(1.0)
+                
+                fb_members, fb_fetched, fb_failed, fb_flood = _fetch_chunks_sequential(
+                    active_tokens, failed_chunks, numeric_id, fields, project_id,
+                    state, token_name
                 )
-                all_members.extend(items)
-                total_fetched += len(items)
-                state.update_project(project_id, loaded=total_fetched)
-                update_task_progress(state)
+                all_members.extend(fb_members)
+                total_fetched += fb_fetched
+                remaining_failed = fb_failed
                 
-                time.sleep(0.5)
+                if fb_flood:
+                    return None  # Flood control и на системном — отключаем токен
+            elif failed_chunks and not flood_detected:
+                # Обычные ошибки — retry последовательно теми же токенами
+                time.sleep(1.0)
+                fb_members, fb_fetched, fb_failed, _ = _fetch_chunks_sequential(
+                    active_tokens, failed_chunks, numeric_id, fields, project_id,
+                    state, token_name
+                )
+                all_members.extend(fb_members)
+                total_fetched += fb_fetched
+                remaining_failed = fb_failed
+        else:
+            # Последовательная загрузка одним токеном
+            all_members, total_fetched, failed_chunks, flood_detected = _fetch_chunks_sequential(
+                active_tokens, tasks_params, numeric_id, fields, project_id,
+                state, token_name
+            )
+            
+            if flood_detected and using_community:
+                # Fallback на системный
+                print(f"   [{token_name}] Flood control на community, fallback на системный для {len(failed_chunks)} чанков")
+                active_tokens = [token]
+                using_community = False
+                time.sleep(1.0)
                 
-            except VkApiError as e:
-                if e.code == 9:
-                    print(f"   [{token_name}] FLOOD CONTROL при скачивании chunk {i}!")
+                fb_members, fb_fetched, fb_failed, fb_flood = _fetch_chunks_sequential(
+                    active_tokens, failed_chunks, numeric_id, fields, project_id,
+                    state, token_name
+                )
+                all_members.extend(fb_members)
+                total_fetched += fb_fetched
+                remaining_failed = fb_failed
+                
+                if fb_flood:
                     return None
-                print(f"   [{token_name}] Chunk {i} failed: {e}")
-            except Exception as e:
-                print(f"   [{token_name}] Chunk {i} failed: {e}")
+            elif flood_detected:
+                return None  # Flood control на системном — отключаем
+            else:
+                remaining_failed = failed_chunks
+        
+        # --- Финальный retry для оставшихся не скачанных чанков ---
+        if remaining_failed:
+            print(f"   [{token_name}] Финальный retry {len(remaining_failed)} чанков с паузами...")
+            for i, params in enumerate(remaining_failed):
+                try:
+                    time.sleep(1.5)
+                    items = _fetch_batch_execute_members(
+                        active_tokens, i, numeric_id, params['offset'], params['count'], fields, project_id
+                    )
+                    all_members.extend(items)
+                    total_fetched += len(items)
+                except Exception as e:
+                    print(f"   [{token_name}] Финальный retry offset {params['offset']} failed: {e}")
+        
+        state.update_project(project_id, loaded=total_fetched)
+        update_task_progress(state)
         
         # Проверяем порог успешности (90%)
         threshold = int(total_vk_count * 0.90)
@@ -220,6 +293,133 @@ def _fetch_project_subscribers(
     except Exception as e:
         state.mark_project_error(project_id, f"Ошибка скачивания: {e}")
         return []
+
+
+def _get_member_count(tokens: List[str], numeric_id, project_id: str):
+    """
+    Получает количество подписчиков, перебирая токены.
+    
+    Returns:
+        - int: количество подписчиков
+        - None: все токены получили flood control (code=9)
+        - -1: не удалось получить count другим образом
+    """
+    flood_on_all = True
+    for t in tokens:
+        try:
+            resp = raw_vk_call('groups.getMembers', {
+                'group_id': numeric_id, 'count': 1, 'access_token': t
+            }, project_id=project_id)
+            return resp.get('count', 0)
+        except VkApiError as e:
+            if e.code == 9:
+                continue  # Flood control — пробуем следующий
+            flood_on_all = False
+            continue
+        except Exception:
+            flood_on_all = False
+            continue
+    
+    return None if flood_on_all else -1
+
+
+def _fetch_chunks_parallel(
+    tokens: List[str],
+    tasks_params: list,
+    numeric_id,
+    fields: str,
+    project_id: str,
+    state: BulkRefreshState,
+    token_name: str
+):
+    """
+    Параллельная загрузка чанков несколькими токенами.
+    
+    Returns:
+        (all_members, total_fetched, failed_chunks, flood_detected)
+    """
+    all_members = []
+    total_fetched = 0
+    failed_chunks = []
+    flood_detected = False
+    max_workers = min(len(tokens), 15)
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_params = {}
+        for i, params in enumerate(tasks_params):
+            future = executor.submit(
+                _fetch_batch_execute_members,
+                tokens, i, numeric_id, params['offset'], params['count'], fields, project_id
+            )
+            future_to_params[future] = params
+        
+        for future in concurrent.futures.as_completed(future_to_params):
+            params = future_to_params[future]
+            try:
+                items = future.result()
+                all_members.extend(items)
+                total_fetched += len(items)
+                state.update_project(project_id, loaded=total_fetched)
+                update_task_progress(state)
+            except VkApiError as e:
+                if e.code == 9:
+                    flood_detected = True
+                    print(f"   [{token_name}] FLOOD CONTROL chunk offset {params['offset']}")
+                failed_chunks.append(params)
+            except Exception as e:
+                print(f"   [{token_name}] Chunk offset {params['offset']} failed: {e}")
+                failed_chunks.append(params)
+    
+    return all_members, total_fetched, failed_chunks, flood_detected
+
+
+def _fetch_chunks_sequential(
+    tokens: List[str],
+    tasks_params: list,
+    numeric_id,
+    fields: str,
+    project_id: str,
+    state: BulkRefreshState,
+    token_name: str
+):
+    """
+    Последовательная загрузка чанков.
+    
+    Returns:
+        (all_members, total_fetched, failed_chunks, flood_detected)
+    """
+    all_members = []
+    total_fetched = 0
+    failed_chunks = []
+    flood_detected = False
+    
+    for i, params in enumerate(tasks_params):
+        try:
+            items = _fetch_batch_execute_members(
+                tokens, i, numeric_id, params['offset'], params['count'], fields, project_id
+            )
+            all_members.extend(items)
+            total_fetched += len(items)
+            state.update_project(project_id, loaded=total_fetched)
+            update_task_progress(state)
+            
+            time.sleep(0.5)
+            
+        except VkApiError as e:
+            if e.code == 9:
+                flood_detected = True
+                print(f"   [{token_name}] FLOOD CONTROL chunk {i}!")
+                # При flood — все оставшиеся чанки тоже в failed
+                failed_chunks.append(params)
+                failed_chunks.extend(tasks_params[i + 1:])
+                break
+            print(f"   [{token_name}] Chunk {i} failed: {e}")
+            failed_chunks.append(params)
+        except Exception as e:
+            print(f"   [{token_name}] Chunk {i} failed: {e}")
+            failed_chunks.append(params)
+    
+    return all_members, total_fetched, failed_chunks, flood_detected
 
 
 def _save_project_subscribers(
@@ -272,6 +472,24 @@ def _save_project_subscribers(
             _process_left_subscribers(db, project_id, left_ids, timestamp, project_name)
         
         log_session_status(db, f"AFTER_PROCESS_LEFT:{project_name}")
+        
+        # Обновляем метаданные project_list_meta (subscribers_last_updated, счётчики истории)
+        with OperationTimer("update_list_meta", project_name):
+            meta_updates = {
+                "subscribers_last_updated": timestamp.isoformat(),
+                "subscribers_count": len(vk_ids_set),
+            }
+            if new_ids:
+                current_meta = crud.get_list_meta(db, project_id)
+                meta_updates["history_join_last_updated"] = timestamp.isoformat()
+                meta_updates["history_join_count"] = (current_meta.history_join_count or 0) + len(new_ids)
+            if left_ids:
+                if "history_join_last_updated" not in meta_updates:
+                    current_meta = crud.get_list_meta(db, project_id)
+                meta_updates["history_leave_last_updated"] = timestamp.isoformat()
+                meta_updates["history_leave_count"] = (current_meta.history_leave_count or 0) + len(left_ids)
+            crud.update_list_meta(db, project_id, meta_updates)
+        
         log_pool_status(f"SAVE_DONE:{project_name}")
         
         state.mark_project_done(project_id, added=len(new_ids), left=len(left_ids))

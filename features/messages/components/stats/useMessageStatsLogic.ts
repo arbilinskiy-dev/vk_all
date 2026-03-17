@@ -1,116 +1,41 @@
 /**
- * Хук бизнес-логики страницы статистики сообщений.
- * Управляет состоянием, загрузкой данных, фильтрами, раскрытием проектов.
- * Возвращает { state, actions }.
+ * Хаб-хук бизнес-логики страницы статистики сообщений.
+ * Собирает 6 под-хуков и возвращает единый интерфейс { state, actions }.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Project } from '../../../../shared/types';
 import {
     fetchMessageStatsSummary,
     fetchMessageStatsProjects,
     fetchMessageStatsChart,
-    fetchMessageStatsUsers,
     fetchAdminStats,
-    fetchAdminDialogs,
-    syncMessageStatsFromLogs,
-    getSyncFromLogsStatus,
-    reconcileMessageStats,
     MessageStatsGlobalSummary,
     MessageStatsProjectSummary,
     MessageStatsChartPoint,
-    MessageStatsUserItem,
     AdminStatsItem,
-    AdminDialogItem,
-    ReconcileEvent,
-    SyncFromLogsProgress,
 } from '../../../../services/api/messages_stats.api';
-import {
-    fetchSubscriptionsSummary,
-    fetchSubscriptionsChart,
-    fetchSubscriptionsProjects,
-    fetchSubscriptionsProjectUsers,
-    SubscriptionsSummary,
-    SubscriptionsChartPoint,
-    SubscriptionsProjectItem,
-    SubscriptionUserItem,
-} from '../../../../services/api/message_subscriptions.api';
-import { PeriodType, DirectionFilter, StatsTab, IncomingSubFilter, computeDateRange } from './messageStatsConstants';
+import { useStatsFilters } from './useStatsFilters';
+import { useProjectUsersLogic } from './useProjectUsersLogic';
+import { useSyncLogic } from './useSyncLogic';
+import { useAdminsLogic } from './useAdminsLogic';
+import { useSubscriptionsLogic } from './useSubscriptionsLogic';
+import { useEmployeesLogic } from './useEmployeesLogic';
 
 export function useMessageStatsLogic(projects: Project[]) {
-    // --- Состояние ---
+    // --- Основные данные дашборда ---
     const [summary, setSummary] = useState<MessageStatsGlobalSummary | null>(null);
     const [projectsStats, setProjectsStats] = useState<MessageStatsProjectSummary[]>([]);
     const [chartData, setChartData] = useState<MessageStatsChartPoint[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-
-    // Фильтры
-    const [periodType, setPeriodType] = useState<PeriodType>('today');
-    const [customStartDate, setCustomStartDate] = useState('');
-    const [customEndDate, setCustomEndDate] = useState('');
-    const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-    const [projectSearch, setProjectSearch] = useState('');
-    const [directionFilter, setDirectionFilter] = useState<DirectionFilter>('all');
-
-    // Активная вкладка: входящие / исходящие
-    const [activeTab, setActiveTabRaw] = useState<StatsTab>('incoming');
-
-    // Суб-фильтр входящих: все / реальные / кнопочные
-    const [incomingSubFilter, setIncomingSubFilter] = useState<IncomingSubFilter>('all');
-
-    // Раскрытые проекты (Set project_id → раскрыт список пользователей)
-    const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
-    const [usersDataMap, setUsersDataMap] = useState<Record<string, { users: MessageStatsUserItem[]; total: number; loading: boolean }>>({});
-
-    // Синхронизация из логов (фоновая задача с прогрессом)
-    const [isSyncing, setIsSyncing] = useState(false);
-    const [syncResult, setSyncResult] = useState<string | null>(null);
-    const [syncProgress, setSyncProgress] = useState<SyncFromLogsProgress | null>(null);
-
-    // Сверка с VK API
-    const [isReconciling, setIsReconciling] = useState(false);
-    const [reconcileResult, setReconcileResult] = useState<string | null>(null);
-    const [reconcileProgress, setReconcileProgress] = useState<{
-        processed: number;
-        total: number;
-        percent: number;
-    } | null>(null);
-
-    // Администраторы
     const [adminStats, setAdminStats] = useState<AdminStatsItem[]>([]);
-    const [expandedAdmins, setExpandedAdmins] = useState<Set<string>>(new Set());
-    const [adminDialogsMap, setAdminDialogsMap] = useState<Record<string, { dialogs: AdminDialogItem[]; loading: boolean }>>({});
 
-    // Подписки/отписки (ленивая загрузка — только при переключении на вкладку)
-    const [subsSummary, setSubsSummary] = useState<SubscriptionsSummary | null>(null);
-    const [subsChart, setSubsChart] = useState<SubscriptionsChartPoint[]>([]);
-    const [subsProjects, setSubsProjects] = useState<SubscriptionsProjectItem[]>([]);
-    const [subsLoading, setSubsLoading] = useState(false);
-    const [subsLoaded, setSubsLoaded] = useState(false);
-    const [subsExpandedProjects, setSubsExpandedProjects] = useState<Set<string>>(new Set());
-    const [subsUsersMap, setSubsUsersMap] = useState<Record<string, { users: SubscriptionUserItem[]; total: number; loading: boolean }>>({}); 
+    // --- Фильтры и вычисляемые данные ---
+    const filters = useStatsFilters({ projects, projectsStats, chartData, summary });
+    const { dateFrom, dateTo, selectedProjectId, projectSearch, activeTab, incomingSubFilter, projectsMap, directionFilter } = filters.state;
 
-    // Диалоги сотрудников (ленивая загрузка — только при переключении на вкладку)
-    // Выбранный сотрудник по имени (т.к. один человек может иметь несколько sender_id)
-    const [selectedEmployeeName, setSelectedEmployeeName] = useState<string | null>(null);
-    const [employeeDialogs, setEmployeeDialogs] = useState<AdminDialogItem[]>([]);
-    const [employeeLoading, setEmployeeLoading] = useState(false);
-
-    // Маппинг project_id → Project
-    const projectsMap = useMemo(() => {
-        const map = new Map<string, Project>();
-        projects.forEach(p => map.set(p.id, p));
-        return map;
-    }, [projects]);
-
-    // Вычисляемые даты из периода
-    const { dateFrom, dateTo } = useMemo(
-        () => computeDateRange(periodType, customStartDate, customEndDate),
-        [periodType, customStartDate, customEndDate]
-    );
-
-    // --- Загрузка данных ---
+    // --- Загрузка данных дашборда ---
     const loadDashboard = useCallback(async () => {
         setIsLoading(true);
         setError(null);
@@ -149,590 +74,84 @@ export function useMessageStatsLogic(projects: Project[]) {
         loadDashboard();
     }, [loadDashboard]);
 
-    // При смене периода или суб-фильтра сбрасываем кэш пользователей
-    useEffect(() => {
-        setUsersDataMap({});
-        setExpandedProjects(new Set());
-    }, [dateFrom, dateTo, incomingSubFilter]);
+    // --- Под-хуки по доменам ---
+    const projectUsers = useProjectUsersLogic({ dateFrom, dateTo, activeTab, incomingSubFilter });
+    const sync = useSyncLogic({ loadDashboard, dateFrom, dateTo });
+    const admins = useAdminsLogic({ dateFrom, dateTo });
+    const subscriptions = useSubscriptionsLogic({ dateFrom, dateTo, selectedProjectId, projectSearch, projectsMap, activeTab });
+    const employees = useEmployeesLogic({ dateFrom, dateTo, adminStats, projectSearch, projectsMap });
 
-    // --- Загрузка пользователей при раскрытии проекта ---
-    const loadUsersForProject = useCallback(async (projectId: string) => {
-        setUsersDataMap(prev => ({
-            ...prev,
-            [projectId]: { users: [], total: 0, loading: true },
-        }));
-        try {
-            const res = await fetchMessageStatsUsers(projectId, {
-                sortBy: 'last_message_at',
-                sortOrder: 'desc',
-                limit: 50,
-                offset: 0,
-                dateFrom: dateFrom || undefined,
-                dateTo: dateTo || undefined,
-                messageType: activeTab === 'incoming' && incomingSubFilter !== 'all' ? incomingSubFilter : undefined,
-            });
-            setUsersDataMap(prev => ({
-                ...prev,
-                [projectId]: { users: res.users, total: res.total_count, loading: false },
-            }));
-        } catch (e: any) {
-            console.error('Ошибка загрузки пользователей:', e);
-            setUsersDataMap(prev => ({
-                ...prev,
-                [projectId]: { users: [], total: 0, loading: false },
-            }));
-        }
-    }, [dateFrom, dateTo, activeTab, incomingSubFilter]);
-
-    // --- Обработчики ---
-    const toggleProjectExpand = useCallback((projectId: string) => {
-        setExpandedProjects(prev => {
-            const next = new Set(prev);
-            if (next.has(projectId)) {
-                next.delete(projectId);
-            } else {
-                next.add(projectId);
-                // Загружаем пользователей если ещё не загружены
-                if (!usersDataMap[projectId]) {
-                    loadUsersForProject(projectId);
-                }
-            }
-            return next;
-        });
-    }, [usersDataMap, loadUsersForProject]);
-
-    const handleProjectFilter = useCallback((projectId: string) => {
-        // Фильтр графика по проекту
-        if (selectedProjectId === projectId) {
-            setSelectedProjectId(null);
-        } else {
-            setSelectedProjectId(projectId);
-        }
-    }, [selectedProjectId]);
-
-    /** Синхронизация статистики из callback-логов (фоновая задача с polling прогресса) */
-    const handleSyncFromLogs = useCallback(async () => {
-        setIsSyncing(true);
-        setSyncResult(null);
-        setSyncProgress(null);
-        try {
-            // 1. Запускаем фоновую задачу
-            const { taskId } = await syncMessageStatsFromLogs();
-            if (!taskId) throw new Error('Не удалось запустить задачу');
-            
-            // 2. Polling прогресса каждые 1.5 сек
-            await new Promise<void>((resolve, reject) => {
-                const intervalId = setInterval(async () => {
-                    try {
-                        const status = await getSyncFromLogsStatus(taskId);
-                        setSyncProgress(status);
-                        
-                        if (status.status === 'done') {
-                            clearInterval(intervalId);
-                            setSyncResult(status.message || 'Синхронизация завершена');
-                            setSyncProgress(null);
-                            resolve();
-                        } else if (status.status === 'error') {
-                            clearInterval(intervalId);
-                            setSyncResult(`Ошибка: ${status.error || 'Неизвестная ошибка'}`);
-                            setSyncProgress(null);
-                            resolve();
-                        }
-                    } catch (e) {
-                        clearInterval(intervalId);
-                        reject(e);
-                    }
-                }, 1500);
-            });
-            
-            await loadDashboard();
-        } catch (e: any) {
-            setSyncResult(`Ошибка: ${e.message}`);
-            setSyncProgress(null);
-        } finally {
-            setIsSyncing(false);
-        }
-    }, [loadDashboard]);
-
-    /** Сверка статистики с VK API (reconciliation) — SSE-стриминг с прогрессом */
-    const handleReconcile = useCallback(async () => {
-        setIsReconciling(true);
-        setReconcileResult(null);
-        setReconcileProgress(null);
-        try {
-            const res = await reconcileMessageStats({
-                dateFrom: dateFrom || undefined,
-                dateTo: dateTo || undefined,
-                onProgress: (event: ReconcileEvent) => {
-                    if (event.type === 'start') {
-                        setReconcileProgress({
-                            processed: 0,
-                            total: event.total_dialogs,
-                            percent: 0,
-                        });
-                    } else if (event.type === 'progress') {
-                        const percent = event.total > 0 ? Math.round((event.processed / event.total) * 100) : 0;
-                        setReconcileProgress({
-                            processed: event.processed,
-                            total: event.total,
-                            percent,
-                        });
-                    }
-                },
-            });
-            setReconcileResult(res.details);
-            setReconcileProgress(null);
-            await loadDashboard();
-        } catch (e: any) {
-            setReconcileResult(`Ошибка: ${e.message}`);
-            setReconcileProgress(null);
-        } finally {
-            setIsReconciling(false);
-        }
-    }, [loadDashboard, dateFrom, dateTo]);
-
-    /** Раскрытие/сворачивание диалогов администратора */
-    const toggleAdminExpand = useCallback((senderId: string) => {
-        setExpandedAdmins(prev => {
-            const next = new Set(prev);
-            if (next.has(senderId)) {
-                next.delete(senderId);
-            } else {
-                next.add(senderId);
-                // Загружаем диалоги если ещё не загружены
-                if (!adminDialogsMap[senderId]) {
-                    setAdminDialogsMap(p => ({
-                        ...p,
-                        [senderId]: { dialogs: [], loading: true },
-                    }));
-                    fetchAdminDialogs(senderId, {
-                        dateFrom: dateFrom || undefined,
-                        dateTo: dateTo || undefined,
-                    }).then(res => {
-                        setAdminDialogsMap(p => ({
-                            ...p,
-                            [senderId]: { dialogs: res.dialogs || [], loading: false },
-                        }));
-                    }).catch(() => {
-                        setAdminDialogsMap(p => ({
-                            ...p,
-                            [senderId]: { dialogs: [], loading: false },
-                        }));
-                    });
-                }
-            }
-            return next;
-        });
-    }, [adminDialogsMap, dateFrom, dateTo]);
-
-    // Фильтрация проектов по строке поиска и направлению
-    const filteredProjectsStats = useMemo(() => {
-        let result = projectsStats;
-        // Фильтр по направлению
-        if (directionFilter === 'incoming') {
-            result = result.filter(ps => ps.total_incoming > 0);
-        } else if (directionFilter === 'outgoing') {
-            result = result.filter(ps => ps.total_outgoing > 0);
-        }
-        // Фильтр по поиску
-        if (projectSearch.trim()) {
-            const q = projectSearch.toLowerCase().trim();
-            result = result.filter(ps => {
-                const proj = projectsMap.get(ps.project_id);
-                const name = proj?.name?.toLowerCase() || '';
-                const id = ps.project_id.toLowerCase();
-                return name.includes(q) || id.includes(q);
-            });
-        }
-        // Суб-фильтр входящих (text/payload)
-        if (activeTab === 'incoming' && incomingSubFilter !== 'all') {
-            if (incomingSubFilter === 'text') {
-                result = result.filter(ps => (ps.incoming_text ?? 0) > 0);
-            } else if (incomingSubFilter === 'payload') {
-                result = result.filter(ps => (ps.incoming_payload ?? 0) > 0);
-            }
-        }
-        return result;
-    }, [projectsStats, projectSearch, projectsMap, directionFilter, activeTab, incomingSubFilter]);
-
-    // Пересчёт сводки при фильтре по направлению
-    const displaySummary = useMemo(() => {
-        if (!summary) return null;
-        if (directionFilter === 'all') return summary;
-
-        // Берём проекты с нужным направлением
-        const fps = directionFilter === 'incoming'
-            ? projectsStats.filter(ps => ps.total_incoming > 0)
-            : projectsStats.filter(ps => ps.total_outgoing > 0);
-
-        const totalMessages = fps.reduce(
-            (s, p) => s + (directionFilter === 'incoming' ? p.total_incoming : p.total_outgoing), 0
-        );
-
-        // Используем глобальные incoming_users / outgoing_users из бэкенда (считаются с DISTINCT),
-        // а НЕ суммируем по проектам — иначе один пользователь в N проектах считается N раз.
-        const uniqueUsers = directionFilter === 'incoming'
-            ? (summary.incoming_users || 0)
-            : (summary.outgoing_users || 0);
-
-        return {
-            ...summary,
-            total_projects: fps.length,
-            total_messages: totalMessages,
-            total_incoming: fps.reduce((s, p) => s + p.total_incoming, 0),
-            total_outgoing: fps.reduce((s, p) => s + p.total_outgoing, 0),
-            unique_users: uniqueUsers,
-        };
-    }, [summary, projectsStats, directionFilter]);
-
-    // Данные графика с учётом суб-фильтра входящих
-    const filteredChartData = useMemo(() => {
-        if (activeTab !== 'incoming' || incomingSubFilter === 'all') return chartData;
-        return chartData.map(point => ({
-            ...point,
-            // Заменяем общую линию входящих на суб-категорию
-            incoming: incomingSubFilter === 'text'
-                ? (point.incoming_text ?? 0)
-                : (point.incoming_payload ?? 0),
-        }));
-    }, [chartData, activeTab, incomingSubFilter]);
-
-    // Проекты с подменёнными значениями при активном суб-фильтре
-    const displayProjectsStats = useMemo(() => {
-        if (activeTab !== 'incoming' || incomingSubFilter === 'all') return filteredProjectsStats;
-        return filteredProjectsStats.map(ps => ({
-            ...ps,
-            total_incoming: incomingSubFilter === 'text'
-                ? ((ps as any).filtered_incoming_text ?? ps.incoming_text ?? 0)
-                : (ps.incoming_payload ?? 0),
-            incoming_dialogs: incomingSubFilter === 'text'
-                ? (ps.dialogs_with_text ?? 0)
-                : (ps.dialogs_with_payload ?? 0),
-        }));
-    }, [filteredProjectsStats, activeTab, incomingSubFilter]);
-
-    /** Переключение суб-фильтра входящих (toggle) */
-    const toggleIncomingSubFilter = useCallback((filter: IncomingSubFilter) => {
-        setIncomingSubFilter(prev => prev === filter ? 'all' : filter);
-    }, []);
-
-    /** Переключение вкладки со сбросом суб-фильтра */
-    const handleSetActiveTab = useCallback((tab: StatsTab) => {
-        setActiveTabRaw(tab);
-        setIncomingSubFilter('all');
-    }, []);
-
-    /** Фильтрация пользователей по направлению */
-    const filterUsersByDirection = useCallback((users: MessageStatsUserItem[]) => {
-        if (directionFilter === 'incoming') return users.filter(u => u.incoming_count > 0);
-        if (directionFilter === 'outgoing') return users.filter(u => u.outgoing_count > 0);
-        return users;
-    }, [directionFilter]);
-
-    /** Переключение фильтра направления */
-    const toggleDirectionFilter = useCallback((dir: DirectionFilter) => {
-        setDirectionFilter(prev => prev === dir ? 'all' : dir);
-    }, []);
-
-    // === Подписки: ленивая загрузка при переходе на вкладку ===
-    const loadSubscriptions = useCallback(async () => {
-        setSubsLoading(true);
-        try {
-            const [summaryRes, chartRes, projectsRes] = await Promise.all([
-                fetchSubscriptionsSummary({
-                    dateFrom: dateFrom || undefined,
-                    dateTo: dateTo || undefined,
-                }),
-                fetchSubscriptionsChart({
-                    projectId: selectedProjectId || undefined,
-                    dateFrom: dateFrom || undefined,
-                    dateTo: dateTo || undefined,
-                }),
-                fetchSubscriptionsProjects({
-                    dateFrom: dateFrom || undefined,
-                    dateTo: dateTo || undefined,
-                }),
-            ]);
-            setSubsSummary(summaryRes);
-            setSubsChart(chartRes.chart);
-            setSubsProjects(projectsRes.projects);
-            setSubsLoaded(true);
-        } catch (e: any) {
-            console.error('Ошибка загрузки подписок:', e);
-        } finally {
-            setSubsLoading(false);
-        }
-    }, [dateFrom, dateTo, selectedProjectId]);
-
-    // При переключении на вкладку подписок — загружаем данные
-    useEffect(() => {
-        if (activeTab === 'subscriptions') {
-            loadSubscriptions();
-        }
-    }, [activeTab, loadSubscriptions]);
-
-    // Сброс флага subsLoaded при смене периода (чтобы перезагрузить при возврате на вкладку)
-    useEffect(() => {
-        setSubsLoaded(false);
-    }, [dateFrom, dateTo, selectedProjectId]);
-
-    /** Раскрытие проекта в таблице подписок (ленивая загрузка пользователей) */
-    const toggleSubsProjectExpand = useCallback((projectId: string) => {
-        setSubsExpandedProjects(prev => {
-            const next = new Set(prev);
-            if (next.has(projectId)) {
-                next.delete(projectId);
-            } else {
-                next.add(projectId);
-                // Ленивая загрузка пользователей по подпискам
-                if (!subsUsersMap[projectId]) {
-                    setSubsUsersMap(p => ({
-                        ...p,
-                        [projectId]: { users: [], total: 0, loading: true },
-                    }));
-                    fetchSubscriptionsProjectUsers(projectId, {
-                        dateFrom: dateFrom || undefined,
-                        dateTo: dateTo || undefined,
-                        limit: 50,
-                        offset: 0,
-                    }).then(res => {
-                        setSubsUsersMap(p => ({
-                            ...p,
-                            [projectId]: { users: res.users, total: res.total_count, loading: false },
-                        }));
-                    }).catch(() => {
-                        setSubsUsersMap(p => ({
-                            ...p,
-                            [projectId]: { users: [], total: 0, loading: false },
-                        }));
-                    });
-                }
-            }
-            return next;
-        });
-    }, [subsUsersMap, dateFrom, dateTo]);
-
-    // Фильтрация проектов подписок по строке поиска
-    const filteredSubsProjects = useMemo(() => {
-        if (!projectSearch.trim()) return subsProjects;
-        const q = projectSearch.toLowerCase().trim();
-        return subsProjects.filter(sp => {
-            const proj = projectsMap.get(sp.project_id);
-            const name = proj?.name?.toLowerCase() || '';
-            const id = sp.project_id.toLowerCase();
-            return name.includes(q) || id.includes(q);
-        });
-    }, [subsProjects, projectSearch, projectsMap]);
-
-    // === Объединение сотрудников по имени (один человек может иметь несколько sender_id) ===
-    /** Тип объединённого сотрудника */
-    type MergedAdmin = {
-        sender_name: string;
-        sender_ids: string[];
-        messages_sent: number;
-        unique_dialogs: number;
-        projects_count: number;
-    };
-
-    const mergedAdminStats: MergedAdmin[] = useMemo(() => {
-        const map = new Map<string, MergedAdmin>();
-        for (const a of adminStats) {
-            const name = (a.sender_name || '').trim() || `ID ${a.sender_id}`;
-            const existing = map.get(name);
-            if (existing) {
-                existing.sender_ids.push(a.sender_id);
-                existing.messages_sent += a.messages_sent;
-                existing.unique_dialogs += a.unique_dialogs;
-                // projects_count пересчитаем по уникальным проектам при загрузке диалогов
-                // пока берём максимум
-                existing.projects_count = Math.max(existing.projects_count, a.projects_count);
-            } else {
-                map.set(name, {
-                    sender_name: name,
-                    sender_ids: [a.sender_id],
-                    messages_sent: a.messages_sent,
-                    unique_dialogs: a.unique_dialogs,
-                    projects_count: a.projects_count,
-                });
-            }
-        }
-        return Array.from(map.values()).sort((a, b) => b.messages_sent - a.messages_sent);
-    }, [adminStats]);
-
-    // === Диалоги сотрудников: загрузка при выборе сотрудника (по имени) ===
-    const loadEmployeeDialogsByName = useCallback(async (employeeName: string) => {
-        setSelectedEmployeeName(employeeName);
-        setEmployeeLoading(true);
-        setEmployeeDialogs([]);
-        try {
-            // Находим все sender_id для данного имени
-            const merged = mergedAdminStats.find(m => m.sender_name === employeeName);
-            const senderIds = merged?.sender_ids || [];
-            if (senderIds.length === 0) {
-                setEmployeeDialogs([]);
-                return;
-            }
-            // Загружаем диалоги для каждого sender_id параллельно
-            const results = await Promise.all(
-                senderIds.map(sid =>
-                    fetchAdminDialogs(sid, {
-                        dateFrom: dateFrom || undefined,
-                        dateTo: dateTo || undefined,
-                    }).catch(() => ({ dialogs: [] as AdminDialogItem[], sender_id: sid, sender_name: employeeName }))
-                )
-            );
-            // Объединяем все диалоги (дедупликация по project_id + vk_user_id)
-            const allDialogs: AdminDialogItem[] = [];
-            const seen = new Set<string>();
-            for (const res of results) {
-                for (const d of (res.dialogs || [])) {
-                    const key = `${d.project_id}_${d.vk_user_id}`;
-                    if (!seen.has(key)) {
-                        seen.add(key);
-                        allDialogs.push(d);
-                    } else {
-                        // Если дубликат — суммируем сообщения
-                        const existing = allDialogs.find(x => x.project_id === d.project_id && x.vk_user_id === d.vk_user_id);
-                        if (existing) existing.messages_sent += d.messages_sent;
-                    }
-                }
-            }
-            setEmployeeDialogs(allDialogs);
-        } catch (e: any) {
-            console.error('Ошибка загрузки диалогов сотрудника:', e);
-            setEmployeeDialogs([]);
-        } finally {
-            setEmployeeLoading(false);
-        }
-    }, [dateFrom, dateTo, mergedAdminStats]);
-
-    /** Выбрать сотрудника по имени (или сбросить если тот же) */
-    const selectEmployee = useCallback((name: string | null) => {
-        if (name === null || name === selectedEmployeeName) {
-            setSelectedEmployeeName(null);
-            setEmployeeDialogs([]);
-            return;
-        }
-        loadEmployeeDialogsByName(name);
-    }, [selectedEmployeeName, loadEmployeeDialogsByName]);
-
-    // При смене периода перезагружаем данные сотрудника
-    useEffect(() => {
-        if (selectedEmployeeName !== null) {
-            loadEmployeeDialogsByName(selectedEmployeeName);
-        }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dateFrom, dateTo]);
-
-    // Группировка диалогов сотрудника по проектам
-    const employeeProjectsGrouped = useMemo(() => {
-        if (!employeeDialogs.length) return [];
-        const map = new Map<string, { project_id: string; messages_sent: number; dialogs: AdminDialogItem[] }>();
-        for (const d of employeeDialogs) {
-            const existing = map.get(d.project_id);
-            if (existing) {
-                existing.messages_sent += d.messages_sent;
-                existing.dialogs.push(d);
-            } else {
-                map.set(d.project_id, {
-                    project_id: d.project_id,
-                    messages_sent: d.messages_sent,
-                    dialogs: [d],
-                });
-            }
-        }
-        // Фильтрация по поиску
-        let result = Array.from(map.values());
-        if (projectSearch.trim()) {
-            const q = projectSearch.toLowerCase().trim();
-            result = result.filter(p => {
-                const proj = projectsMap.get(p.project_id);
-                const name = proj?.name?.toLowerCase() || '';
-                const id = p.project_id.toLowerCase();
-                return name.includes(q) || id.includes(q);
-            });
-        }
-        // Сортировка по количеству сообщений (убывание)
-        result.sort((a, b) => b.messages_sent - a.messages_sent);
-        return result;
-    }, [employeeDialogs, projectSearch, projectsMap]);
-
-    // Сводная статистика выбранного сотрудника (из mergedAdminStats)
-    const employeeSummary = useMemo(() => {
-        if (selectedEmployeeName === null) return null;
-        return mergedAdminStats.find(m => m.sender_name === selectedEmployeeName) || null;
-    }, [selectedEmployeeName, mergedAdminStats]);
-
+    // --- Внешний контракт: { state, actions } — идентичный набор полей ---
     return {
         state: {
             summary,
             chartData,
             isLoading,
             error,
-            periodType,
-            customStartDate,
-            customEndDate,
+            periodType: filters.state.periodType,
+            customStartDate: filters.state.customStartDate,
+            customEndDate: filters.state.customEndDate,
             selectedProjectId,
             projectSearch,
             directionFilter,
-            expandedProjects,
-            usersDataMap,
-            isSyncing,
-            syncResult,
-            syncProgress,
-            isReconciling,
-            reconcileResult,
-            reconcileProgress,
+            expandedProjects: projectUsers.state.expandedProjects,
+            usersDataMap: projectUsers.state.usersDataMap,
+            isSyncing: sync.state.isSyncing,
+            syncResult: sync.state.syncResult,
+            syncProgress: sync.state.syncProgress,
+            isReconciling: sync.state.isReconciling,
+            reconcileResult: sync.state.reconcileResult,
+            reconcileProgress: sync.state.reconcileProgress,
             projectsMap,
-            filteredProjectsStats,
-            displayProjectsStats,
-            filteredChartData,
+            filteredProjectsStats: filters.state.filteredProjectsStats,
+            displayProjectsStats: filters.state.displayProjectsStats,
+            filteredChartData: filters.state.filteredChartData,
             incomingSubFilter,
-            displaySummary,
+            displaySummary: filters.state.displaySummary,
             adminStats,
-            expandedAdmins,
-            adminDialogsMap,
+            expandedAdmins: admins.state.expandedAdmins,
+            adminDialogsMap: admins.state.adminDialogsMap,
             activeTab,
             // Подписки
-            subsSummary,
-            subsChart,
-            subsLoading,
-            subsLoaded,
-            filteredSubsProjects,
-            subsExpandedProjects,
-            subsUsersMap,
+            subsSummary: subscriptions.state.subsSummary,
+            subsChart: subscriptions.state.subsChart,
+            subsLoading: subscriptions.state.subsLoading,
+            subsLoaded: subscriptions.state.subsLoaded,
+            filteredSubsProjects: subscriptions.state.filteredSubsProjects,
+            subsExpandedProjects: subscriptions.state.subsExpandedProjects,
+            subsUsersMap: subscriptions.state.subsUsersMap,
             // Сотрудники
-            selectedEmployeeName,
-            mergedAdminStats,
-            employeeDialogs,
-            employeeLoading,
-            employeeProjectsGrouped,
-            employeeSummary,
+            selectedEmployeeName: employees.state.selectedEmployeeName,
+            mergedAdminStats: employees.state.mergedAdminStats,
+            employeeDialogs: employees.state.employeeDialogs,
+            employeeLoading: employees.state.employeeLoading,
+            employeeProjectsGrouped: employees.state.employeeProjectsGrouped,
+            employeeSummary: employees.state.employeeSummary,
         },
         actions: {
             loadDashboard,
-            setPeriodType,
-            setCustomStartDate,
-            setCustomEndDate,
-            setSelectedProjectId,
-            setProjectSearch,
-            toggleProjectExpand,
-            handleProjectFilter,
-            handleSyncFromLogs,
-            setSyncResult,
-            handleReconcile,
-            setReconcileResult,
-            toggleDirectionFilter,
-            filterUsersByDirection,
-            toggleAdminExpand,
-            setActiveTab: handleSetActiveTab,
-            toggleIncomingSubFilter,
-            setIncomingSubFilter,
+            setPeriodType: filters.actions.setPeriodType,
+            setCustomStartDate: filters.actions.setCustomStartDate,
+            setCustomEndDate: filters.actions.setCustomEndDate,
+            setSelectedProjectId: filters.actions.setSelectedProjectId,
+            setProjectSearch: filters.actions.setProjectSearch,
+            toggleProjectExpand: projectUsers.actions.toggleProjectExpand,
+            handleProjectFilter: filters.actions.handleProjectFilter,
+            handleSyncFromLogs: sync.actions.handleSyncFromLogs,
+            setSyncResult: sync.actions.setSyncResult,
+            handleReconcile: sync.actions.handleReconcile,
+            setReconcileResult: sync.actions.setReconcileResult,
+            toggleDirectionFilter: filters.actions.toggleDirectionFilter,
+            filterUsersByDirection: filters.actions.filterUsersByDirection,
+            toggleAdminExpand: admins.actions.toggleAdminExpand,
+            setActiveTab: filters.actions.setActiveTab,
+            toggleIncomingSubFilter: filters.actions.toggleIncomingSubFilter,
+            setIncomingSubFilter: filters.actions.setIncomingSubFilter,
             // Подписки
-            loadSubscriptions,
-            toggleSubsProjectExpand,
+            loadSubscriptions: subscriptions.actions.loadSubscriptions,
+            toggleSubsProjectExpand: subscriptions.actions.toggleSubsProjectExpand,
             // Сотрудники
-            selectEmployee,
+            selectEmployee: employees.actions.selectEmployee,
         },
     };
 }

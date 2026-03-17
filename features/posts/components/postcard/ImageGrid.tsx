@@ -3,10 +3,10 @@ import { ScheduledPost } from '../../../../shared/types';
 import { LazyImage } from '../../../../shared/components/LazyImage';
 
 /**
- * Минималистичные превью-квадратики изображений поста.
- * Показываем до 5 маленьких квадратов в ряд, при большем кол-ве — "+N".
+ * Превью изображений поста в сетке 2×2.
+ * Показываем до 3 картинок, в 4-й ячейке — "+N" (сколько ещё вложений).
  */
-const MAX_VISIBLE = 5;
+const MAX_VISIBLE = 3;
 
 export const ImageGrid: React.FC<{ images: ScheduledPost['images'] }> = React.memo(({ images }) => {
     if (images.length === 0) return null;
@@ -15,11 +15,11 @@ export const ImageGrid: React.FC<{ images: ScheduledPost['images'] }> = React.me
     const remainingCount = images.length - MAX_VISIBLE;
 
     return (
-        <div className="flex items-center gap-1.5 mt-2 mb-1">
+        <div className="grid grid-cols-2 gap-1.5 mt-2 mb-1">
             {visibleImages.map((img, idx) => (
                 <div
                     key={img.id}
-                    className="w-10 h-10 flex-shrink-0 rounded-md overflow-hidden bg-gray-100"
+                    className="aspect-square rounded-md overflow-hidden bg-gray-100"
                 >
                     <LazyImage
                         src={img.url}
@@ -29,8 +29,8 @@ export const ImageGrid: React.FC<{ images: ScheduledPost['images'] }> = React.me
                 </div>
             ))}
             {remainingCount > 0 && (
-                <div className="w-10 h-10 flex-shrink-0 rounded-md bg-gray-100 flex items-center justify-center">
-                    <span className="text-[11px] font-semibold text-gray-500">+{remainingCount}</span>
+                <div className="aspect-square rounded-md bg-gray-100 flex items-center justify-center">
+                    <span className="text-xs font-semibold text-gray-500">+{remainingCount}</span>
                 </div>
             )}
         </div>

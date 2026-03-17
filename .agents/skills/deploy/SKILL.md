@@ -26,6 +26,25 @@ description: Развёртывание проекта VK Content Planner на Y
 | `shared/config.ts` | Смотрит на VM | ✅ |
 | SSL сертификат | Let's Encrypt, автопродление | ✅ До 20.05.2026 |
 
+### Первичная настройка новой VM
+
+Если нужно развернуть на **новой VM** (старая удалена/недоступна):
+
+1. Создать VM в Yandex Cloud (Ubuntu 22.04+, 2 vCPU, 4 GB RAM)
+2. Настроить DNS: `api.dosmmit.ru` → IP новой VM
+3. Загрузить файлы:
+   ```powershell
+   scp -i ~/.ssh/id_ed25519 backend_python/vm_deploy/.env.production yc-user@<IP>:/home/yc-user/vkplanner/.env.production
+   scp -i ~/.ssh/id_ed25519 backend_python/vm_deploy/docker-compose.yml yc-user@<IP>:/home/yc-user/vkplanner/docker-compose.yml
+   scp -i ~/.ssh/id_ed25519 backend_python/vm_deploy/vm_init.sh yc-user@<IP>:~/vm_init.sh
+   ```
+4. Запустить скрипт инициализации:
+   ```powershell
+   ssh -i ~/.ssh/id_ed25519 yc-user@<IP> "chmod +x ~/vm_init.sh && sudo ~/vm_init.sh"
+   ```
+
+Скрипт `vm_init.sh` автоматически установит: nginx, fail2ban, UFW, SSL, Docker и запустит бэкенд. Все настройки безопасности (отключение SSH-пароля, файрвол, бан атакующих) применяются автоматически.
+
 ---
 
 ## Процедура: Деплой бэкенда (VM) — ОСНОВНОЙ СПОСОБ

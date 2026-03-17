@@ -26,6 +26,7 @@ from services.admin_tools_bulk import (
     refresh_all_group_admins_task,
     refresh_all_subscribers_task,
     refresh_all_posts_task,
+    refresh_all_mailing_task,
 )
 
 # Массовое назначение администраторов
@@ -45,6 +46,7 @@ __all__ = [
     "refresh_all_group_admins_task",
     "refresh_all_subscribers_task",
     "refresh_all_posts_task",
+    "refresh_all_mailing_task",
     # Назначение админов
     "promote_to_admins",
     "_find_admin_token_for_group",

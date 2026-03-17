@@ -14,6 +14,7 @@ from crud import messages_crud
 from services.vk_api.token_manager import call_vk_api_for_group
 from services.vk_api.api_client import VkApiError
 from services import global_variable_service
+from services.messages.vk_client import CHAT_PEER_ID_START
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +29,16 @@ def send_message(
     sender_id: str = None,
     sender_name: str = None,
     attachment: str = None,
+    reply_to: int = None,
+    forward_messages: str = None,
+    forward: str = None,
+    keyboard: str = None,
 ) -> Dict[str, Any]:
     """
     Отправляет сообщение пользователю через VK API messages.send.
     Сохраняет отправленное сообщение в кэш.
     """
-    if not message.strip() and not attachment:
+    if not message.strip() and not attachment and not forward:
         raise HTTPException(status_code=400, detail="Сообщение не может быть пустым")
 
     # Подставляем глобальные переменные ({global_*}) в текст сообщения
@@ -65,14 +70,37 @@ def send_message(
 
     try:
         # Формируем параметры запроса
+        # Для групповых чатов (peer_id >= 2000000000) VK API требует peer_id
+        if user_id >= CHAT_PEER_ID_START:
+            id_param = {"peer_id": user_id}
+        else:
+            id_param = {"user_id": user_id}
+
+        # Подпись менеджера при пересылке в групповой чат
+        if forward and user_id >= CHAT_PEER_ID_START and sender_name:
+            signature = f"\n\nМенеджер: {sender_name}"
+            message_text = (message_text + signature) if message_text.strip() else signature.strip()
+
         send_params = {
-            "user_id": user_id,
+            **id_param,
             "message": message_text,
             "random_id": random.randint(1, 2**31),
         }
         # Добавляем вложения, если есть (строка вида "photo123_456,photo123_789")
         if attachment:
             send_params["attachment"] = attachment
+        # Ответ на конкретное сообщение
+        if reply_to:
+            send_params["reply_to"] = reply_to
+        # Пересылка нескольких сообщений
+        if forward_messages:
+            send_params["forward_messages"] = forward_messages
+        # Пересылка между диалогами (JSON с peer_id, conversation_message_ids, owner_id)
+        if forward:
+            send_params["forward"] = forward
+        # Inline keyboard (JSON)
+        if keyboard:
+            send_params["keyboard"] = keyboard
 
         # Отправляем через VK API
         result = call_vk_api_for_group(

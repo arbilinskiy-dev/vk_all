@@ -10,6 +10,7 @@ from services import vk_service, task_monitor
 from services.lists.list_sync_utils import get_all_project_tokens, filter_admin_tokens, fetch_users_smart_parallel
 from services.post_helpers import get_rounded_timestamp
 from database import SessionLocal
+from config import settings
 
 from .config import MULTI_POST_BATCH_SIZE, LIKES_INNER_COUNT, LIKES_ITERATIONS, COMMENTS_INNER_COUNT, COMMENTS_ITERATIONS, INTERACTIONS_MAX_WORKERS
 from .workers import _fetch_multi_post_batch, _fetch_deep_scan_batch
@@ -264,8 +265,15 @@ def refresh_interactions_task(task_id: str, project_id: str, date_from_iso: str,
         
         try:
             fields = 'sex,bdate,city,country,photo_100,domain,has_mobile,last_seen,deactivated,is_closed,can_access_closed,platform'
-            # Используем fetch_users_smart_parallel для быстрого сбора
-            enriched_profiles = fetch_users_smart_parallel(list(all_involved_ids), unique_tokens, fields, project_id)
+            # Приоритет: VK_SERVICE_KEY → fallback на user-токены
+            service_key = settings.vk_service_key
+            if service_key:
+                enrich_tokens = [service_key]
+                enrich_extra = {'lang': 'ru'}  # Обязательно для сервисного ключа
+            else:
+                enrich_tokens = unique_tokens
+                enrich_extra = None
+            enriched_profiles = fetch_users_smart_parallel(list(all_involved_ids), enrich_tokens, fields, project_id, extra_params=enrich_extra)
             
             updates = []
             for u in enriched_profiles:

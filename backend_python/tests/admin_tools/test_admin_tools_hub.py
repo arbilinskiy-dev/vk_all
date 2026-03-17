@@ -11,9 +11,9 @@ class TestAdminToolsHub:
     """Проверяем, что хаб правильно реэкспортирует все функции."""
 
     def test_all_exports_defined(self):
-        """__all__ содержит ожидаемое количество элементов (9 функций)."""
+        """__all__ содержит ожидаемое количество элементов (10 функций)."""
         from services.admin_tools_service import __all__ as exports
-        assert len(exports) == 9, f"Ожидалось 9 элементов в __all__, получено {len(exports)}"
+        assert len(exports) == 10, f"Ожидалось 10 элементов в __all__, получено {len(exports)}"
 
     def test_all_names_present(self):
         """Все ожидаемые имена присутствуют в __all__."""
@@ -27,6 +27,7 @@ class TestAdminToolsHub:
             "refresh_all_group_admins_task",
             "refresh_all_subscribers_task",
             "refresh_all_posts_task",
+            "refresh_all_mailing_task",
             "promote_to_admins",
             "_find_admin_token_for_group",
         ]
@@ -60,10 +61,12 @@ class TestAdminToolsHub:
             refresh_all_group_admins_task,
             refresh_all_subscribers_task,
             refresh_all_posts_task,
+            refresh_all_mailing_task,
         )
         assert callable(refresh_all_group_admins_task)
         assert callable(refresh_all_subscribers_task)
         assert callable(refresh_all_posts_task)
+        assert callable(refresh_all_mailing_task)
 
     def test_promote_functions_importable(self):
         """Функции назначения админов импортируются без ошибок."""

@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 from database import Base, get_db
 from main import app
 from models_library.dlvry_daily_stats import DlvryDailyStats
+from models_library.dlvry_affiliates import DlvryProjectAffiliate
 from models_library.projects import Project
 
 
@@ -50,6 +51,7 @@ def test_db():
     # Создаём нужные таблицы
     DlvryDailyStats.__table__.create(bind=engine, checkfirst=True)
     Project.__table__.create(bind=engine, checkfirst=True)
+    DlvryProjectAffiliate.__table__.create(bind=engine, checkfirst=True)
 
     TestSession = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     session = TestSession()

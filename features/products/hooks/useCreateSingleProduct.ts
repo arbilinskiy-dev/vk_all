@@ -1,6 +1,6 @@
 // FIX: Import 'React' namespace to resolve type errors for React.ChangeEvent and React.MouseEvent.
 import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
-import { MarketAlbum, Project, MarketItem } from '../../../shared/types';
+import { MarketAlbum, Project, ProjectSummary, MarketItem } from '../../../shared/types';
 import { useProjects } from '../../../contexts/ProjectsContext';
 
 interface UseCreateSingleProductProps {
@@ -39,8 +39,6 @@ export const useCreateSingleProduct = ({ onClose, onSave, projectId, initialData
         projects.forEach(p => {
             if (p.teams && p.teams.length > 0) {
                 p.teams.forEach(t => teams.add(t));
-            } else if (p.team) {
-                teams.add(p.team);
             }
         });
         return Array.from(teams).sort();

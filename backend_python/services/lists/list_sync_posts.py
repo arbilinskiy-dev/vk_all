@@ -11,6 +11,7 @@ from services import vk_service, task_monitor
 from services.post_helpers import get_rounded_timestamp
 from services.vk_api.api_client import call_vk_api as raw_vk_call
 from database import SessionLocal
+from config import settings
 # Импортируем утилиты для получения токенов и скачивания юзеров
 from .list_sync_utils import get_all_project_tokens, fetch_users_smart_parallel
 
@@ -254,12 +255,21 @@ def refresh_posts_task(task_id: str, project_id: str, user_token: str, limit: st
                 # Скачиваем данные профилей авторов
                 fields = 'sex,bdate,city,country,photo_100,domain,has_mobile,last_seen,is_closed,can_access_closed,deactivated'
                 
-                # Используем вспомогательную функцию для скачивания (она уже умеет чанкинг и ротацию)
+                # Приоритет: VK_SERVICE_KEY (не тратит лимиты user-токенов), fallback на user-токены
+                service_key = settings.vk_service_key
+                if service_key:
+                    author_tokens = [service_key]
+                    author_extra = {'lang': 'ru'}  # Обязательно для сервисного ключа — без этого транслит
+                else:
+                    author_tokens = tokens
+                    author_extra = None
+                
                 authors_profiles = fetch_users_smart_parallel(
                     list(collected_author_ids), 
-                    tokens, 
+                    author_tokens, 
                     fields, 
-                    project_id
+                    project_id,
+                    extra_params=author_extra
                 )
                 
                 # Подготавливаем данные для БД (нормализованный формат — профиль идёт в vk_profiles)

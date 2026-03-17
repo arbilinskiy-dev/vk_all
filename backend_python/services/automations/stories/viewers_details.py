@@ -10,6 +10,7 @@ import requests
 import time
 import json
 from datetime import datetime, timezone
+from config import settings
 
 # Константы
 MAX_USERS_PER_REQUEST = 100   # Лимит users.get (VK обрезает ответ до 100 при community token)
@@ -228,11 +229,21 @@ def _fetch_users_details(
 ) -> List[Dict[str, Any]]:
     """
     Получает детальную информацию о пользователях через users.get.
+    Приоритет: VK_SERVICE_KEY → fallback на user_token.
     Обрабатывает чанками по 100.
     """
+    # Приоритет: сервисный ключ (не тратит лимиты user-токенов)
+    service_key = settings.vk_service_key
+    if service_key:
+        token = service_key
+        extra = {"fields": USER_FIELDS, "lang": "ru"}  # lang=ru обязателен для сервисного ключа
+    else:
+        token = user_token
+        extra = {"fields": USER_FIELDS}
+    
     results = _chunked_vk_request(
         "users.get", user_ids, MAX_USERS_PER_REQUEST,
-        "user_ids", {"fields": USER_FIELDS}, user_token,
+        "user_ids", extra, token,
         permanent_errors=[5, 15]
     )
 

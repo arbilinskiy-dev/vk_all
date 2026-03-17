@@ -26,8 +26,10 @@ from db_migrations import (
     cleanup_legacy_tables
 )
 from db_migrations import user_management
+from db_migrations import chat_actions as chat_actions_migration
 from db_migrations import dlvry_orders as dlvry_orders_migration
 from db_migrations import dlvry_daily_stats as dlvry_daily_stats_migration
+from db_migrations import dlvry_affiliates as dlvry_affiliates_migration
 from db_migrations import membership_history
 
 def run_migrations(engine: Engine):
@@ -61,11 +63,17 @@ def run_migrations(engine: Engine):
     auth_migration.migrate(engine)
     user_management.migrate(engine)
 
+    # Действия менеджеров в диалогах (хронология чата)
+    chat_actions_migration.migrate(engine)
+
     # DLVRY: таблицы заказов, позиций и логов вебхуков
     dlvry_orders_migration.migrate(engine)
 
     # DLVRY: дневная статистика (из DLVRY API)
     dlvry_daily_stats_migration.migrate(engine)
+
+    # DLVRY: филиалы проектов (1 проект → N филиалов) + миграция из projects.dlvry_affiliate_id
+    dlvry_affiliates_migration.migrate(engine)
 
     # История вступлений/выходов (аналитический лог)
     membership_history.migrate(engine)

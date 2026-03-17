@@ -1,13 +1,16 @@
 
 import time
 from typing import List, Dict
-from services.vk_api.api_client import call_vk_api as raw_vk_call
+from services.vk_api.api_client import call_vk_api as raw_vk_call, VkApiError
 from .config import INNER_REQ_COUNT
 
 def _fetch_batch_execute_members(tokens: List[str], chunk_index: int, group_id: int, offset: int, count_to_fetch: int, fields: str, project_id: str) -> List[Dict]:
     """
     Вспомогательная функция (воркер).
     Загружает пачку участников, используя VK Script (execute).
+    
+    При получении flood control (VkApiError code=9) — пробрасывает ошибку наверх,
+    чтобы вызывающий код мог принять решение (fallback на другие токены / отключение токена).
     """
     if not tokens:
         return []
@@ -53,6 +56,11 @@ def _fetch_batch_execute_members(tokens: List[str], chunk_index: int, group_id: 
             
             return items
 
+        except VkApiError as e:
+            if e.code == 9:
+                # Flood control — пробрасываем наверх, не пробуем другие токены
+                raise
+            time.sleep(1.5)
         except Exception as e:
             time.sleep(1.5)
 

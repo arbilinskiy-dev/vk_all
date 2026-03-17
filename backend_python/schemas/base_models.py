@@ -7,7 +7,7 @@
 from .models.media import PhotoAttachment, Attachment, Album, Photo
 from .models.tags import TagBase, TagCreate, TagUpdate, Tag
 from .models.ai import AiPromptPresetBase, AiPromptPresetCreate, AiPromptPresetUpdate, AiPromptPreset
-from .models.projects import Project, User, UserResponse, Variable
+from .models.projects import ProjectSummary, Project, User, UserResponse, Variable
 from .models.posts import PostBase, ScheduledPost, SystemPost, SuggestedPost, Note
 from .models.settings import GlobalVariableDefinition, ProjectGlobalVariableValue
 from .models.market import MarketCategory, MarketPrice, MarketAlbum, MarketItem
@@ -49,7 +49,7 @@ __all__ = [
     "PhotoAttachment", "Attachment", "Album", "Photo",
     "TagBase", "TagCreate", "TagUpdate", "Tag",
     "AiPromptPresetBase", "AiPromptPresetCreate", "AiPromptPresetUpdate", "AiPromptPreset",
-    "Project", "User", "UserResponse", "Variable",
+    "ProjectSummary", "Project", "User", "UserResponse", "Variable",
     "PostBase", "ScheduledPost", "SystemPost", "SuggestedPost", "Note",
     "GlobalVariableDefinition", "ProjectGlobalVariableValue",
     "MarketCategory", "MarketPrice", "MarketAlbum", "MarketItem",

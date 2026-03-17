@@ -13,6 +13,7 @@ class ReviewContestSettings(BaseModel):
     
     finishCondition: str
     targetCount: Optional[int] = None
+    targetCountMode: Optional[str] = 'exact'  # exact | minimum | maximum
     finishDate: Optional[str] = None
     finishDayOfWeek: Optional[int] = None
     finishTime: Optional[str] = None

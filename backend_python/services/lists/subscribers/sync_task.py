@@ -7,9 +7,9 @@ import crud
 import models
 from services import vk_service, task_monitor
 from services.post_helpers import get_rounded_timestamp
-from services.vk_api.api_client import call_vk_api as raw_vk_call
+from services.vk_api.api_client import call_vk_api as raw_vk_call, VkApiError
 from database import SessionLocal
-from services.lists.list_sync_utils import get_all_project_tokens
+from services.lists.list_sync_utils import get_all_project_tokens, get_community_tokens
 
 from .config import EXECUTE_BATCH_SIZE
 from .workers import _fetch_batch_execute_members
@@ -37,8 +37,14 @@ def refresh_subscribers_task(task_id: str, project_id: str, user_token: str):
         project_vk_id = project.vkProjectId
         project_name = project.name
         
-        # 1. Сбор токенов
-        unique_tokens = get_all_project_tokens(db, user_token)
+        # 1. Сбор токенов: приоритет — токены сообщества, fallback — системные
+        community_tokens = get_community_tokens(project)
+        if community_tokens:
+            unique_tokens = community_tokens
+            print(f"SERVICE: Используем токены сообщества для '{project_name}' ({len(community_tokens)} шт.)")
+        else:
+            unique_tokens = get_all_project_tokens(db, user_token)
+            print(f"SERVICE: Нет токенов сообщества для '{project_name}', используем системные ({len(unique_tokens)} шт.)")
 
         # 2. Загрузка существующих ID для сравнения (ВАЖНО: делаем это до скачивания новых)
         # Это фиксит баг с историей - мы точно знаем, кто был в базе ДО начала обновления
@@ -58,6 +64,7 @@ def refresh_subscribers_task(task_id: str, project_id: str, user_token: str):
     # --- ЭТАП 2: СКАЧИВАНИЕ ИЗ VK (Без БД) ---
     all_members = []
     failed_chunks = [] # Очередь для повторных попыток
+    using_community_tokens = bool(community_tokens)  # Флаг: community-токены ли сейчас активны
 
     try:
         print(f"SERVICE: Refreshing subscribers for '{project_name}' using {len(unique_tokens)} tokens...")
@@ -94,6 +101,7 @@ def refresh_subscribers_task(task_id: str, project_id: str, user_token: str):
 
         total_fetched = 0
         max_workers = min(len(unique_tokens), 15)
+        flood_detected = False
         
         # --- ФАЗА 2.1: ПАРАЛЛЕЛЬНАЯ ЗАГРУЗКА ---
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -112,9 +120,60 @@ def refresh_subscribers_task(task_id: str, project_id: str, user_token: str):
                     all_members.extend(items)
                     total_fetched += len(items)
                     task_monitor.update_task(task_id, "fetching", loaded=total_fetched, total=total_vk_count)
+                except VkApiError as e:
+                    if e.code == 9:
+                        flood_detected = True
+                        print(f"SERVICE: FLOOD CONTROL на чанке offset {params['offset']}")
+                    failed_chunks.append(params)
                 except Exception as e:
                     print(f"Chunk failed (offset {params['offset']}): {e}. Adding to retry queue.")
                     failed_chunks.append(params)
+
+        # --- ФАЗА 2.1.5: FALLBACK НА СИСТЕМНЫЕ ТОКЕНЫ (при flood control community-токенов) ---
+        if flood_detected and using_community_tokens and failed_chunks:
+            print(f"SERVICE: Flood control на community-токенах! Переключаемся на системные токены для {len(failed_chunks)} чанков...")
+            task_monitor.update_task(task_id, "fetching", message="Flood control — переход на системные токены...")
+            
+            # Получаем системные токены (короткая сессия БД)
+            db_fallback = SessionLocal()
+            try:
+                system_tokens = get_all_project_tokens(db_fallback, user_token)
+            finally:
+                db_fallback.close()
+            
+            if system_tokens:
+                print(f"SERVICE: Fallback на {len(system_tokens)} системных токенов")
+                unique_tokens = system_tokens
+                using_community_tokens = False
+                max_workers = min(len(unique_tokens), 15)
+                
+                time.sleep(2.0)  # Пауза перед повторной попыткой
+                
+                # Параллельная загрузка недокачанных чанков системными токенами
+                fallback_failed = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    future_to_params = {}
+                    for i, params in enumerate(failed_chunks):
+                        future = executor.submit(
+                            _fetch_batch_execute_members,
+                            unique_tokens, i, numeric_id, params['offset'], params['count'], fields, project_id
+                        )
+                        future_to_params[future] = params
+                    
+                    for future in concurrent.futures.as_completed(future_to_params):
+                        params = future_to_params[future]
+                        try:
+                            items = future.result()
+                            all_members.extend(items)
+                            total_fetched += len(items)
+                            task_monitor.update_task(task_id, "fetching", loaded=total_fetched, total=total_vk_count)
+                        except Exception as e:
+                            print(f"Fallback chunk failed (offset {params['offset']}): {e}")
+                            fallback_failed.append(params)
+                
+                failed_chunks = fallback_failed  # Обновляем список для retry-фазы
+            else:
+                print(f"SERVICE: Нет системных токенов для fallback!")
 
         # --- ФАЗА 2.2: ПОСЛЕДОВАТЕЛЬНАЯ ПОВТОРНАЯ ОБРАБОТКА (RETRY) ---
         if failed_chunks:

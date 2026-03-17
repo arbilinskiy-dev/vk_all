@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event';
 vi.mock('../../services/api/management.api', () => ({
     refreshAllSubscribers: vi.fn().mockResolvedValue({ taskId: 'task-sub-1' }),
     refreshAllPosts: vi.fn().mockResolvedValue({ taskId: 'task-posts-1' }),
+    refreshAllMailing: vi.fn().mockResolvedValue({ taskId: 'task-mailing-1' }),
 }));
 
 vi.mock('../../services/api/lists.api', () => ({
@@ -56,9 +57,15 @@ describe('AdminToolsSettings', () => {
         expect(screen.getByText('Собрать посты')).toBeInTheDocument();
     });
 
-    it('отображает описания для обеих операций', () => {
+    it('отображает строку "Обновить рассылку"', () => {
+        render(<AdminToolsSettings />);
+        expect(screen.getByText('Обновить рассылку')).toBeInTheDocument();
+    });
+
+    it('отображает описания для всех трёх операций', () => {
         render(<AdminToolsSettings />);
         expect(screen.getByText(/Синхронизация списка подписчиков/)).toBeInTheDocument();
+        expect(screen.getByText(/Синхронизация подписчиков рассылки/)).toBeInTheDocument();
         expect(screen.getByText(/Сбор постов со стены/)).toBeInTheDocument();
     });
 
@@ -73,10 +80,10 @@ describe('AdminToolsSettings', () => {
 
     // ─── Кнопки управления ──────────────────────────────────────────────
 
-    it('отображает кнопки "Старт" для обеих операций', () => {
+    it('отображает кнопки "Старт" для всех трёх операций', () => {
         render(<AdminToolsSettings />);
         const startButtons = screen.getAllByText('Старт');
-        expect(startButtons).toHaveLength(2);
+        expect(startButtons).toHaveLength(3);
     });
 
     it('отображает кнопки выбора лимита постов (100, 1000, Все)', () => {
@@ -117,5 +124,19 @@ describe('AdminToolsSettings', () => {
         // API управления должен быть вызван
         const mgmt = await import('../../services/api/management.api');
         expect(mgmt.refreshAllSubscribers).toHaveBeenCalledTimes(1);
+    });
+
+    // ─── Взаимодействие: запуск рассылки ────────────────────────────────
+
+    it('запускает задачу рассылки по клику на "Старт"', async () => {
+        const user = userEvent.setup();
+        render(<AdminToolsSettings />);
+
+        // Вторая кнопка «Старт» — рассылка (между подписчиками и постами)
+        const startButtons = screen.getAllByText('Старт');
+        await user.click(startButtons[1]);
+
+        const mgmt = await import('../../services/api/management.api');
+        expect(mgmt.refreshAllMailing).toHaveBeenCalledTimes(1);
     });
 });

@@ -10,10 +10,32 @@ import models
 from . import vk_service
 from .vk_service import VkApiError
 
-def get_all_projects_for_management(db: Session) -> List[models.Project]:
-    """Возвращает все НЕАРХИВИРОВАННЫЕ проекты из БД."""
+def get_all_projects_for_management(db: Session):
+    """Возвращает все НЕАРХИВИРОВАННЫЕ проекты из БД с количеством DLVRY-филиалов."""
+    from sqlalchemy import text
     print("SERVICE: Fetching all active projects for management page.")
-    return crud.get_all_projects(db)
+    projects = crud.get_all_projects(db)
+
+    # Одним запросом получаем affiliate_id для каждого проекта
+    try:
+        rows = db.execute(text(
+            "SELECT project_id, affiliate_id FROM dlvry_project_affiliates ORDER BY created_at"
+        )).fetchall()
+        affiliates_map: dict = {}  # project_id → [affiliate_id, ...]
+        for row in rows:
+            affiliates_map.setdefault(row[0], []).append(row[1])
+    except Exception:
+        affiliates_map = {}
+
+    # Подставляем count и ids в каждый проект через dict
+    result = []
+    for p in projects:
+        data = schemas.Project.model_validate(p).model_dump()
+        ids = affiliates_map.get(p.id, [])
+        data['dlvry_affiliates_count'] = len(ids)
+        data['dlvry_affiliate_ids'] = ids
+        result.append(data)
+    return result
 
 def get_archived_projects(db: Session) -> List[models.Project]:
     """Возвращает все архивированные проекты."""
@@ -31,10 +53,17 @@ def permanently_delete_project(db: Session, project_id: str):
 def update_projects(db: Session, projects_to_update: List[schemas.Project]):
     """Массово обновляет проекты."""
     print(f"SERVICE: Starting bulk update for {len(projects_to_update)} projects.")
+    failed_ids = []
     for project_data in projects_to_update:
         updated = crud.update_project_settings(db, project_data)
         if not updated:
+            failed_ids.append(project_data.id)
             print(f"WARNING: Project with id {project_data.id} not found during bulk update. Skipping.")
+    if failed_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Не удалось обновить проекты (не найдены в БД): {', '.join(failed_ids)}"
+        )
     print("SERVICE: Bulk update completed.")
 
 def add_projects_by_urls(db: Session, urls_string: str, user_token: str) -> dict:

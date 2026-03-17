@@ -49,6 +49,13 @@
     animation: chart-area-fade 1.2s ease-out forwards;
 }
 
+/* Анимация полоски загрузки графика */
+@keyframes loading-bar {
+    0% { transform: translateX(-100%); }
+    50% { transform: translateX(200%); }
+    100% { transform: translateX(200%); }
+}
+
 /* Анимация секторов PieChart */
 @keyframes pie-spin-in {
     from { 

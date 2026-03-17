@@ -1,9 +1,9 @@
 import { ReleaseUpdate } from './updatesData';
 
 export const release12Data: ReleaseUpdate = {
-    date: 'хх.хх.хххх',
+    date: '06.03.2026',
     summary: 'Исправление адаптивности, анимированные счётчики и графики, полиш UX модуля Списки',
-    status: 'in-progress',
+    status: 'published',
     entries: [
         {
             id: 'messages-templates-overflow-adaptivity',
@@ -48,6 +48,22 @@ export const release12Data: ReleaseUpdate = {
             userInstructions: ['Откройте любой список со статистикой — графики появятся плавно', 'При смене списка графики перестроятся с анимацией'],
             userBenefits: 'Графики выглядят профессионально и не появляются рывками.',
             technicalDetails: 'Chart.tsx: AnimatedPolyline компонент — ref→getTotalLength()→strokeDasharray/strokeDashoffset→double rAF→transition stroke-dashoffset 1.2s ease-out. Area path: className="animate-chart-area" (CSS @keyframes chart-area-fade opacity 0→1 1.2s). PieChart.tsx: SVG className="animate-pie-chart" (@keyframes pie-spin-in scale 0.7+rotate -90→scale 1+rotate -90, 0.8s). Стаггер секторов: style opacity:0 animation chart-area-fade 0.5s ease-out ${i*0.1}s forwards. UserStatsCards.tsx (AgeCard, BirthdayCard): bar transition-all duration-[800ms] ease-out (было 300ms). UserStatsComponents.tsx (ProgressBar): width transition-all duration-[800ms] ease-out. CSS в index.css.',
+        },
+        {
+            id: 'reviews-contest-target-count-mode',
+            type: 'feature',
+            title: 'Режимы подсчёта участников в конкурсе отзывов',
+            section: 'Автоматизации — Конкурс отзывов',
+            impactType: 'both',
+            userDescription: 'В настройках конкурса отзывов появился выбор режима интерпретации количества участников: «Ровно», «Минимум» и «Максимум». Раньше число участников всегда работало как точное значение — теперь можно гибко настроить поведение.',
+            userSolution: 'Добавлен сегментированный переключатель с тремя режимами в блоке «Условия завершения». Динамические подсказки объясняют поведение каждого режима. Бэкенд-логика (processor, finalizer) адаптирована под все три режима.',
+            userInstructions: [
+                'Откройте настройки конкурса отзывов',
+                'В блоке «Условия завершения» под полем количества выберите режим: = Ровно, ≥ Минимум или ≤ Максимум',
+                'Подсказка под полем автоматически обновится под выбранный режим',
+            ],
+            userBenefits: 'Гибкая настройка правил розыгрыша: точное количество, минимальный порог или максимальный лимит участников.',
+            technicalDetails: 'Новое поле target_count_mode (exact|minimum|maximum) в модели ReviewContest + миграция. Processor: exact/maximum — cap at target (break), minimum — no cap. Finalizer: exact/minimum — skip if < target, maximum — never skip (кроме 0). UI: CountModeSelector (segmented control), dynamic hints. Покрыто 40 тестами (11 model-field contract + 29 бизнес-логика).',
         },
         {
             id: 'skills-update-animations-standards',

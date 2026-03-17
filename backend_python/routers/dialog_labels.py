@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from crud import dialog_label_crud
+from crud import chat_action_crud
 from services.auth_middleware import get_current_user, CurrentUser
 from services.action_tracker import track
 from schemas.dialog_label_schemas import (
@@ -139,6 +140,46 @@ def delete_label(
 # Назначение / снятие меток с диалогов
 # =============================================================================
 
+def _broadcast_label_action(db, project_id, vk_user_id, manager_id, manager_name, action_type, label_id):
+    """Записывает действие с меткой в chat_actions + SSE."""
+    from services.sse_manager import sse_manager
+    from services.sse_event import SSEEvent
+
+    # Получаем название метки для отображения
+    label = dialog_label_crud.get_label_by_id(db, label_id)
+    meta = {"label_id": label_id}
+    if label:
+        meta["label_name"] = label.name
+        meta["label_color"] = label.color
+
+    action = chat_action_crud.log_chat_action(
+        db=db,
+        project_id=project_id,
+        vk_user_id=vk_user_id,
+        manager_id=manager_id,
+        manager_name=manager_name,
+        action_type=action_type,
+        metadata=meta,
+    )
+
+    action_data = {
+        "vk_user_id": vk_user_id,
+        "action": {
+            "id": f"action_{action.id}",
+            "action_type": action_type,
+            "manager_id": manager_id,
+            "manager_name": manager_name,
+            "timestamp": action.created_at.isoformat() if action.created_at else None,
+            "metadata": meta,
+        },
+    }
+    sse_manager.publish(SSEEvent(
+        event_type="chat_action",
+        project_id=project_id,
+        data=action_data,
+    ))
+
+
 @router.post("/assign")
 def assign_label(
     body: DialogLabelAssignRequest,
@@ -153,6 +194,12 @@ def assign_label(
           entity_type="dialog_label", entity_id=body.label_id,
           project_id=body.project_id,
           metadata={"vk_user_id": body.vk_user_id})
+    # Записываем в хронологию чата
+    _broadcast_label_action(
+        db, body.project_id, body.vk_user_id,
+        current_user.user_id, current_user.username,
+        "label_assign", body.label_id,
+    )
     return {"success": True, "created": created}
 
 
@@ -170,6 +217,12 @@ def unassign_label(
           entity_type="dialog_label", entity_id=body.label_id,
           project_id=body.project_id,
           metadata={"vk_user_id": body.vk_user_id})
+    # Записываем в хронологию чата
+    _broadcast_label_action(
+        db, body.project_id, body.vk_user_id,
+        current_user.user_id, current_user.username,
+        "label_unassign", body.label_id,
+    )
     return {"success": True, "removed": removed}
 
 

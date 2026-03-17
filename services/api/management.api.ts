@@ -135,12 +135,14 @@ export interface PromoteToAdminsResponse {
 export const promoteToAdmins = async (
     groupIds: number[],
     userIds: number[],
-    role: string = 'administrator'
+    role: string = 'administrator',
+    includeEnvToken: boolean = false
 ): Promise<PromoteToAdminsResponse> => {
     return callApi<PromoteToAdminsResponse>('management/administered-groups/promote-to-admins', {
         group_ids: groupIds,
         user_ids: userIds,
-        role
+        role,
+        include_env_token: includeEnvToken
     });
 };
 
@@ -163,4 +165,11 @@ export const refreshAllPosts = async (
     mode: 'limit' | 'actual' = 'limit'
 ): Promise<{ taskId: string }> => {
     return callApi<{ taskId: string }>('management/refresh-all-posts', { limit, mode });
+};
+
+/**
+ * Запускает фоновую задачу для обновления рассылки (dialogs) ВСЕХ проектов с community-токенами.
+ */
+export const refreshAllMailing = async (): Promise<{ taskId: string }> => {
+    return callApi<{ taskId: string }>('management/refresh-all-mailing');
 };

@@ -246,6 +246,10 @@ class SystemListPayload(BaseModel):
     statsDateFrom: Optional[str] = None # YYYY-MM-DD for custom period
     statsDateTo: Optional[str] = None # YYYY-MM-DD for custom period
 
+class PostsByIdsPayload(BaseModel):
+    projectId: str
+    postIds: List[int]  # Список vk_post_id
+
 class AnalyzeMailingPayload(BaseModel):
     projectId: str
     mode: str = 'missing' # 'missing' (Light) or 'full' (Heavy)
@@ -327,9 +331,14 @@ class UpdateContextFieldPayload(BaseModel):
     is_global: Optional[bool] = None
     project_ids: Optional[List[str]] = None
 
+class ContextValueItem(BaseModel):
+    """Элемент обновления значения контекста проекта."""
+    project_id: str
+    field_id: str
+    value: Optional[str] = None
+
 class UpdateContextValuesPayload(BaseModel):
-    # List of { project_id, field_id, value }
-    values: List[Dict[str, Any]]
+    values: List[ContextValueItem]
 
 # --- Bulk Actions ---
 class BulkRefreshPayload(BaseModel):
@@ -364,3 +373,4 @@ class PromoteToAdminsPayload(BaseModel):
     group_ids: List[int]           # ID групп VK (проектов)
     user_ids: List[int]            # ID пользователей VK (системных страниц)
     role: str = 'administrator'    # Роль: administrator, editor, moderator
+    include_env_token: bool = False  # Включить ENV-токен в список целей (вступление + назначение)

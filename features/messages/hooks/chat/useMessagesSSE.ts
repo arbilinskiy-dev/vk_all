@@ -22,6 +22,7 @@ import {
     SSEUserTypingData,
     SSEDialogFocusData,
     SSEMailingUserUpdatedData,
+    SSEChatActionData,
 } from '../../types';
 import { msgLog, msgWarn, msgError, fmtProject, fmtUser, fmtCount } from '../../utils/messagesLogger';
 import { getManagerId } from '../../utils/getManagerId';
@@ -44,6 +45,8 @@ export interface SSECallbacks {
     onAllRead?: (data: SSEAllReadData) => void;
     /** SSE переподключился после разрыва — могли быть пропущены события */
     onReconnect?: () => void;
+    /** Действие менеджера в диалоге (зашёл/вышел/пометил и т.д.) */
+    onChatAction?: (data: SSEChatActionData) => void;
 }
 
 interface UseMessagesSSEParams {
@@ -135,6 +138,12 @@ export function useMessagesSSE({
                     callbacksRef.current.onMailingUserUpdated?.(d);
                     break;
                 }
+                case 'chat_action': {
+                    const d = parsed.data as SSEChatActionData;
+                    msgLog('PROJECT_SSE', `📋 chat_action: ${fmtUser(d.vk_user_id)}, action=${d.action.action_type}, manager=${d.action.manager_name}`);
+                    callbacksRef.current.onChatAction?.(d);
+                    break;
+                }
             }
         } catch (error: unknown) {
             msgError('PROJECT_SSE', 'Ошибка парсинга SSE-события', error);
@@ -219,6 +228,11 @@ export function useMessagesSSE({
         // Данные пользователя рассылки обновлены (при callback message_new)
         es.addEventListener('mailing_user_updated', (e: MessageEvent) => {
             handleSSEEvent('mailing_user_updated', e.data);
+        });
+
+        // Действие менеджера в диалоге (зашёл/вышел/пометил важным и т.д.)
+        es.addEventListener('chat_action', (e: MessageEvent) => {
+            handleSSEEvent('chat_action', e.data);
         });
 
         // Ошибка подключения (EventSource автоматически переподключится)

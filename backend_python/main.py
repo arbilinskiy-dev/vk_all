@@ -471,6 +471,18 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         content={"detail": exc.detail},
     )
 
+# Generic exception handler — гарантирует CORS-заголовки на необработанных 500-ках.
+# Без него psycopg2.OperationalError и другие исключения генерируют голый 500
+# без прохождения через CORSMiddleware, что вызывает двойные ошибки в браузере:
+# 500 Internal Server Error + CORS ERR_FAILED.
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logging.error(f"Unhandled exception on {request.method} {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error"},
+    )
+
 # Старый эндпоинт /api/callback — удалён.
 # Все VK Callback запросы обрабатываются через /api/vk/callback (routers/vk_callback.py).
 # Для обратной совместимости перенаправляем старый URL на тот же обработчик.

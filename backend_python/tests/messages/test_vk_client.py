@@ -119,3 +119,35 @@ class TestFetchFromVk:
             project_id="proj-1",
         )
         assert result == {"items": [], "count": 0}
+
+    @patch("services.messages.vk_client.call_vk_api_for_group")
+    def test_fetch_group_chat_uses_peer_id(self, mock_call):
+        """Групповой чат (user_id >= 2000000000) → VK API запрос с peer_id вместо user_id."""
+        mock_call.return_value = {"items": [], "count": 0, "profiles": []}
+        fetch_from_vk(["token1"], 12345, 2000000001, 50, 0, "proj-1")
+
+        call_kwargs = mock_call.call_args
+        params = call_kwargs[1]["params"]
+        assert "peer_id" in params
+        assert params["peer_id"] == 2000000001
+        assert "user_id" not in params
+
+    @patch("services.messages.vk_client.call_vk_api_for_group")
+    def test_fetch_group_chat_uses_extended(self, mock_call):
+        """Групповой чат → VK API запрос с extended=1 для получения профилей участников."""
+        mock_call.return_value = {"items": [], "count": 0, "profiles": []}
+        fetch_from_vk(["token1"], 12345, 2000000001, 50, 0, "proj-1")
+
+        call_kwargs = mock_call.call_args
+        params = call_kwargs[1]["params"]
+        assert params.get("extended") == 1
+
+    @patch("services.messages.vk_client.call_vk_api_for_group")
+    def test_fetch_regular_dialog_no_extended(self, mock_call):
+        """Обычный диалог → без extended=1."""
+        mock_call.return_value = {"items": [], "count": 0}
+        fetch_from_vk(["token1"], 12345, 99, 50, 0, "proj-1")
+
+        call_kwargs = mock_call.call_args
+        params = call_kwargs[1]["params"]
+        assert "extended" not in params

@@ -7,6 +7,7 @@ from services.lists.list_sync_utils import get_all_project_tokens, fetch_users_s
 from crud.lists.utils import deduplicate_users
 from crud.lists.interactions import get_interaction_user_count
 from database import SessionLocal
+from config import settings
 
 def refresh_interaction_users_task(task_id: str, project_id: str, list_type: str, user_token: str):
     """
@@ -31,7 +32,14 @@ def refresh_interaction_users_task(task_id: str, project_id: str, list_type: str
         deduplicate_users(db, PostInteraction, project_id, event_type=event_type)
 
         all_vk_ids = crud.get_all_interaction_vk_ids(db, project_id, list_type)
-        unique_tokens = get_all_project_tokens(db, user_token)
+        # Приоритет: VK_SERVICE_KEY → fallback на user-токены
+        service_key = settings.vk_service_key
+        if service_key:
+            unique_tokens = [service_key]
+            use_service_key = True
+        else:
+            unique_tokens = get_all_project_tokens(db, user_token)
+            use_service_key = False
     finally:
         db.close()
     
@@ -45,12 +53,13 @@ def refresh_interaction_users_task(task_id: str, project_id: str, list_type: str
 
     # --- Phase 2: Network ---
     task_monitor.update_task(task_id, "fetching", loaded=0, total=len(all_vk_ids))
+    extra_params = {'lang': 'ru'} if use_service_key else None
     
     def on_progress(loaded, total):
         task_monitor.update_task(task_id, "fetching", loaded=loaded, total=total)
 
     fields = 'last_seen,first_name,last_name,sex,photo_100,bdate,city,country,domain,has_mobile'
-    fetched_users = fetch_users_smart_parallel(all_vk_ids, unique_tokens, fields, project_id, on_progress)
+    fetched_users = fetch_users_smart_parallel(all_vk_ids, unique_tokens, fields, project_id, on_progress, extra_params)
     
     # --- Phase 3: Write ---
     db = SessionLocal()

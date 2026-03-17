@@ -50,6 +50,27 @@ def migrate(engine: Engine):
                 conn.execute(text("ALTER TABLE cached_messages ADD COLUMN is_deleted_from_vk BOOLEAN NOT NULL DEFAULT 0"))
                 conn.commit()
             print("✅ is_deleted_from_vk column added!")
+        # Миграция: добавляем reply_message_json для хранения цитируемого сообщения
+        if "reply_message_json" not in columns:
+            print("🔄 Adding reply_message_json column to cached_messages...")
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE cached_messages ADD COLUMN reply_message_json TEXT"))
+                conn.commit()
+            print("✅ reply_message_json column added!")
+        # Миграция: добавляем conversation_message_id для кросс-диалоговой пересылки
+        if "conversation_message_id" not in columns:
+            print("🔄 Adding conversation_message_id column to cached_messages...")
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE cached_messages ADD COLUMN conversation_message_id INTEGER"))
+                conn.commit()
+            print("✅ conversation_message_id column added!")
+        # Миграция: добавляем fwd_messages_json для хранения пересланных сообщений
+        if "fwd_messages_json" not in columns:
+            print("🔄 Adding fwd_messages_json column to cached_messages...")
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE cached_messages ADD COLUMN fwd_messages_json TEXT"))
+                conn.commit()
+            print("✅ fwd_messages_json column added!")
         # Миграция: добавляем колонку is_outgoing если её нет (старые БД до появления фильтров)
         if "is_outgoing" not in columns:
             print("🔄 Adding is_outgoing column to cached_messages...")

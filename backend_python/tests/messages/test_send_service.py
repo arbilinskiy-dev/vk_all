@@ -88,3 +88,64 @@ class TestSendMessage:
 
         result = send_message(mock_db, "proj-1", 12345, "text", ["token"], 123456)
         assert result["message_id"] == 55555
+
+
+class TestSendMessageGroupChat:
+    """Тесты отправки сообщений в групповые чаты (peer_id >= 2000000000)."""
+
+    @patch("services.messages.send_service.messages_crud")
+    @patch("services.messages.send_service.global_variable_service")
+    @patch("services.messages.send_service.call_vk_api_for_group")
+    def test_group_chat_uses_peer_id(self, mock_vk_call, mock_global_var, mock_crud, mock_db):
+        """Групповой чат (peer_id >= 2000000000) → VK API получает peer_id, а не user_id."""
+        from services.messages.send_service import send_message
+
+        mock_global_var.substitute_global_variables.return_value = "Привет чат!"
+        mock_vk_call.return_value = 77777
+
+        result = send_message(mock_db, "proj-1", 2000000001, "Привет чат!", ["token"], 123456)
+
+        # Проверяем что peer_id передан, а user_id — нет
+        call_kwargs = mock_vk_call.call_args
+        sent_params = call_kwargs[1]["params"] if "params" in call_kwargs[1] else call_kwargs[0][1]
+        assert "peer_id" in sent_params
+        assert sent_params["peer_id"] == 2000000001
+        assert "user_id" not in sent_params
+
+        assert result["success"] is True
+        assert result["message_id"] == 77777
+
+    @patch("services.messages.send_service.messages_crud")
+    @patch("services.messages.send_service.global_variable_service")
+    @patch("services.messages.send_service.call_vk_api_for_group")
+    def test_regular_dialog_uses_user_id(self, mock_vk_call, mock_global_var, mock_crud, mock_db):
+        """Обычный диалог (user_id < 2000000000) → VK API получает user_id."""
+        from services.messages.send_service import send_message
+
+        mock_global_var.substitute_global_variables.return_value = "Привет!"
+        mock_vk_call.return_value = 88888
+
+        result = send_message(mock_db, "proj-1", 12345, "Привет!", ["token"], 123456)
+
+        call_kwargs = mock_vk_call.call_args
+        sent_params = call_kwargs[1]["params"] if "params" in call_kwargs[1] else call_kwargs[0][1]
+        assert "user_id" in sent_params
+        assert sent_params["user_id"] == 12345
+        assert "peer_id" not in sent_params
+
+    @patch("services.messages.send_service.messages_crud")
+    @patch("services.messages.send_service.global_variable_service")
+    @patch("services.messages.send_service.call_vk_api_for_group")
+    def test_group_chat_boundary_value(self, mock_vk_call, mock_global_var, mock_crud, mock_db):
+        """Граничное значение ровно 2000000000 → peer_id."""
+        from services.messages.send_service import send_message
+
+        mock_global_var.substitute_global_variables.return_value = "text"
+        mock_vk_call.return_value = 11111
+
+        send_message(mock_db, "proj-1", 2000000000, "text", ["token"], 123456)
+
+        call_kwargs = mock_vk_call.call_args
+        sent_params = call_kwargs[1]["params"] if "params" in call_kwargs[1] else call_kwargs[0][1]
+        assert "peer_id" in sent_params
+        assert "user_id" not in sent_params

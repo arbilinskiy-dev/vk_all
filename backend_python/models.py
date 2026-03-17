@@ -70,5 +70,9 @@ from models_library.user_roles import UserRole
 from models_library.user_actions import UserAction
 # NEW: DLVRY заказы (внешняя CRM — приём вебхуков от DLVRY)
 from models_library.dlvry_orders import DlvryOrder, DlvryOrderItem, DlvryWebhookLog
+# NEW: DLVRY филиалы проектов (1 проект → N филиалов DLVRY)
+from models_library.dlvry_affiliates import DlvryProjectAffiliate
 # NEW: История вступлений/выходов пользователей (аналитический лог)
 from models_library.membership_history import UserMembershipHistory
+# NEW: Кэш групповых чатов (бесед) сообщества
+from models_library.community_chats import CommunityGroupChat

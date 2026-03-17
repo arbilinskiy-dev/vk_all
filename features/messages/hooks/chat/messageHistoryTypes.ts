@@ -2,7 +2,7 @@
  * Типы, интерфейсы и константы для хука useMessageHistory.
  */
 
-import { ChatMessageData, MessageAttachment, MailingUserInfo } from '../../types';
+import { ChatMessageData, ChatActionData, MessageAttachment, MailingUserInfo } from '../../types';
 import { VkMessageItem } from '../../../../services/api/messages.api';
 
 /** Размер страницы для пагинации (сколько отображаем в интерфейсе за раз) */
@@ -49,7 +49,7 @@ interface UseMessageHistoryResult {
     /** Перезагрузить историю (force refresh из VK API) */
     refresh: () => void;
     /** Отправить сообщение (attachments — загрузка фото на бэкенд → VK API) */
-    sendMessage: (text: string, attachments?: File[], senderId?: string, senderName?: string) => Promise<boolean>;
+    sendMessage: (text: string, attachments?: File[], senderId?: string, senderName?: string, replyTo?: number, forwardMessages?: string, optimisticReply?: ChatMessageData['replyMessage'], optimisticForwarded?: ChatMessageData['forwardedMessages']) => Promise<boolean>;
     /** Добавить входящее сообщение из SSE (без полной перезагрузки) */
     addIncomingMessage: (messageData: ChatMessageData) => void;
     /** Принудительная перезагрузка (для SSE cache_action=reload) */
@@ -62,6 +62,10 @@ interface UseMessageHistoryResult {
     userInfoFromHistory: MailingUserInfo | null;
     /** Статистика сообщений: всего в VK, в кэше, входящих, исходящих */
     messageStats: MessageStats | null;
+    /** Действия менеджеров в этом диалоге */
+    chatActions: ChatActionData[];
+    /** Добавить действие из SSE */
+    addChatAction: (action: ChatActionData) => void;
 }
 
 /** Статистика по сообщениям в диалоге */

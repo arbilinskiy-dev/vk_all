@@ -4,13 +4,15 @@
  * Показывается в модуле «Статистика» при activeView === 'stats-dlvry'.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Project } from '../../../shared/types';
 import { WelcomeScreen } from '../../../shared/components/WelcomeScreen';
 import { SalesTabContent } from './SalesTabContent';
 import { OrdersTabContent } from './OrdersTabContent';
+import { ProductsTabContent } from './ProductsTabContent';
+import { DlvryAffiliate, fetchDlvryAffiliates } from '../../../services/api/dlvryAffiliates.api';
 
-type DlvryTab = 'sales' | 'orders';
+type DlvryTab = 'sales' | 'orders' | 'products';
 
 interface DlvryOrdersPageProps {
     project: Project | null;
@@ -18,12 +20,35 @@ interface DlvryOrdersPageProps {
 
 export const DlvryOrdersPage: React.FC<DlvryOrdersPageProps> = ({ project }) => {
     const [activeTab, setActiveTab] = useState<DlvryTab>('sales');
+    const [affiliates, setAffiliates] = useState<DlvryAffiliate[]>([]);
+    const [selectedAffiliateId, setSelectedAffiliateId] = useState<string>('');
+    const [isLoadingAffiliates, setIsLoadingAffiliates] = useState(false);
+
+    const loadAffiliates = useCallback(async () => {
+        if (!project) return;
+        setIsLoadingAffiliates(true);
+        try {
+            const data = await fetchDlvryAffiliates(project.id);
+            setAffiliates(data);
+        } catch {
+            // тихо
+        } finally {
+            setIsLoadingAffiliates(false);
+        }
+    }, [project?.id]);
+
+    useEffect(() => {
+        setSelectedAffiliateId('');
+        loadAffiliates();
+    }, [loadAffiliates]);
 
     if (!project) {
         return <WelcomeScreen />;
     }
 
-    if (!project.dlvry_affiliate_id) {
+    // Нет филиалов и нет старого поля — DLVRY не настроен
+    const hasAnyAffiliate = affiliates.length > 0 || !!project.dlvry_affiliate_id;
+    if (!isLoadingAffiliates && !hasAnyAffiliate) {
         return (
             <div className="flex-1 flex items-center justify-center p-8">
                 <div className="text-center max-w-md">
@@ -34,7 +59,7 @@ export const DlvryOrdersPage: React.FC<DlvryOrdersPageProps> = ({ project }) => 
                     </div>
                     <h3 className="text-lg font-bold text-gray-900 mb-2">DLVRY не настроен</h3>
                     <p className="text-sm text-gray-500 mb-4">
-                        Для отображения данных DLVRY необходимо указать <span className="font-medium">Affiliate ID</span> в настройках проекта
+                        Для отображения данных DLVRY необходимо добавить филиалы в настройках проекта
                         (раздел «Интеграции»).
                     </p>
                     <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 text-sm rounded-lg border border-indigo-200">
@@ -48,6 +73,11 @@ export const DlvryOrdersPage: React.FC<DlvryOrdersPageProps> = ({ project }) => 
             </div>
         );
     }
+
+    // Подпись: выбранный филиал или «Все филиалы»
+    const affiliateLabel = selectedAffiliateId
+        ? affiliates.find(a => a.affiliate_id === selectedAffiliateId)?.name || selectedAffiliateId
+        : affiliates.length > 1 ? 'Все филиалы' : (affiliates[0]?.name || affiliates[0]?.affiliate_id || project.dlvry_affiliate_id || '');
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
@@ -63,9 +93,25 @@ export const DlvryOrdersPage: React.FC<DlvryOrdersPageProps> = ({ project }) => 
                                 DLVRY
                             </h1>
                             <p className="text-sm text-gray-500 mt-0.5">
-                                {project.name} · Affiliate: {project.dlvry_affiliate_id}
+                                {project.name} · {affiliateLabel}
                             </p>
                         </div>
+
+                        {/* Selector филиалов (если больше одного) */}
+                        {affiliates.length > 1 && (
+                            <select
+                                value={selectedAffiliateId}
+                                onChange={(e) => setSelectedAffiliateId(e.target.value)}
+                                className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                            >
+                                <option value="">Все филиалы</option>
+                                {affiliates.map(a => (
+                                    <option key={a.id} value={a.affiliate_id}>
+                                        {a.name ? `${a.name} (${a.affiliate_id})` : a.affiliate_id}
+                                    </option>
+                                ))}
+                            </select>
+                        )}
                     </div>
 
                     {/* Табы */}
@@ -100,15 +146,34 @@ export const DlvryOrdersPage: React.FC<DlvryOrdersPageProps> = ({ project }) => 
                                 Заказы
                             </span>
                         </button>
+                        <button
+                            onClick={() => setActiveTab('products')}
+                            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                                activeTab === 'products'
+                                    ? 'border-indigo-600 text-indigo-600'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                            <span className="flex items-center gap-1.5">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+                                </svg>
+                                Товары
+                            </span>
+                        </button>
                     </div>
                 </div>
             </div>
 
             {/* Контент табов */}
-            {activeTab === 'sales' ? (
-                <SalesTabContent project={project} />
-            ) : (
-                <OrdersTabContent project={project} />
+            {activeTab === 'sales' && (
+                <SalesTabContent project={project} affiliateId={selectedAffiliateId || null} />
+            )}
+            {activeTab === 'orders' && (
+                <OrdersTabContent project={project} affiliateId={selectedAffiliateId || null} />
+            )}
+            {activeTab === 'products' && (
+                <ProductsTabContent project={project} affiliateId={selectedAffiliateId || null} />
             )}
         </div>
     );

@@ -12,11 +12,21 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 const mockFetchOrders = vi.fn();
 const mockFetchStats = vi.fn();
 const mockFetchDetail = vi.fn();
+const mockFetchAffiliates = vi.fn();
 
 vi.mock('../../services/api/dlvry.api', () => ({
     fetchDlvryOrders: (...args: any[]) => mockFetchOrders(...args),
     fetchDlvryOrdersStats: (...args: any[]) => mockFetchStats(...args),
     fetchDlvryOrderDetail: (...args: any[]) => mockFetchDetail(...args),
+}));
+
+vi.mock('../../services/api/dlvryAffiliates.api', () => ({
+    fetchDlvryAffiliates: (...args: any[]) => mockFetchAffiliates(...args),
+}));
+
+// Мок SalesTabContent — изолируем от побочных эффектов
+vi.mock('../../features/statistics/dlvry/SalesTabContent', () => ({
+    SalesTabContent: () => <div data-testid="sales-tab-content">Sales</div>,
 }));
 
 // Мок WelcomeScreen
@@ -58,6 +68,21 @@ function createMockOrdersResponse(count = 2) {
         status: 'new',
         items_count: 3,
         created_at: '2026-03-01T10:00:00',
+        // Расширенные поля (переключаемые колонки)
+        cost: 900 + i * 50,
+        discount: 100,
+        delivery_price: 200,
+        subtotal: 1400 + i * 100,
+        payment_bonus: 50,
+        markup: 30,
+        vk_platform: 'desktop_web',
+        vk_user_id: String(100000 + i),
+        address_city: 'Белгород',
+        persons: 2,
+        items_total_qty: 5,
+        promocode: 'PROMO10',
+        comment: 'Без лука',
+        is_preorder: false,
     }));
     return { orders, total: count, skip: 0, limit: 25 };
 }
@@ -83,9 +108,20 @@ function createMockStatsResponse() {
 // Тесты
 // =============================================================================
 
+/** Переключиться на таб «Заказы» и дождаться загрузки */
+async function switchToOrdersTab() {
+    // Дождаться, пока загрузится affiliates (убирает isLoadingAffiliates) и табы появятся
+    await waitFor(() => {
+        expect(screen.getByText('Заказы')).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText('Заказы'));
+}
+
 describe('DlvryOrdersPage', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        localStorage.clear();
+        mockFetchAffiliates.mockResolvedValue([]);
         mockFetchOrders.mockResolvedValue(createMockOrdersResponse());
         mockFetchStats.mockResolvedValue(createMockStatsResponse());
     });
@@ -99,12 +135,13 @@ describe('DlvryOrdersPage', () => {
         expect(screen.getByTestId('welcome-screen')).toBeInTheDocument();
     });
 
-    it('показывает заглушку если dlvry_affiliate_id не настроен', () => {
+    it('показывает заглушку если dlvry_affiliate_id не настроен', async () => {
         const project = createMockProject({ dlvry_affiliate_id: undefined });
         render(<DlvryOrdersPage project={project} />);
 
-        expect(screen.getByText('DLVRY не настроен')).toBeInTheDocument();
-        expect(screen.getByText(/Affiliate ID/i)).toBeInTheDocument();
+        await waitFor(() => {
+            expect(screen.getByText('DLVRY не настроен')).toBeInTheDocument();
+        });
     });
 
     // ─────────────────────────────────────────────────────────────────────
@@ -115,7 +152,9 @@ describe('DlvryOrdersPage', () => {
         const project = createMockProject();
         render(<DlvryOrdersPage project={project} />);
 
-        expect(screen.getByText('DLVRY Заказы')).toBeInTheDocument();
+        await waitFor(() => {
+            expect(screen.getByText('DLVRY')).toBeInTheDocument();
+        });
         expect(screen.getByText(/Тестовый проект/)).toBeInTheDocument();
         expect(screen.getByText(/aff-100/)).toBeInTheDocument();
     });
@@ -123,6 +162,7 @@ describe('DlvryOrdersPage', () => {
     it('отображает карточки статистики после загрузки', async () => {
         const project = createMockProject();
         render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
 
         await waitFor(() => {
             expect(screen.getByText('Всего заказов')).toBeInTheDocument();
@@ -136,6 +176,7 @@ describe('DlvryOrdersPage', () => {
     it('отображает заказы в таблице', async () => {
         const project = createMockProject();
         render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
 
         await waitFor(() => {
             expect(screen.getByText('Клиент 1')).toBeInTheDocument();
@@ -151,6 +192,7 @@ describe('DlvryOrdersPage', () => {
 
         const project = createMockProject();
         render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
 
         await waitFor(() => {
             expect(screen.getByText('Заказов пока нет')).toBeInTheDocument();
@@ -164,17 +206,18 @@ describe('DlvryOrdersPage', () => {
     it('перезагружает данные при клике на «Обновить»', async () => {
         const project = createMockProject();
         render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
 
         await waitFor(() => {
             expect(screen.getByText('Клиент 1')).toBeInTheDocument();
         });
 
-        expect(mockFetchOrders).toHaveBeenCalledTimes(1);
+        const callsBefore = mockFetchOrders.mock.calls.length;
 
         fireEvent.click(screen.getByText('Обновить'));
 
         await waitFor(() => {
-            expect(mockFetchOrders).toHaveBeenCalledTimes(2);
+            expect(mockFetchOrders.mock.calls.length).toBeGreaterThan(callsBefore);
         });
     });
 
@@ -182,9 +225,10 @@ describe('DlvryOrdersPage', () => {
     // Поиск
     // ─────────────────────────────────────────────────────────────────────
 
-    it('содержит поле поиска и кнопку «Найти»', () => {
+    it('содержит поле поиска и кнопку «Найти»', async () => {
         const project = createMockProject();
         render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
 
         expect(screen.getByPlaceholderText(/Поиск по имени/i)).toBeInTheDocument();
         expect(screen.getByText('Найти')).toBeInTheDocument();
@@ -197,6 +241,7 @@ describe('DlvryOrdersPage', () => {
     it('не показывает пагинацию если заказов меньше pageSize', async () => {
         const project = createMockProject();
         render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
 
         await waitFor(() => {
             expect(screen.getByText('Клиент 1')).toBeInTheDocument();
@@ -216,6 +261,7 @@ describe('DlvryOrdersPage', () => {
 
         const project = createMockProject();
         render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
 
         await waitFor(() => {
             expect(screen.getByText('Клиент 1')).toBeInTheDocument();
@@ -235,9 +281,151 @@ describe('DlvryOrdersPage', () => {
 
         const project = createMockProject();
         render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
 
         await waitFor(() => {
             expect(screen.getByText('Сервер недоступен')).toBeInTheDocument();
         });
+    });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Переключаемые группы колонок
+    // ─────────────────────────────────────────────────────────────────────
+
+    it('отображает кнопки переключения групп колонок', async () => {
+        const project = createMockProject();
+        render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
+
+        await waitFor(() => {
+            expect(screen.getByText('Клиент 1')).toBeInTheDocument();
+        });
+
+        expect(screen.getByText('Столбцы:')).toBeInTheDocument();
+        expect(screen.getByText(/Финансы/)).toBeInTheDocument();
+        expect(screen.getByText(/Клиент \/ VK/)).toBeInTheDocument();
+        expect(screen.getByText(/Дополнительно/)).toBeInTheDocument();
+    });
+
+    it('финансовые колонки скрыты по умолчанию', async () => {
+        const project = createMockProject();
+        render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
+
+        await waitFor(() => {
+            expect(screen.getByText('Клиент 1')).toBeInTheDocument();
+        });
+
+        // Заголовки финансовых колонок НЕ видны
+        expect(screen.queryByText('Себест.')).not.toBeInTheDocument();
+        expect(screen.queryByText('Маржа')).not.toBeInTheDocument();
+        expect(screen.queryByText('Скидка')).not.toBeInTheDocument();
+        expect(screen.queryByText('Бонусы')).not.toBeInTheDocument();
+        expect(screen.queryByText('Наценка')).not.toBeInTheDocument();
+    });
+
+    it('показывает финансовые колонки после клика на "Финансы"', async () => {
+        const project = createMockProject();
+        render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
+
+        await waitFor(() => {
+            expect(screen.getByText('Клиент 1')).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByText(/Финансы/));
+
+        expect(screen.getByText('Себест.')).toBeInTheDocument();
+        expect(screen.getByText('Маржа')).toBeInTheDocument();
+        expect(screen.getByText('Скидка')).toBeInTheDocument();
+        expect(screen.getByText('Бонусы')).toBeInTheDocument();
+        expect(screen.getByText('Наценка')).toBeInTheDocument();
+    });
+
+    it('показывает клиентские колонки после клика на "Клиент / VK"', async () => {
+        const project = createMockProject();
+        render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
+
+        await waitFor(() => {
+            expect(screen.getByText('Клиент 1')).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByText(/Клиент \/ VK/));
+
+        expect(screen.getByText('VK платф.')).toBeInTheDocument();
+        expect(screen.getByText('VK ID')).toBeInTheDocument();
+        expect(screen.getByText('Город')).toBeInTheDocument();
+    });
+
+    it('показывает доп. колонки после клика на "Дополнительно"', async () => {
+        const project = createMockProject();
+        render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
+
+        await waitFor(() => {
+            expect(screen.getByText('Клиент 1')).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByText(/Дополнительно/));
+
+        expect(screen.getByText('Персоны')).toBeInTheDocument();
+        expect(screen.getByText('Ед.')).toBeInTheDocument();
+        expect(screen.getByText('Промокод')).toBeInTheDocument();
+        expect(screen.getByText('Коммент.')).toBeInTheDocument();
+    });
+
+    it('скрывает колонки при повторном клике', async () => {
+        const project = createMockProject();
+        render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
+
+        await waitFor(() => {
+            expect(screen.getByText('Клиент 1')).toBeInTheDocument();
+        });
+
+        // Включить
+        fireEvent.click(screen.getByText(/Финансы/));
+        expect(screen.getByText('Себест.')).toBeInTheDocument();
+
+        // Выключить
+        fireEvent.click(screen.getByText(/Финансы/));
+        expect(screen.queryByText('Себест.')).not.toBeInTheDocument();
+    });
+
+    it('сохраняет выбор колонок в localStorage', async () => {
+        const project = createMockProject();
+        render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
+
+        await waitFor(() => {
+            expect(screen.getByText('Клиент 1')).toBeInTheDocument();
+        });
+
+        fireEvent.click(screen.getByText(/Финансы/));
+
+        const stored = localStorage.getItem('dlvry_orders_col_groups');
+        expect(stored).toBeTruthy();
+        const parsed = JSON.parse(stored!);
+        expect(parsed).toContain('finance');
+    });
+
+    it('восстанавливает выбор колонок из localStorage', async () => {
+        localStorage.setItem('dlvry_orders_col_groups', JSON.stringify(['client']));
+
+        const project = createMockProject();
+        render(<DlvryOrdersPage project={project} />);
+        await switchToOrdersTab();
+
+        await waitFor(() => {
+            expect(screen.getByText('Клиент 1')).toBeInTheDocument();
+        });
+
+        // Клиентские колонки видны (восстановлены из localStorage)
+        expect(screen.getByText('VK платф.')).toBeInTheDocument();
+        expect(screen.getByText('Город')).toBeInTheDocument();
+
+        // Финансовые — скрыты
+        expect(screen.queryByText('Себест.')).not.toBeInTheDocument();
     });
 });

@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Project, Tag, AiPromptPreset, GlobalVariableDefinition, ProjectGlobalVariableValue } from '../../../shared/types';
+import { Project, ProjectSummary, Tag, AiPromptPreset, GlobalVariableDefinition, ProjectGlobalVariableValue } from '../../../shared/types';
 import * as api from '../../../services/api';
 import { v4 as uuidv4 } from 'uuid';
 import { parseVariablesString, serializeVariablesArray, VariableItem } from '../utils/variableUtils';
 import { AccordionSectionKey } from '../components/modals/ProjectSettingsModal';
 
 interface UseProjectSettingsManagerProps {
-    project: Project;
+    project: ProjectSummary;
     uniqueTeams: string[];
     onSave: (updatedProject: Project) => Promise<void>;
     onClose: () => void;
@@ -35,7 +35,8 @@ export const useProjectSettingsManager = ({
     onClose,
     initialOpenSection = null,
 }: UseProjectSettingsManagerProps) => {
-    const [formData, setFormData] = useState<Project>({...project, disabled: project.disabled || false});
+    const [formData, setFormData] = useState<Project>({...project, disabled: project.disabled || false} as Project);
+    const [isLoadingDetails, setIsLoadingDetails] = useState(true);
     const [projectVariables, setProjectVariables] = useState<VariableItem[]>([]);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -97,23 +98,15 @@ export const useProjectSettingsManager = ({
         // Флаг отмены — предотвращает дублирование запросов при StrictMode и race condition
         let cancelled = false;
 
-        setFormData({...project, disabled: project.disabled || false});
-        
-        // Загрузка переменных (синхронная часть)
-        const existingVars = parseVariablesString(project.variables || '');
-        const existingVarNames = new Set(existingVars.map(v => v.name.toLowerCase().trim()));
-        
-        const missingTemplates = VARIABLE_TEMPLATES.filter(template => !existingVarNames.has(template.name.toLowerCase().trim()));
-        const newTemplateVars: VariableItem[] = missingTemplates.map(template => ({
-            id: uuidv4(), name: template.name, value: template.value,
-        }));
-        
-        setProjectVariables([...existingVars, ...newTemplateVars]);
+        setFormData({...project, disabled: project.disabled || false} as Project);
+        setProjectVariables([]);
+        setIsLoadingDetails(true);
 
-        // Параллельная загрузка тегов, AI-шаблонов и глобальных переменных
+        // Параллельная загрузка полных данных проекта, тегов, AI-шаблонов и глобальных переменных
         const loadAllData = async () => {
             try {
-                const [fetchedTags, fetchedPresets, globalVarsResult] = await Promise.all([
+                const [fullProject, fetchedTags, fetchedPresets, globalVarsResult] = await Promise.all([
+                    api.getProjectDetails(project.id),
                     api.getTags(project.id).catch(err => {
                         console.error("Failed to fetch tags for project settings", err);
                         window.showAppToast?.("Не удалось загрузить теги для настроек проекта.", 'error');
@@ -132,6 +125,22 @@ export const useProjectSettingsManager = ({
 
                 // Если эффект был отменён (StrictMode / смена project.id) — не обновляем стейт
                 if (cancelled) return;
+
+                // Обновляем formData полными данными проекта
+                if (fullProject) {
+                    setFormData({...fullProject, disabled: fullProject.disabled || false});
+                    
+                    // Загружаем переменные из полных данных
+                    const existingVars = parseVariablesString(fullProject.variables || '');
+                    const existingVarNames = new Set(existingVars.map(v => v.name.toLowerCase().trim()));
+                    const missingTemplates = VARIABLE_TEMPLATES.filter(template => !existingVarNames.has(template.name.toLowerCase().trim()));
+                    const newTemplateVars: VariableItem[] = missingTemplates.map(template => ({
+                        id: uuidv4(), name: template.name, value: template.value,
+                    }));
+                    setProjectVariables([...existingVars, ...newTemplateVars]);
+                }
+
+                setIsLoadingDetails(false);
 
                 if (fetchedTags) {
                     setInitialTags(fetchedTags);
@@ -432,7 +441,7 @@ export const useProjectSettingsManager = ({
     return {
         state: {
             formData, projectVariables, projectGlobalVarDefs, projectGlobalVarValues, projectTags, projectAiPresets,
-            isRefreshing, isSaving, isAiRunning,
+            isRefreshing, isSaving, isAiRunning, isLoadingDetails,
             aiSuggestedVarIds, activeAccordion,
             isCreatingTeam, newTeamName, isTokenVisible,
             globalVarErrors, // Возвращаем ошибки

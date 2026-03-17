@@ -29,8 +29,8 @@ export const PreviewColumn: React.FC<PreviewColumnProps> = ({
             <div className="px-4 py-3 border-b border-gray-200 flex-shrink-0 flex items-center justify-between">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Предпросмотр</h3>
                 {isPinned && (
-                    <div className="flex items-center gap-1 text-amber-600 text-xs">
-                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                    <div className="flex items-center gap-1 text-amber-600 text-xs opacity-0 animate-fade-in">
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                         </svg>
                         Закреплён
@@ -53,9 +53,9 @@ export const PreviewColumn: React.FC<PreviewColumnProps> = ({
             </div>
             {/* Сводка мультипроектной публикации */}
             {timeShiftSummary && timeShiftSummary.length > 1 && (
-                <div className="flex-shrink-0 border-t border-gray-200 p-3">
+                <div className="flex-shrink-0 border-t border-gray-200 p-3 opacity-0 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
                     <div className="text-[10px] font-medium text-indigo-600 uppercase tracking-wider mb-1.5">
-                        Будет запланировано ({timeShiftSummary.length})
+                        Будет запланировано - {timeShiftSummary.length}
                     </div>
                     <div className="space-y-0.5 max-h-40 overflow-y-auto custom-scrollbar">
                         {timeShiftSummary.map((item, idx) => (

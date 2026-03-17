@@ -6,6 +6,7 @@ from typing import Dict, Union
 from pydantic import BaseModel
 
 import schemas
+import models
 import services.task_monitor as task_monitor
 # Explicitly importing the module where clear_list_data is defined
 import services.lists.system_list_service as system_list_service
@@ -124,6 +125,17 @@ def get_interactions(payload: schemas.SystemListPayload, db: Session = Depends(g
         filter_platform=payload.filterPlatform or 'any', # NEW
         filter_age=payload.filterAge or 'any' # NEW
     )
+
+@router.post("/lists/system/getPostsByIds")
+def get_posts_by_ids(payload: schemas.PostsByIdsPayload, db: Session = Depends(get_db)):
+    """Получить данные постов по списку vk_post_id для проекта."""
+    if not payload.postIds:
+        return {"items": []}
+    posts = db.query(models.SystemListPost).filter(
+        models.SystemListPost.project_id == payload.projectId,
+        models.SystemListPost.vk_post_id.in_(payload.postIds)
+    ).all()
+    return {"items": posts}
 
 @router.post("/lists/system/clear", response_model=schemas.GenericSuccess)
 def clear_list(payload: schemas.SystemListPayload, db: Session = Depends(get_db)):

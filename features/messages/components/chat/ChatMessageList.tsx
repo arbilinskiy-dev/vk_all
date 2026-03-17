@@ -1,9 +1,12 @@
 import React, { useRef, useEffect, useCallback, useMemo } from 'react';
-import { ChatMessageData, ChatDisplayFilters } from '../../types';
+import { ChatMessageData, ChatDisplayFilters, ChatActionData, ChatTimelineItem } from '../../types';
 import { ChatMessage } from './ChatMessage';
+import { ChatActionEntry } from './ChatActionEntry';
 
 interface ChatMessageListProps {
     messages: ChatMessageData[];
+    /** Действия менеджеров для отображения в хронологии */
+    chatActions?: ChatActionData[];
     /** Идёт ли подгрузка старых сообщений */
     isLoadingMore?: boolean;
     /** Есть ли ещё старые сообщения для подгрузки */
@@ -14,6 +17,12 @@ interface ChatMessageListProps {
     searchQuery?: string;
     /** Фильтры отображения (скрытие вложений/кнопок) */
     displayFilters?: ChatDisplayFilters;
+    /** Колбэк ответа на сообщение (тоггл выбора) */
+    onReplyMessage?: (message: ChatMessageData) => void;
+    /** ID выбранных сообщений */
+    selectedMessageIds?: string[];
+    /** Колбэк навигации к диалогу с пользователем */
+    onNavigateToDialog?: (vkUserId: number) => void;
 }
 
 /**
@@ -26,11 +35,15 @@ interface ChatMessageListProps {
  */
 export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     messages,
+    chatActions = [],
     isLoadingMore,
     hasMore,
     onLoadMore,
     searchQuery,
     displayFilters,
+    onReplyMessage,
+    selectedMessageIds = [],
+    onNavigateToDialog,
 }) => {
     const bottomRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -46,6 +59,18 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     const scrollHeightBeforePrependRef = useRef<number>(0);
     /** Флаг: ожидаем рендер после prepend (loadMore) */
     const pendingPrependRef = useRef(false);
+
+    /** Скролл к сообщению по ID и подсветка */
+    const handleScrollToMessage = useCallback((messageId: string) => {
+        const el = containerRef.current?.querySelector(`[data-message-id="${messageId}"]`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('ring-2', 'ring-indigo-400', 'ring-offset-1', 'rounded-lg');
+            setTimeout(() => {
+                el.classList.remove('ring-2', 'ring-indigo-400', 'ring-offset-1', 'rounded-lg');
+            }, 1500);
+        }
+    }, []);
 
     /** ResizeObserver для автоскролла при изменении высоты контента (загрузка картинок и т.д.) */
     const resizeObserverRef = useRef<ResizeObserver | null>(null);
@@ -111,8 +136,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
             containerRef.current.scrollTop += delta;
             pendingPrependRef.current = false;
             prevMessagesLengthRef.current = messages.length;
-            // Помечаем подгруженные сообщения как «показанные» (без анимации)
+            // Помечаем подгруженные сообщения и действия как «показанные» (без анимации)
             messages.forEach(m => shownMessageIdsRef.current.add(m.id));
+            chatActions.forEach(a => shownMessageIdsRef.current.add(a.id));
             return;
         }
 
@@ -153,8 +179,9 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
             // React StrictMode чистит таймеры при ремаунте и isFirstBatch
             // остаётся true навсегда.
             isFirstBatchRef.current = false;
-            // Помечаем все сообщения как «показанные»
+            // Помечаем все сообщения и действия как «показанные»
             messages.forEach(m => shownMessageIdsRef.current.add(m.id));
+            chatActions.forEach(a => shownMessageIdsRef.current.add(a.id));
             return;
         }
 
@@ -168,13 +195,14 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
             // Если добавлено много — это подгрузка старых, НЕ скроллим
         }
 
-        // Помечаем ВСЕ текущие сообщения как «показанные» (без повторной анимации).
+        // Помечаем ВСЕ текущие сообщения и действия как «показанные» (без повторной анимации).
         // Вынесено за пределы if, чтобы обрабатывать замену оптимистичного
         // сообщения реальным (temp→real): длина массива не меняется, но ID — да,
         // и без этого React перемонтирует элемент с новым key, вызывая повторную анимацию.
         messages.forEach(m => shownMessageIdsRef.current.add(m.id));
+        chatActions.forEach(a => shownMessageIdsRef.current.add(a.id));
         prevMessagesLengthRef.current = messages.length;
-    }, [messages]);
+    }, [messages, chatActions]);
 
     // Обработчик прокрутки вверх для подгрузки старых сообщений
     const handleScroll = useCallback(() => {
@@ -204,19 +232,31 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
         );
     }
 
-    // Группировка сообщений по дате
-    const groupedByDate: { date: string; messages: ChatMessageData[] }[] = [];
-    messages.forEach(msg => {
-        const dateStr = new Date(msg.timestamp).toLocaleDateString('ru-RU', {
+    // Объединяем сообщения и действия в единую хронологию
+    const timelineItems: ChatTimelineItem[] = [];
+    messages.forEach(msg => timelineItems.push({ type: 'message', data: msg }));
+    chatActions.forEach(action => timelineItems.push({ type: 'action', data: action }));
+    // Сортируем по времени (ISO-строки сравниваются лексикографически)
+    timelineItems.sort((a, b) => {
+        const tsA = a.type === 'message' ? a.data.timestamp : a.data.timestamp;
+        const tsB = b.type === 'message' ? b.data.timestamp : b.data.timestamp;
+        return tsA < tsB ? -1 : tsA > tsB ? 1 : 0;
+    });
+
+    // Группировка хронологии по дате
+    const groupedByDate: { date: string; items: ChatTimelineItem[] }[] = [];
+    timelineItems.forEach(item => {
+        const ts = item.type === 'message' ? item.data.timestamp : item.data.timestamp;
+        const dateStr = new Date(ts).toLocaleDateString('ru-RU', {
             day: 'numeric',
             month: 'long',
             year: 'numeric',
         });
         const lastGroup = groupedByDate[groupedByDate.length - 1];
         if (lastGroup && lastGroup.date === dateStr) {
-            lastGroup.messages.push(msg);
+            lastGroup.items.push(item);
         } else {
-            groupedByDate.push({ date: dateStr, messages: [msg] });
+            groupedByDate.push({ date: dateStr, items: [item] });
         }
     });
 
@@ -225,37 +265,35 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
     const shouldAnimate = isFirstBatchRef.current;
     const ANIM_STEP_MS = 15; // шаг задержки между элементами
     const totalAnimItems = shouldAnimate
-        ? groupedByDate.reduce((sum, g) => sum + 1 + g.messages.length, 0)
+        ? groupedByDate.reduce((sum, g) => sum + 1 + g.items.length, 0)
         : 0;
 
     let globalIdx = 0;
     const renderGroups = groupedByDate.map(group => {
         const dateGlobalIdx = globalIdx++;
-        const msgs = group.messages.map(msg => {
-            const msgGlobalIdx = globalIdx++;
-            // Анимируем ТОЛЬКО если идёт первичный stagger И сообщение ещё не показано.
-            // willAnimate=false для всех последующих обновлений (отправка, SSE, подгрузка)
-            // — это гарантирует отсутствие повторной анимации при замене temp→real.
-            const alreadyShown = shownMessageIdsRef.current.has(msg.id);
+        const items = group.items.map(item => {
+            const itemGlobalIdx = globalIdx++;
+            const itemId = item.type === 'message' ? item.data.id : item.data.id;
+            const alreadyShown = shownMessageIdsRef.current.has(itemId);
             const willAnimate = shouldAnimate && !alreadyShown;
             const delay = willAnimate
-                ? (totalAnimItems - 1 - msgGlobalIdx) * ANIM_STEP_MS
+                ? (totalAnimItems - 1 - itemGlobalIdx) * ANIM_STEP_MS
                 : 0;
-            return { msg, delay, willAnimate };
+            return { item, delay, willAnimate, itemId };
         });
-        const dateWillAnimate = msgs.some(m => m.willAnimate);
+        const dateWillAnimate = items.some(i => i.willAnimate);
         return {
             date: group.date,
             dateDelay: dateWillAnimate
                 ? (totalAnimItems - 1 - dateGlobalIdx) * ANIM_STEP_MS
                 : 0,
             dateWillAnimate,
-            messages: msgs,
+            items,
         };
     });
 
     return (
-        <div ref={containerRef} className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4" onScroll={handleScroll}>
+        <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar px-4 py-4" onScroll={handleScroll}>
             {/* Индикатор подгрузки старых сообщений */}
             {isLoadingMore && (
                 <div className="flex items-center justify-center py-3">
@@ -287,16 +325,23 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({
                             {group.date}
                         </span>
                     </div>
-                    {/* Сообщения за эту дату */}
-                    {group.messages.map(({ msg, delay, willAnimate }) => (
-                        <div
-                            key={msg.id}
-                            className={willAnimate ? 'opacity-0 animate-fade-in-up' : ''}
-                            style={willAnimate ? { animationDelay: `${delay}ms`, animationFillMode: 'forwards' } : undefined}
-                        >
-                            <ChatMessage message={msg} searchQuery={searchQuery} displayFilters={displayFilters} />
-                        </div>
-                    ))}
+                    {/* Хронология: сообщения + действия менеджеров */}
+                    {group.items.map(({ item, delay, willAnimate, itemId }) => {
+                        if (item.type === 'action') {
+                            return <ChatActionEntry key={`action_${itemId}`} action={item.data} />;
+                        }
+                        const msg = item.data;
+                        return (
+                            <div
+                                key={msg.id}
+                                data-message-id={msg.id}
+                                className={willAnimate ? 'opacity-0 animate-fade-in-up transition-all duration-500' : 'transition-all duration-500'}
+                                style={willAnimate ? { animationDelay: `${delay}ms`, animationFillMode: 'forwards' } : undefined}
+                            >
+                                <ChatMessage message={msg} searchQuery={searchQuery} displayFilters={displayFilters} onReply={onReplyMessage} isSelected={selectedMessageIds.includes(msg.id)} onNavigateToDialog={onNavigateToDialog} />
+                            </div>
+                        );
+                    })}
                 </div>
             ))}
             {/* Элемент для автоскролла */}

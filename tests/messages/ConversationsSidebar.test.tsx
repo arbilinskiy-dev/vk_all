@@ -194,4 +194,34 @@ describe('ConversationsSidebar', () => {
         fireEvent.click(screen.getByTitle('Обновить список'));
         expect(onRefresh).toHaveBeenCalledTimes(1);
     });
+
+    // === Групповые чаты (communityChats) ===
+    it('НЕ показывает бейдж с количеством чатов на кнопке фильтра «Чаты»', () => {
+        const communityChats = [
+            createConv('chat-2000000001', 'Внутренний', '', 0),
+        ];
+        const { container } = render(
+            <ConversationsSidebar {...createProps({
+                communityChats,
+                onFilterUnreadChange: vi.fn(),
+            })} />
+        );
+        // Кнопка "Групповые чаты (беседы)" с title есть
+        expect(screen.getByTitle('Групповые чаты (беседы)')).toBeInTheDocument();
+        // Бейдж с числом 1 (bg-blue-600) НЕ должен существовать
+        const chatBtn = screen.getByTitle('Групповые чаты (беседы)');
+        const badge = chatBtn.querySelector('.bg-blue-600');
+        expect(badge).toBeNull();
+    });
+
+    it('рендерит кнопку фильтра «Чаты» при наличии onFilterUnreadChange', () => {
+        const communityChats = [
+            createConv('chat-2000000001', 'Внутренний', '', 0),
+        ];
+        render(<ConversationsSidebar {...createProps({
+            communityChats,
+            onFilterUnreadChange: vi.fn(),
+        })} />);
+        expect(screen.getByTitle('Групповые чаты (беседы)')).toBeInTheDocument();
+    });
 });

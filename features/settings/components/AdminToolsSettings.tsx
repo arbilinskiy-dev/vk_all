@@ -12,14 +12,16 @@ import { StatusBadge } from './StatusBadge';
  */
 export const AdminToolsSettings: React.FC = () => {
     const { state, actions } = useAdminToolsLogic();
-    const { subscribersTask, postsTask, postsLimit, expandedTask } = state;
+    const { subscribersTask, postsTask, mailingTask, postsLimit, expandedTask } = state;
     const {
         setPostsLimit,
         setExpandedTask,
         handleRefreshAllSubscribers,
         handleRefreshAllPosts,
+        handleRefreshAllMailing,
         handleStopSubscribers,
         handleStopPosts,
+        handleStopMailing,
     } = actions;
 
     return (
@@ -128,6 +130,88 @@ export const AdminToolsSettings: React.FC = () => {
                                     <tr className="bg-indigo-50/30">
                                         <td colSpan={5} className="px-4 py-3 animate-expand-down">
                                             <TaskProgressBar progress={subscribersTask.progress} label="Проекты" />
+                                        </td>
+                                    </tr>
+                                )}
+
+                                {/* Строка: Обновление рассылки */}
+                                <tr 
+                                    className={`hover:bg-gray-50 cursor-pointer opacity-0 animate-fade-in-up ${expandedTask === 'mailing' ? 'bg-violet-50/50' : ''}`}
+                                    style={{ animationDelay: '10ms' }}
+                                    onClick={() => setExpandedTask(expandedTask === 'mailing' ? null : 'mailing')}
+                                >
+                                    <td className="px-4 py-3">
+                                        <div className="flex items-center gap-2">
+                                            <svg 
+                                                xmlns="http://www.w3.org/2000/svg" 
+                                                className={`h-4 w-4 text-gray-400 transition-transform ${expandedTask === 'mailing' ? 'rotate-90' : ''}`} 
+                                                fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                                            >
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                            </svg>
+                                            <div className="p-1.5 bg-violet-100 rounded">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                                </svg>
+                                            </div>
+                                            <span className="font-medium text-gray-800">Обновить рассылку</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-3 text-gray-600">
+                                        Синхронизация подписчиков рассылки для проектов с community-токенами
+                                    </td>
+                                    <td className="px-4 py-3 text-gray-500 text-xs">
+                                        —
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                        <StatusBadge progress={mailingTask.progress} />
+                                    </td>
+                                    <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                                        <div className="flex items-center justify-end gap-2">
+                                            {mailingTask.isRunning && (
+                                                <button
+                                                    onClick={handleStopMailing}
+                                                    className="inline-flex items-center justify-center w-20 px-2 py-1.5 border border-red-300 text-xs font-medium rounded-md text-red-600 bg-white hover:bg-red-50"
+                                                    title="Остановить задачу"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                    Стоп
+                                                </button>
+                                            )}
+                                            <button
+                                                onClick={handleRefreshAllMailing}
+                                                disabled={mailingTask.isRunning}
+                                                className={`inline-flex items-center justify-center w-24 px-3 py-1.5 border text-xs font-medium rounded-md ${
+                                                    mailingTask.isRunning 
+                                                        ? 'border-gray-300 text-gray-400 bg-gray-100 cursor-not-allowed' 
+                                                        : 'border-violet-600 text-violet-600 bg-white hover:bg-violet-50'
+                                                }`}
+                                            >
+                                                {mailingTask.isRunning ? (
+                                                    <>
+                                                        <div className="loader border-violet-400 border-t-transparent h-3 w-3 mr-1"></div>
+                                                        Работа...
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h5m11 2a9 9 0 11-2.064-5.364M20 4v5h-5" />
+                                                        </svg>
+                                                        Старт
+                                                    </>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                
+                                {/* Прогресс-бар для рассылки (раскрывается при клике) */}
+                                {expandedTask === 'mailing' && mailingTask.progress && (
+                                    <tr className="bg-violet-50/30">
+                                        <td colSpan={5} className="px-4 py-3 animate-expand-down">
+                                            <TaskProgressBar progress={mailingTask.progress} label="Проекты" />
                                         </td>
                                     </tr>
                                 )}

@@ -10,9 +10,10 @@
 1. [ ] Определить область тестирования (модуль/папка)
 2. [ ] Прочитать стек модуля: роутер → сервис → crud → схемы
 3. [ ] Составить список тест-кейсов (CRUD, валидация, граничные случаи, auth)
-4. [ ] Написать тесты в `backend_python/tests/integration/test_<модуль>.py`
-5. [ ] Запустить `pytest tests/integration/test_<модуль>.py -v`
-6. [ ] Прочитать вывод → вердикт
+4. [ ] Написать функциональные тесты в `backend_python/tests/integration/test_<модуль>.py`
+5. [ ] Написать `Test<Module>ContractSafety` с `autospec=True` на каждую мокированную зависимость (см. `procedures/13_mock_contract.md`)
+6. [ ] Запустить `pytest tests/integration/test_<модуль>.py -v`
+7. [ ] Прочитать вывод → вердикт
 
 ## Алгоритм
 

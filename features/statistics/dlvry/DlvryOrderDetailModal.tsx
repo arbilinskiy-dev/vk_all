@@ -77,6 +77,9 @@ export const DlvryOrderDetailModal: React.FC<DlvryOrderDetailModalProps> = ({ or
                                 {order.vk_user_id && (
                                     <InfoRow label="VK ID" value={order.vk_user_id} />
                                 )}
+                                {order.vk_platform && (
+                                    <InfoRow label="VK платформа" value={order.vk_platform} />
+                                )}
                             </Section>
 
                             {/* Заказ */}
@@ -98,6 +101,12 @@ export const DlvryOrderDetailModal: React.FC<DlvryOrderDetailModalProps> = ({ or
                                 {order.preorder && (
                                     <InfoRow label="Предзаказ" value="Да" />
                                 )}
+                                {order.persons != null && order.persons > 0 && (
+                                    <InfoRow label="Кол-во персон" value={String(order.persons)} />
+                                )}
+                                {order.items_total_qty != null && order.items_total_qty > 0 && (
+                                    <InfoRow label="Единиц товаров" value={String(order.items_total_qty)} />
+                                )}
                             </Section>
 
                             {/* Адрес */}
@@ -115,6 +124,23 @@ export const DlvryOrderDetailModal: React.FC<DlvryOrderDetailModalProps> = ({ or
                                     <MoneyCard label="Скидка" value={order.discount} />
                                     <MoneyCard label="Доставка" value={order.delivery_price} />
                                 </div>
+                                {/* Расширенная финансовая информация */}
+                                {(order.cost != null || order.payment_bonus != null || order.markup != null) && (
+                                    <div className="grid grid-cols-2 gap-3 mt-3">
+                                        {order.cost != null && (
+                                            <MoneyCard label="Себестоимость" value={order.cost} />
+                                        )}
+                                        {order.total != null && order.cost != null && (
+                                            <MarginCard total={order.total} cost={order.cost} />
+                                        )}
+                                        {order.payment_bonus != null && order.payment_bonus > 0 && (
+                                            <MoneyCard label="Оплата бонусами" value={order.payment_bonus} />
+                                        )}
+                                        {order.markup != null && order.markup > 0 && (
+                                            <MoneyCard label="Наценка" value={order.markup} />
+                                        )}
+                                    </div>
+                                )}
                             </Section>
 
                             {/* Позиции */}
@@ -176,5 +202,19 @@ const MoneyCard: React.FC<{ label: string; value: number | null | undefined; acc
         </p>
     </div>
 );
+
+const MarginCard: React.FC<{ total: number; cost: number }> = ({ total, cost }) => {
+    const margin = total - cost;
+    const pct = total > 0 ? Math.round((margin / total) * 100) : 0;
+    const color = pct >= 50 ? 'text-green-600' : pct >= 20 ? 'text-amber-600' : 'text-red-500';
+    return (
+        <div className="p-3 rounded-lg bg-gray-50">
+            <p className="text-xs text-gray-500">Маржа</p>
+            <p className={`text-lg font-bold ${color}`}>
+                {formatMoney(margin)} ₽ <span className="text-sm font-medium">({pct}%)</span>
+            </p>
+        </div>
+    );
+};
 
 // Утилиты импортированы из ./dlvryFormatUtils

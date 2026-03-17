@@ -105,7 +105,7 @@ export const FinishConditionsSection: React.FC<FinishConditionsSectionProps> = (
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-5">
                         <h3 className="text-lg font-bold text-amber-900 mb-3">⚖️ День + Количество</h3>
                         <p className="text-sm text-amber-800 mb-4">
-                            Итоги подводятся в указанный день, но только если набрано минимальное количество участников. Если нет — переносится на следующую неделю.
+                            Итоги подводятся в указанный день. Поведение зависит от режима: <strong>Ровно</strong> — строго N, <strong>Минимум</strong> — не меньше N (все участвуют), <strong>Максимум</strong> — не более N (розыгрыш всегда).
                         </p>
                         <div className="bg-white border border-amber-200 rounded-lg p-4 space-y-4">
                             <div>
@@ -113,7 +113,7 @@ export const FinishConditionsSection: React.FC<FinishConditionsSectionProps> = (
                                 <DaySelectorMock value={dayOfWeek} onChange={setDayOfWeek} />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Минимум участников</label>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Кол-во участников</label>
                                 <input
                                     type="number"
                                     min="1"
@@ -122,8 +122,16 @@ export const FinishConditionsSection: React.FC<FinishConditionsSectionProps> = (
                                     className="w-24 border border-gray-300 rounded-md px-3 py-1.5 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-shadow"
                                 />
                             </div>
+                            <div>
+                                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">Режим подсчёта</label>
+                                <div className="flex gap-1 bg-gray-100 p-0.5 rounded-md w-fit">
+                                    <span className="px-2.5 py-1 text-xs font-medium rounded bg-indigo-600 text-white">Ровно =</span>
+                                    <span className="px-2.5 py-1 text-xs font-medium rounded text-gray-600">Минимум ≥</span>
+                                    <span className="px-2.5 py-1 text-xs font-medium rounded text-gray-600">Максимум ≤</span>
+                                </div>
+                            </div>
                             <p className="text-xs text-gray-500">
-                                Если в {DAY_NAMES_FULL[dayOfWeek - 1]} будет {targetCount}+ участников — проводим розыгрыш. Если нет — ждем следующей недели.
+                                Режим определяет, как система интерпретирует число {targetCount}.
                             </p>
                         </div>
                     </div>

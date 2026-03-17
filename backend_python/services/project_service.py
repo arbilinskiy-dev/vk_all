@@ -49,9 +49,26 @@ def get_project_details(db: Session, project_id: str) -> schemas.Project:
     return project
 
 def update_project_settings(db: Session, project_data: schemas.Project) -> schemas.Project:
+    # Запоминаем старый dlvry_affiliate_id до обновления
+    old_project = crud.get_project_by_id(db, project_data.id)
+    old_dlvry_id = old_project.dlvry_affiliate_id if old_project else None
+
     updated_project = crud.update_project_settings(db, project_data)
     if not updated_project:
         raise HTTPException(status_code=404, detail=f"Project with id {project_data.id} not found for update.")
+
+    # Если dlvry_affiliate_id изменился и новый не пустой — запускаем фоновую полную загрузку
+    new_dlvry_id = (project_data.dlvry_affiliate_id or "").strip()
+    old_dlvry_id = (old_dlvry_id or "").strip()
+    if new_dlvry_id and new_dlvry_id != old_dlvry_id:
+        try:
+            from services.dlvry.stats_sync_background import run_full_sync_background
+            task_id = run_full_sync_background(project_data.id, new_dlvry_id)
+            if task_id:
+                print(f"PROJECT_SERVICE: Запущена фоновая синхронизация DLVRY для проекта {project_data.id} (task={task_id})")
+        except Exception as e:
+            print(f"PROJECT_SERVICE: Ошибка запуска фоновой синхронизации DLVRY: {e}")
+
     return updated_project
 
 def get_project_variables(db: Session, project_id: str) -> list[dict]:

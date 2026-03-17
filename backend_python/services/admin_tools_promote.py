@@ -14,7 +14,7 @@ from config import settings
 from services.vk_api.api_client import call_vk_api as raw_vk_call
 
 
-def promote_to_admins(db: Session, group_ids: list, user_ids: list, role: str = 'administrator') -> dict:
+def promote_to_admins(db: Session, group_ids: list, user_ids: list, role: str = 'administrator', include_env_token: bool = False) -> dict:
     """
     Массовое назначение системных страниц администраторами в группах VK.
     
@@ -58,10 +58,16 @@ def promote_to_admins(db: Session, group_ids: list, user_ids: list, role: str = 
     
     print(f"PROMOTE: Доступно {len(user_tokens_map)} токенов пользователей")
     
+    # 1b. Если include_env_token — добавляем ENV-пользователя в список целей
+    effective_user_ids = list(user_ids)
+    if include_env_token and env_token_user_id and env_token_user_id not in effective_user_ids:
+        effective_user_ids.append(env_token_user_id)
+        print(f"PROMOTE: ENV-токен (user_id={env_token_user_id}) добавлен в список целей")
+    
     # 2. Проверяем, что для запрошенных user_ids у нас есть токены
     target_users = {}  # user_id → {"token": str, "name": str}
     missing_tokens = []
-    for uid in user_ids:
+    for uid in effective_user_ids:
         if uid in user_tokens_map:
             target_users[uid] = user_tokens_map[uid]
         else:

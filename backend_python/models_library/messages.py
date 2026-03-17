@@ -64,6 +64,16 @@ class CachedMessage(Base):
     # Пометка: сообщение есть в нашей базе, но удалено из ВК
     is_deleted_from_vk = Column(Boolean, nullable=False, default=False)
 
+    # Сообщение, на которое это ответ (reply_message из VK API) — JSON
+    reply_message_json = Column(Text, nullable=True)
+
+    # Пересланные сообщения (fwd_messages из VK API) — JSON
+    fwd_messages_json = Column(Text, nullable=True)
+
+    # conversation_message_id (VK API) — ID сообщения внутри диалога,
+    # нужен для кросс-диалоговой пересылки через параметр forward
+    conversation_message_id = Column(Integer, nullable=True)
+
     # Составной индекс для быстрого поиска диалога
     __table_args__ = (
         Index('ix_cached_messages_dialog', 'project_id', 'vk_user_id', 'date'),

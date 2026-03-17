@@ -1,5 +1,5 @@
 
-import { Project, AllPosts, ScheduledPost, SuggestedPost, SystemPost, Note, ContestStatus } from '../../shared/types';
+import { Project, ProjectSummary, AllPosts, ScheduledPost, SuggestedPost, SystemPost, Note, ContestStatus } from '../../shared/types';
 import { callApi } from '../../shared/utils/apiClient';
 
 // --- PROJECTS & DATA API ---
@@ -8,14 +8,14 @@ import { callApi } from '../../shared/utils/apiClient';
  * Загружает начальные данные по проектам и счетчики предложенных постов.
  */
 export const getInitialData = async (): Promise<{ 
-    projects: Project[], 
+    projects: ProjectSummary[], 
     allPosts: AllPosts, 
     suggestedPostCounts: Record<string, number>,
     reviewsContestStatuses: Record<string, ContestStatus>,
     storiesAutomationStatuses: Record<string, boolean>
 }> => {
     return callApi<{ 
-        projects: Project[], 
+        projects: ProjectSummary[], 
         allPosts: AllPosts, 
         suggestedPostCounts: Record<string, number>,
         reviewsContestStatuses: Record<string, ContestStatus>,
@@ -26,8 +26,8 @@ export const getInitialData = async (): Promise<{
 /**
  * Принудительно очищает кеш проектов на сервере и возвращает свежий список.
  */
-export const forceRefreshProjects = async (): Promise<{ projects: Project[], suggestedPostCounts: Record<string, number> }> => {
-    return callApi<{ projects: Project[], suggestedPostCounts: Record<string, number> }>('forceRefreshProjects');
+export const forceRefreshProjects = async (): Promise<{ projects: ProjectSummary[], suggestedPostCounts: Record<string, number> }> => {
+    return callApi<{ projects: ProjectSummary[], suggestedPostCounts: Record<string, number> }>('forceRefreshProjects');
 };
 
 /**

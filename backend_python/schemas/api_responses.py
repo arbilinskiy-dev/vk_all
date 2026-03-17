@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 
-from .base_models import Project, ScheduledPost, SuggestedPost, Note, Variable, Album, Photo, SystemPost, GlobalVariableDefinition, ProjectGlobalVariableValue, MarketAlbum, MarketItem, MarketCategory, SystemListSubscriber, SystemListMailingItem, SystemListHistoryItem, ProjectListMeta, SystemListPost, SystemListInteraction, TokenLog, ProjectContextField, ProjectContextValue, AiTokenLog, SystemListAuthor
+from .base_models import Project, ProjectSummary, ScheduledPost, SuggestedPost, Note, Variable, Album, Photo, SystemPost, GlobalVariableDefinition, ProjectGlobalVariableValue, MarketAlbum, MarketItem, MarketCategory, SystemListSubscriber, SystemListMailingItem, SystemListHistoryItem, ProjectListMeta, SystemListPost, SystemListInteraction, TokenLog, ProjectContextField, ProjectContextValue, AiTokenLog, SystemListAuthor
 
 # Helper for contest status
 class ContestStatus(BaseModel):
@@ -10,7 +10,7 @@ class ContestStatus(BaseModel):
 
 # API Responses
 class InitialDataResponse(BaseModel):
-    projects: List[Project]
+    projects: List[ProjectSummary]
     allPosts: Dict = {}
     suggestedPostCounts: Dict[str, int]
     reviewsContestStatuses: Dict[str, ContestStatus] = {} # {projectId: {isActive, promoCount}}
@@ -25,7 +25,7 @@ class AllPostsForProjectsResponse(BaseModel):
     allStories: Dict[str, List[Dict[str, Any]]] = {} # Новое поле для историй
 
 class ForceRefreshResponse(BaseModel):
-    projects: List[Project]
+    projects: List[ProjectSummary]
     suggestedPostCounts: Dict[str, int]
 
 class UpdateStatusResponse(BaseModel):

@@ -10,8 +10,8 @@ import { Conversation, MessagesChannel, MailingUserInfo } from '../../types';
 export interface UseConversationsParams {
     projectId: string | null;
     channel: MessagesChannel;
-    /** Фильтр по непрочитанным: 'all' | 'unread' | 'important' */
-    filterUnread?: 'all' | 'unread' | 'important';
+    /** Фильтр по непрочитанным: 'all' | 'unread' | 'important' | 'chats' */
+    filterUnread?: 'all' | 'unread' | 'important' | 'chats';
 }
 
 /** Результат хука */

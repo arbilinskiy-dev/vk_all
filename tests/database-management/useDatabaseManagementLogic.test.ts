@@ -478,6 +478,6 @@ describe('useDatabaseManagementLogic', () => {
     it('filteredColumns возвращает все при пустом запросе', () => {
         const { result } = renderLogicHook();
 
-        expect(result.current.state.filteredColumns).toHaveLength(11);
+        expect(result.current.state.filteredColumns).toHaveLength(12);
     });
 });

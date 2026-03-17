@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 import random
 import json
 import time
+import re
 
 import crud
 import models
@@ -23,6 +24,24 @@ from utils.random_proof_image import create_random_proof_image
 from utils.persistent_logger import contest_log, contest_log_separator
 # Фабрика сессий для изолированных операций (refresh_published_posts)
 from database import _session_factory
+
+
+def _normalize_photo_attachment_id(raw_id: str | None) -> str | None:
+    """Приводит ID фото к формату VK: photo-123_456."""
+    if not raw_id:
+        return None
+
+    value = str(raw_id).strip()
+    if not value:
+        return None
+
+    if value.startswith("photo"):
+        return value
+
+    if re.fullmatch(r"-?\d+_\d+", value):
+        return f"photo{value}"
+
+    return None
 
 def finalize_contest(db: Session, project_id: str) -> dict:
     """
@@ -51,6 +70,7 @@ def finalize_contest(db: Session, project_id: str) -> dict:
         "use_proof_image": contest.use_proof_image,
         "finish_condition": contest.finish_condition,
         "target_count": contest.target_count,
+        "target_count_mode": getattr(contest, 'target_count_mode', 'exact') or 'exact',
         "auto_blacklist": contest.auto_blacklist,
         "project_name": project.name,
     })
@@ -65,21 +85,26 @@ def finalize_contest(db: Session, project_id: str) -> dict:
     
     current_count = len(all_participants)
     target = contest.target_count or 0
+    count_mode = getattr(contest, 'target_count_mode', 'exact') or 'exact'
 
     contest_log(project_id, "PARTICIPANTS_LOADED", data={
-        "count": current_count, "target": target, "condition": contest.finish_condition
+        "count": current_count, "target": target, "condition": contest.finish_condition,
+        "count_mode": count_mode
     })
 
-    # 2. Проверка условий завершения
+    # 2. Проверка условий завершения (зависит от target_count_mode)
+    # - exact: если < target → перенос (и mixed, и count)
+    # - minimum: если < target → перенос (и mixed, и count)
+    # - maximum: подводим итоги ВСЕГДА (даже если < target), среди тех кто есть
     if contest.finish_condition == 'mixed':
-        if current_count < target:
-            msg = f"Недостаточно постов для подведения итогов ({current_count} из {target}). Конкурс переносится на следующий цикл."
+        if count_mode != 'maximum' and current_count < target:
+            msg = f"Недостаточно постов для подведения итогов ({current_count} из {target}, режим: {count_mode}). Конкурс переносится на следующий цикл."
             contest_log(project_id, "SKIPPED", details=msg)
             return {"success": True, "skipped": True, "message": msg, "winner_name": None, "post_link": None}
             
     elif contest.finish_condition == 'count':
-        if current_count < target:
-            msg = f"Целевое количество постов не достигнуто ({current_count} из {target}). Ждем новых отзывов."
+        if count_mode != 'maximum' and current_count < target:
+            msg = f"Целевое количество постов не достигнуто ({current_count} из {target}, режим: {count_mode}). Ждем новых отзывов."
             contest_log(project_id, "SKIPPED", details=msg)
             return {"success": True, "skipped": True, "message": msg, "winner_name": None, "post_link": None}
     
@@ -89,7 +114,10 @@ def finalize_contest(db: Session, project_id: str) -> dict:
         return {"success": True, "skipped": True, "message": msg, "winner_name": None, "post_link": None}
 
     # --- ФИЛЬТРАЦИЯ ПО ЧЕРНОМУ СПИСКУ ---
-    expired_count = crud_automations.cleanup_expired_blacklist(db, contest.id)
+    # FIX: auto_commit=False — НЕ коммитим раньше времени, иначе это:
+    # 1) Снимает FOR UPDATE блокировку с участников (race condition)
+    # 2) Может закоммитить delivery_log без обновления статусов (нарушение атомарности)
+    expired_count = crud_automations.cleanup_expired_blacklist(db, contest.id, auto_commit=False)
     if expired_count > 0:
         contest_log(project_id, "BLACKLIST_CLEANUP", details=f"Removed {expired_count} expired entries")
         
@@ -219,7 +247,19 @@ def finalize_contest(db: Session, project_id: str) -> dict:
         should_attach_user_media = (not contest.use_proof_image) or (contest.attach_additional_media)
         
         if should_attach_user_media:
-            attachments_list = [img['id'] for img in images_data]
+            attachments_list = []
+            for img in images_data:
+                raw_id = img.get('id') if isinstance(img, dict) else None
+                normalized_id = _normalize_photo_attachment_id(raw_id)
+                if normalized_id:
+                    attachments_list.append(normalized_id)
+                else:
+                    contest_log(
+                        project_id,
+                        "SKIP_INVALID_USER_MEDIA",
+                        details=f"Пропущено невалидное id изображения: {raw_id}",
+                        level="WARNING"
+                    )
         else:
             attachments_list = []
         
@@ -307,12 +347,12 @@ def finalize_contest(db: Session, project_id: str) -> dict:
             "attachments_count": len(attachments_list)
         })
         
-        published_post = vk_service.publish_with_fallback({
+        published_post = vk_service.publish_with_admin_priority({
             'owner_id': -numeric_group_id,
             'message': post_text,
             'attachments': attachments_str,
             'from_group': 1
-        }, method='wall.post', preferred_token=token_to_use)
+        }, method='wall.post', group_id=numeric_group_id, preferred_token=token_to_use)
         
         log_msg.append("Winner post published")
         
@@ -366,7 +406,13 @@ def finalize_contest(db: Session, project_id: str) -> dict:
                 'screen_name': None
             }]
             
-            crud_automations.add_to_blacklist(db, contest.id, user_data, ban_until)
+            # FIX: auto_commit=False — НЕ коммитим ЧС отдельно!
+            # Ранее add_to_blacklist делал db.commit(), который попутно коммитил
+            # delivery_log (flush-нутый ранее), но СТАТУСЫ entries ещё не были
+            # обновлены. При сбое финального commit() получался рассинхрон:
+            # delivery_log есть → Winner виден, но entries остаются 'commented' →
+            # процессор считает лимит достигнутым → новые посты не комментируются.
+            crud_automations.add_to_blacklist(db, contest.id, user_data, ban_until, auto_commit=False)
             log_msg.append(f"User auto-banned for {duration_days} days")
             contest_log(project_id, "AUTO_BAN", data={
                 "user_vk_id": winner.user_vk_id, "duration_days": duration_days,

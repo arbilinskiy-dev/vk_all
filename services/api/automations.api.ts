@@ -12,6 +12,7 @@ export interface ReviewContestSettingsDto {
     
     finishCondition: 'count' | 'date' | 'mixed';
     targetCount?: number;
+    targetCountMode?: 'exact' | 'minimum' | 'maximum';
     finishDate?: string;
     finishDayOfWeek?: number;
     finishTime?: string;
@@ -118,6 +119,14 @@ export const getContestEntries = async (projectId: string): Promise<ContestEntry
  */
 export const clearContestEntries = async (projectId: string): Promise<{ success: boolean }> => {
     return callApi('automations/reviews/clearEntries', { projectId });
+};
+
+/**
+ * Чинит зависший цикл конкурса — переводит 'commented' entries в 'used'/'winner'
+ * на основе журнала доставки (delivery_logs).
+ */
+export const fixStuckCycle = async (projectId: string): Promise<{ success: boolean; message?: string }> => {
+    return callApi('automations/reviews/fixStuckCycle', { projectId });
 };
 
 // --- Promocodes ---

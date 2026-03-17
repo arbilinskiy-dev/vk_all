@@ -34,7 +34,9 @@ export const ConversationItem: React.FC<ConversationItemProps> = ({
     dialogLabels = [],
 }) => {
     const { user, lastMessage, unreadCount } = conversation;
-    const initials = `${user.firstName[0]}${user.lastName[0]}`;
+    const initials = conversation.isGroupChat
+        ? user.firstName.slice(0, 2).toUpperCase()
+        : `${user.firstName[0]}${user.lastName[0]}`;
 
     // Цвета меток, назначенных этому диалогу (макс 4 точки для компактности)
     const assignedLabelColors = useMemo(() => {
@@ -133,13 +135,25 @@ export const ConversationItem: React.FC<ConversationItemProps> = ({
                         />
                     </div>
                 ) : (
-                    <div className="w-11 h-11 rounded-full bg-gradient-to-br from-indigo-400 to-indigo-600 flex items-center justify-center text-white text-sm font-semibold">
+                    <div className={`w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-semibold ${
+                        conversation.isGroupChat
+                            ? 'bg-gradient-to-br from-blue-400 to-blue-600'
+                            : 'bg-gradient-to-br from-indigo-400 to-indigo-600'
+                    }`}>
                         {initials}
                     </div>
                 )}
-                {/* Индикатор онлайн */}
-                {user.onlineStatus === 'online' && (
+                {/* Индикатор онлайн (скрыт для групповых чатов) */}
+                {!conversation.isGroupChat && user.onlineStatus === 'online' && (
                     <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white rounded-full" />
+                )}
+                {/* Иконка группового чата */}
+                {conversation.isGroupChat && (
+                    <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-blue-500 border-2 border-white rounded-full flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                    </span>
                 )}
             </div>
 
@@ -157,6 +171,10 @@ export const ConversationItem: React.FC<ConversationItemProps> = ({
                             </svg>
                         )}
                         {user.firstName} {user.lastName}
+                        {/* Количество участников (для групповых чатов) */}
+                        {conversation.isGroupChat && conversation.membersCount && (
+                            <span className="text-gray-400 font-normal text-xs ml-1">({conversation.membersCount})</span>
+                        )}
                         {/* Цветные точки меток */}
                         {assignedLabelColors.length > 0 && (
                             <span className="inline-flex items-center gap-0.5 ml-1 align-middle">

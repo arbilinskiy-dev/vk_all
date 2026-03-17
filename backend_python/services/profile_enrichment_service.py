@@ -145,6 +145,10 @@ def _fetch_users_from_vk(service_key: str, user_ids: list[str]) -> dict[int, dic
             "fields": VK_FIELDS,
             "access_token": service_key,
             "v": "5.199",
+            # ОБЯЗАТЕЛЬНО lang=ru для сервисного ключа!
+            # Без этого VK API возвращает имена и города транслитом на латинице
+            # (Василий → Vasily, Новомосковск → Novomoskovsk).
+            "lang": "ru",
         },
         timeout=30,
     )

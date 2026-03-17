@@ -14,6 +14,7 @@ import { useDialogLabels } from './features/messages/hooks/useDialogLabels';
 import { useTypingState } from './features/messages/hooks/chat/useTypingState';
 import { useUnreadDialogCounts } from './features/messages/hooks/useUnreadDialogCounts';
 import { useGlobalUnreadSSE } from './features/messages/hooks/useGlobalUnreadSSE';
+import { useCommunityChats } from './features/messages/hooks/chat/useCommunityChats';
 import { MessagesChannel } from './features/messages/types';
 import { markAllDialogsAsRead } from './services/api/messages.api';
 import { msgLog, msgWarn, fmtProject } from './features/messages/utils/messagesLogger';
@@ -70,7 +71,7 @@ const App: React.FC = () => {
     // --- Состояние модуля сообщений ---
     const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
     /** Фильтр непрочитанных диалогов: 'all' — все, 'unread' — только с непрочитанными, 'important' — важные */
-    const [conversationFilterUnread, setConversationFilterUnread] = useState<'all' | 'unread' | 'important'>('all');
+    const [conversationFilterUnread, setConversationFilterUnread] = useState<'all' | 'unread' | 'important' | 'chats'>('all');
 
     // Загрузка диалогов из списка рассылки
     const messagesChannel: MessagesChannel = activeView === 'messages-tg' ? 'tg' : 'vk';
@@ -94,8 +95,27 @@ const App: React.FC = () => {
     } = useConversations({
         projectId: activeModule === 'am' ? activeProjectId : null,
         channel: messagesChannel,
-        filterUnread: conversationFilterUnread,
+        filterUnread: conversationFilterUnread === 'chats' ? 'all' : conversationFilterUnread,
     });
+
+    // Групповые чаты (беседы) сообщества
+    const communityChatsGroupId = projects.find(p => p.id === activeProjectId)?.vkProjectId ?? null;
+    const {
+        chats: communityChats,
+        isLoading: isCommunityChatsLoading,
+        isSyncing: isCommunityChatsSyncing,
+        sync: syncCommunityChats,
+    } = useCommunityChats({
+        projectId: activeModule === 'am' ? activeProjectId : null,
+        groupId: communityChatsGroupId ? Number(communityChatsGroupId) : null,
+    });
+
+    // Мерж обычных диалогов + групповых чатов для корректной работы MessagesPage
+    // (чтобы conversations.find(c => c.id === activeConversationId) находил чаты)
+    const conversationsWithChats = useMemo(
+        () => [...conversations, ...communityChats],
+        [conversations, communityChats],
+    );
 
     // Метки (ярлыки) диалогов — CRUD + назначение
     const dialogLabelsProjectId = activeModule === 'am' ? activeProjectId : null;
@@ -232,8 +252,8 @@ const App: React.FC = () => {
     const uniqueTeams = useMemo(() => {
         const teams = new Set<string>();
         projects.forEach(p => {
-            if (p.team) {
-                teams.add(p.team);
+            if (p.teams && p.teams.length > 0) {
+                p.teams.forEach(t => teams.add(t));
             }
         });
         return Array.from(teams).sort();
@@ -381,6 +401,10 @@ const App: React.FC = () => {
                     onCreateLabel={createDialogLabel}
                     onEditLabel={editDialogLabel}
                     onRemoveLabel={handleRemoveLabel}
+                    communityChats={communityChats}
+                    isCommunityChatsLoading={isCommunityChatsLoading}
+                    isCommunityChatsSyncing={isCommunityChatsSyncing}
+                    onSyncCommunityChats={syncCommunityChats}
                 />
             )}
 
@@ -402,6 +426,7 @@ const App: React.FC = () => {
                     onNavigateToContestV2={handleNavigateToContestV2}
                     setNavigationBlocker={setNavigationBlocker} // Передаем сеттер блокировщика
                     onGoToTraining={() => handleSelectGlobalView('training')} // Переход в центр обучения
+                    onSelectGlobalView={handleSelectGlobalView} // Навигация внутри модуля команды
                     onNavigateToMessages={(projectId, vkUserId) => {
                         // 1) Переключаем проект
                         setActiveProjectId(projectId);
@@ -413,7 +438,7 @@ const App: React.FC = () => {
                     }}
                     activeConversationId={activeConversationId}
                     onSelectConversation={setActiveConversationId}
-                    conversations={conversations}
+                    conversations={conversationsWithChats}
                     updateUnreadCount={updateUnreadCount}
                     updateLastMessage={updateLastMessage}
                     addNewConversationFromSSE={addNewConversationFromSSE}

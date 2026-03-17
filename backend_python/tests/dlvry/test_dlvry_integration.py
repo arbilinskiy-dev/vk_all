@@ -117,6 +117,11 @@ def _insert_test_order(db, **overrides) -> DlvryOrder:
         order_sum=1000.0,
         discount=100.0,
         total=900.0,
+        cost=450.0,
+        payment_bonus=50.0,
+        markup=30.0,
+        vk_platform="desktop_web",
+        persons=2,
         promocode="СКИДКА",
         comment="Тестовый заказ",
         is_preorder=False,
@@ -226,6 +231,11 @@ class TestGetOrders:
             "client_name", "client_phone", "total",
             "payment_type", "delivery_type", "source_name",
             "status", "items_count", "created_at",
+            # Расширенные поля для переключаемых групп колонок
+            "cost", "discount", "delivery_price", "subtotal",
+            "payment_bonus", "markup", "vk_platform", "vk_user_id",
+            "address_city", "persons", "items_total_qty",
+            "promocode", "comment", "is_preorder",
         ]
         for field in expected_fields:
             assert field in order, (
@@ -248,6 +258,21 @@ class TestGetOrders:
         assert order["total"] == 900.0
         assert order["items_count"] == 1
         assert order["created_at"] is not None  # model.received_at → response.created_at
+        # Расширенные поля
+        assert order["cost"] == 450.0
+        assert order["discount"] == 100.0
+        assert order["delivery_price"] == 100.0
+        assert order["subtotal"] == 1000.0  # model.order_sum → subtotal
+        assert order["payment_bonus"] == 50.0
+        assert order["markup"] == 30.0
+        assert order["vk_platform"] == "desktop_web"
+        assert order["vk_user_id"] == "789"
+        assert order["address_city"] == "Москва"
+        assert order["persons"] == 2
+        assert order["items_total_qty"] == 2
+        assert order["promocode"] == "СКИДКА"
+        assert order["comment"] == "Тестовый заказ"
+        assert order["is_preorder"] == False
 
     def test_skip_limit_pagination(self, client, test_db):
         """skip/limit работают корректно (не page/page_size)."""
@@ -356,10 +381,13 @@ class TestGetOrderDetail:
         detail_fields = [
             "id", "dlvry_order_id", "affiliate_id", "order_date",
             "client_name", "client_phone", "client_email", "client_birthday",
-            "vk_user_id", "address_full", "address_city",
+            "vk_user_id", "vk_group_id", "vk_platform",
+            "address_full", "address_city",
             "total", "subtotal", "discount", "delivery_price",
             "payment_type", "delivery_type", "source_name",
             "promocode", "comment", "status", "items_count", "created_at",
+            # Расширенные поля
+            "cost", "payment_bonus", "markup", "persons", "items_total_qty",
         ]
         for field in detail_fields:
             assert field in o, (
@@ -383,6 +411,13 @@ class TestGetOrderDetail:
         assert o["subtotal"] == 1000.0, "model.order_sum → subtotal"
         assert o["preorder"] == False, "model.is_preorder → preorder"
         assert o["address_flat"] == "5", "model.address_apt → address_flat"
+        # Расширенные поля
+        assert o["cost"] == 450.0, "model.cost → cost"
+        assert o["payment_bonus"] == 50.0, "model.payment_bonus → payment_bonus"
+        assert o["markup"] == 30.0, "model.markup → markup"
+        assert o["persons"] == 2, "model.persons → persons"
+        assert o["items_total_qty"] == 2, "model.items_total_qty → items_total_qty"
+        assert o["vk_platform"] == "desktop_web", "model.vk_platform → vk_platform"
 
     def test_items_structure(self, client, test_db):
         """Позиции заказа имеют правильные поля."""
@@ -492,6 +527,11 @@ class TestApiContract:
                 "client_name", "client_phone", "total", "payment_type",
                 "delivery_type", "source_name", "status", "items_count",
                 "created_at",
+                # Расширенные поля
+                "cost", "discount", "delivery_price", "subtotal",
+                "payment_bonus", "markup", "vk_platform", "vk_user_id",
+                "address_city", "persons", "items_total_qty",
+                "promocode", "comment", "is_preorder",
             }
             missing = required_keys - order_keys
             assert not missing, (
@@ -530,6 +570,8 @@ class TestApiContract:
             "total", "subtotal", "discount", "delivery_price",
             "payment_type", "delivery_type", "source_name",
             "status", "created_at",
+            # Расширенные поля
+            "cost", "payment_bonus", "markup", "persons", "items_total_qty",
         }
         missing = required_keys - order_keys
         assert not missing, f"Detail контракт нарушен: нет полей {missing}"

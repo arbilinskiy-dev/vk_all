@@ -123,14 +123,14 @@ def get_all_values(db: Session) -> List[models.ProjectContextValue]:
 def get_values_by_project(db: Session, project_id: str) -> List[models.ProjectContextValue]:
     return db.query(models.ProjectContextValue).filter(models.ProjectContextValue.project_id == project_id).all()
 
-def update_values(db: Session, values_data: List[Dict]):
+def update_values(db: Session, values_data: list):
     """
-    Upsert values. values_data = [{project_id, field_id, value}, ...]
+    Upsert values. values_data = [ContextValueItem(project_id, field_id, value), ...]
     """
     for item in values_data:
-        project_id = item['project_id']
-        field_id = item['field_id']
-        val = item['value']
+        project_id = item.project_id
+        field_id = item.field_id
+        val = item.value
         
         existing = db.query(models.ProjectContextValue).filter(
             models.ProjectContextValue.project_id == project_id,

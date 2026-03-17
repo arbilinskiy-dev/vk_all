@@ -51,6 +51,31 @@
 
 ---
 
+### Режимы интерпретации количества участников конкурса отзывов (targetCountMode)
+
+**Описание:**  
+Добавлено новое поле `target_count_mode` с 3 режимами интерпретации целевого количества участников:  
+- **exact** (Ровно =) — нумерация до target, финализация пропускается если участников < target  
+- **minimum** (Минимум ≥) — нумерация ВСЕХ без ограничения, финализация пропускается если < target  
+- **maximum** (Максимум ≤) — нумерация до target, финализация проводится ВСЕГДА (кроме 0 участников)  
+
+Поле ортогонально `finishCondition` (count/date/mixed) — условие определяет КОГДА, режим определяет КАК интерпретировать число.
+
+**Реализация:**  
+- **Модель:** `target_count_mode = Column(String, default='exact')` в ReviewContest  
+- **Миграция:** `check_and_add_column` для `target_count_mode`  
+- **Схема:** `targetCountMode: Optional[str] = 'exact'` в ReviewContestSettings  
+- **CRUD:** маппинг `contest.target_count_mode = settings.targetCountMode or 'exact'`  
+- **Роутер:** маппинг в 3 местах (default, getSettings, saveSettings)  
+- **Processor:** `should_cap = count_mode in ('exact', 'maximum')` — minimum не ограничивает нумерацию  
+- **Finalizer:** `count_mode != 'maximum' and current_count < target` — maximum никогда не пропускает (кроме 0)  
+- **UI:** сегментированный контрол CountModeSelector (`= Ровно / ≥ Минимум / ≤ Максимум`), динамические подсказки  
+- **Тесты:** 40 тестов (11 model-field contract + 29 бизнес-логика processor/finalizer)  
+
+**Файл(ы):** `backend_python/models_library/automations.py`, `backend_python/db_migrations/automations.py`, `backend_python/schemas/automations.py`, `backend_python/services/automations/reviews/crud.py`, `backend_python/routers/automations.py`, `backend_python/services/automations/reviews/processor.py`, `backend_python/services/automations/reviews/finalizer.py`, `features/automations/reviews-contest/types.ts`, `features/automations/reviews-contest/ReviewsContestPage.tsx`, `features/automations/reviews-contest/components/settings/FinishConditions.tsx`, `features/automations/reviews-contest/components/settings/TemplatesSection.tsx`, `features/training/components/content/section2/ProductsReviewsContestPage_SettingsSection.tsx`, `features/training/components/content/section2/ProductsReviewsContestSettingsPage_FinishConditionsSection.tsx`
+
+---
+
 ## 🔴 Открытые задачи
 
 _(пока нет)_

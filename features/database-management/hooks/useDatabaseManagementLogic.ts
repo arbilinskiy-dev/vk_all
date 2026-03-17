@@ -34,6 +34,13 @@ export function useDatabaseManagementLogic({ onProjectsUpdate }: UseDatabaseMana
                 return { ...rest, teams: team };
             });
         }
+        // Обратная совместимость: dlvry_affiliate_id → dlvry_affiliates_count
+        if (visibleColumns && 'dlvry_affiliate_id' in visibleColumns && !('dlvry_affiliates_count' in visibleColumns)) {
+            setVisibleColumns(prev => {
+                const { dlvry_affiliate_id, ...rest } = prev;
+                return { ...rest, dlvry_affiliates_count: dlvry_affiliate_id };
+            });
+        }
     }, []);
     
     // === Dropdown колонок ===

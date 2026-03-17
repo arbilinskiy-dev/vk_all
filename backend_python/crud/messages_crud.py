@@ -110,6 +110,14 @@ def save_vk_messages(
         else:
             payload_json = None
 
+        # reply_message — сообщение, на которое ответ
+        reply_msg = item.get("reply_message")
+        reply_message_json = json.dumps(reply_msg, ensure_ascii=False) if reply_msg else None
+
+        # fwd_messages — пересланные сообщения
+        fwd_msgs = item.get("fwd_messages")
+        fwd_messages_json = json.dumps(fwd_msgs, ensure_ascii=False) if fwd_msgs else None
+
         rows.append({
             "id": _make_message_id(project_id, item["id"]),
             "project_id": project_id,
@@ -126,13 +134,16 @@ def save_vk_messages(
             "payload_json": payload_json,
             "sent_by_id": item.get("sent_by_id"),
             "sent_by_name": item.get("sent_by_name"),
+            "reply_message_json": reply_message_json,
+            "fwd_messages_json": fwd_messages_json,
+            "conversation_message_id": item.get("conversation_message_id"),
         })
 
     # Определяем диалект БД для правильного upsert
     dialect = inspect(db.bind).dialect.name if db.bind else "sqlite"
 
     # Поля, которые обновляются при конфликте
-    update_columns = ["from_id", "peer_id", "text", "date", "is_outgoing", "is_read", "attachments_json", "keyboard_json", "payload_json"]
+    update_columns = ["from_id", "peer_id", "text", "date", "is_outgoing", "is_read", "attachments_json", "keyboard_json", "payload_json", "reply_message_json", "fwd_messages_json", "conversation_message_id"]
     # Важно: sent_by_id/sent_by_name не перезаписываются при синхронизации из VK API,
     # т.к. VK API не возвращает эти поля — они бы занулились.
     # Обновляем sent_by только если они переданы (COALESCE-логика в upsert).
@@ -256,6 +267,21 @@ def get_cached_messages(
         # Пометка: удалено из ВК
         if r.is_deleted_from_vk:
             item["is_deleted_from_vk"] = True
+        # Цитируемое сообщение (reply_message)
+        if r.reply_message_json:
+            try:
+                item["reply_message"] = json.loads(r.reply_message_json)
+            except json.JSONDecodeError:
+                pass
+        # Пересланные сообщения (fwd_messages)
+        if r.fwd_messages_json:
+            try:
+                item["fwd_messages"] = json.loads(r.fwd_messages_json)
+            except json.JSONDecodeError:
+                pass
+        # conversation_message_id — для кросс-диалоговой пересылки
+        if r.conversation_message_id is not None:
+            item["conversation_message_id"] = r.conversation_message_id
         items.append(item)
 
     return items, total_in_cache

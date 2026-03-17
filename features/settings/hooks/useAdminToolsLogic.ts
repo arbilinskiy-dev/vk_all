@@ -22,6 +22,13 @@ export const useAdminToolsLogic = () => {
         progress: null
     });
     
+    // Состояние для задачи обновления рассылки
+    const [mailingTask, setMailingTask] = useState<BulkTaskState>({
+        isRunning: false,
+        taskId: null,
+        progress: null
+    });
+    
     // Выбор лимита постов и режима
     const [postsLimit, setPostsLimit] = useState<PostsLimit>('1000');
     const [postsMode, setPostsMode] = useState<PostsMode>('limit');
@@ -116,6 +123,24 @@ export const useAdminToolsLogic = () => {
                         pollTaskStatus(postsTaskFound.taskId, setPostsTask);
                     }
                 }
+
+                // Ищем задачу обновления рассылки (активную или последнюю завершённую)
+                const mailingTaskFound = allTasks.find(
+                    t => t.meta?.project_id === 'GLOBAL' && 
+                        t.meta?.list_type === 'refresh_all_mailing'
+                );
+                
+                if (mailingTaskFound) {
+                    const isRunning = mailingTaskFound.status !== 'done' && mailingTaskFound.status !== 'error';
+                    setMailingTask({
+                        isRunning,
+                        taskId: mailingTaskFound.taskId,
+                        progress: mailingTaskFound
+                    });
+                    if (isRunning) {
+                        pollTaskStatus(mailingTaskFound.taskId, setMailingTask);
+                    }
+                }
             } catch (e) {
                 console.warn('Не удалось проверить активные задачи', e);
             }
@@ -163,6 +188,24 @@ export const useAdminToolsLogic = () => {
         }
     };
 
+    // Запуск обновления рассылки всех проектов
+    const handleRefreshAllMailing = async () => {
+        try {
+            setMailingTask(prev => ({ ...prev, isRunning: true, progress: { status: 'pending', message: 'Запуск...' } }));
+            
+            const { taskId } = await managementApi.refreshAllMailing();
+            
+            setMailingTask(prev => ({ ...prev, taskId }));
+            
+            pollTaskStatus(taskId, setMailingTask);
+            
+        } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error);
+            window.showAppToast?.(`Не удалось запустить задачу: ${msg}`, 'error');
+            setMailingTask({ isRunning: false, taskId: null, progress: null });
+        }
+    };
+
     // Остановка задачи
     const handleStopTask = async (taskId: string | null, setTaskState: Dispatch<SetStateAction<BulkTaskState>>) => {
         if (!taskId) return;
@@ -180,6 +223,7 @@ export const useAdminToolsLogic = () => {
         state: {
             subscribersTask,
             postsTask,
+            mailingTask,
             postsLimit,
             postsMode,
             expandedTask,
@@ -189,8 +233,10 @@ export const useAdminToolsLogic = () => {
             setExpandedTask,
             handleRefreshAllSubscribers,
             handleRefreshAllPosts,
+            handleRefreshAllMailing,
             handleStopSubscribers: () => handleStopTask(subscribersTask.taskId, setSubscribersTask),
             handleStopPosts: () => handleStopTask(postsTask.taskId, setPostsTask),
+            handleStopMailing: () => handleStopTask(mailingTask.taskId, setMailingTask),
         }
     };
 };

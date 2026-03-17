@@ -2,9 +2,105 @@
 // Показывает как пост будет выглядеть после публикации.
 // Обновляется в реальном времени по мере ввода текста и добавления медиа.
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Attachment, GlobalVariableDefinition, ProjectGlobalVariableValue, PollData } from '../../../../shared/types';
 import { renderVkFormattedText } from '../../../../shared/utils/renderVkFormattedText';
+
+// Lightbox — полноэкранный просмотр с навигацией по всем изображениям
+const ImageLightbox: React.FC<{
+    images: { id: string; url: string }[];
+    currentIndex: number;
+    onClose: () => void;
+    onNavigate: (index: number) => void;
+}> = ({ images, currentIndex, onClose, onNavigate }) => {
+    // Навигация стрелками и закрытие по Escape
+    useEffect(() => {
+        const handler = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+            if (e.key === 'ArrowLeft' && currentIndex > 0) onNavigate(currentIndex - 1);
+            if (e.key === 'ArrowRight' && currentIndex < images.length - 1) onNavigate(currentIndex + 1);
+        };
+        document.addEventListener('keydown', handler);
+        return () => document.removeEventListener('keydown', handler);
+    }, [onClose, onNavigate, currentIndex, images.length]);
+
+    return createPortal(
+        <div
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] cursor-zoom-out animate-fade-in"
+            onClick={onClose}
+        >
+            {/* Кнопка закрытия */}
+            <button
+                onClick={onClose}
+                className="absolute top-4 right-4 bg-gray-800/75 text-white rounded-full p-2 hover:bg-black transition-colors focus:outline-none focus:ring-2 focus:ring-white z-10"
+                title="Закрыть"
+            >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+
+            {/* Стрелка влево */}
+            {currentIndex > 0 && (
+                <button
+                    onClick={(e) => { e.stopPropagation(); onNavigate(currentIndex - 1); }}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 bg-gray-800/75 text-white rounded-full p-2 hover:bg-black transition-colors focus:outline-none focus:ring-2 focus:ring-white z-10"
+                    title="Предыдущее"
+                >
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                </button>
+            )}
+
+            {/* Стрелка вправо */}
+            {currentIndex < images.length - 1 && (
+                <button
+                    onClick={(e) => { e.stopPropagation(); onNavigate(currentIndex + 1); }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 bg-gray-800/75 text-white rounded-full p-2 hover:bg-black transition-colors focus:outline-none focus:ring-2 focus:ring-white z-10"
+                    title="Следующее"
+                >
+                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                    </svg>
+                </button>
+            )}
+
+            {/* Изображение */}
+            <img
+                src={images[currentIndex].url}
+                alt=""
+                className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg cursor-default animate-fade-in-up"
+                onClick={(e) => e.stopPropagation()}
+            />
+
+            {/* Счётчик */}
+            {images.length > 1 && (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-gray-800/75 text-white text-sm px-3 py-1 rounded-full">
+                    {currentIndex + 1} / {images.length}
+                </div>
+            )}
+        </div>,
+        document.body
+    );
+};
+
+// Вспомогательный компонент: изображение со скелетоном и плавным появлением
+const ImageWithSkeleton: React.FC<{ src: string; alt: string; className?: string; skeletonClassName?: string }> = ({ src, alt, className = '', skeletonClassName = '' }) => {
+    const [isLoaded, setIsLoaded] = useState(false);
+    return (
+        <>
+            {!isLoaded && <div className={`absolute inset-0 bg-gray-200 animate-pulse ${skeletonClassName}`} />}
+            <img
+                src={src}
+                alt={alt}
+                className={`${className} transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}
+                onLoad={() => setIsLoaded(true)}
+            />
+        </>
+    );
+};
 
 // Компонент предпросмотра опроса в стиле VK
 const PollPreview: React.FC<{ pollData: PollData; description?: string }> = ({ pollData, description }) => {
@@ -111,6 +207,11 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
         } catch { return 'Дата не указана'; }
     }, [dateSlot]);
 
+    // Lightbox — индекс открытого изображения (null = закрыт)
+    const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+    const closeLightbox = useCallback(() => setLightboxIndex(null), []);
+    const navigateLightbox = useCallback((idx: number) => setLightboxIndex(idx), []);
+
     // Состояние контента
     const hasContent = text || parsedImages.length > 0 || attachments.length > 0;
 
@@ -122,11 +223,14 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
                 <div className="flex items-center gap-3 p-3">
                     {/* Аватарка сообщества — реальная или заглушка */}
                     {projectAvatar ? (
-                        <img
-                            src={projectAvatar}
-                            alt={projectName || 'Сообщество'}
-                            className="w-10 h-10 rounded-full object-cover flex-shrink-0"
-                        />
+                        <div className="relative w-10 h-10 rounded-full flex-shrink-0 overflow-hidden">
+                            <ImageWithSkeleton
+                                src={projectAvatar}
+                                alt={projectName || 'Сообщество'}
+                                className="w-10 h-10 rounded-full object-cover"
+                                skeletonClassName="rounded-full"
+                            />
+                        </div>
                     ) : (
                         <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
                             <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -151,11 +255,15 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
 
                 {/* Изображения */}
                 {parsedImages.length > 0 && (
-                    <div className="mt-1">
+                    <div className="mt-1 opacity-0 animate-fade-in-up" style={{ animationDelay: '50ms' }}>
                         {parsedImages.length === 1 ? (
-                            <div className="aspect-square">
-                                <img src={parsedImages[0].url} alt="" className="w-full h-full object-cover" />
-                            </div>
+                            <button
+                                type="button"
+                                className="aspect-square relative w-full cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                onClick={() => setLightboxIndex(0)}
+                            >
+                                <ImageWithSkeleton src={parsedImages[0].url} alt="" className="w-full h-full object-cover" />
+                            </button>
                         ) : (
                             <div className={`grid gap-0.5 ${
                                 parsedImages.length === 2 ? 'grid-cols-2' : 
@@ -163,14 +271,19 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
                                 'grid-cols-2'
                             }`}>
                                 {parsedImages.slice(0, 4).map((img: { id: string; url: string }, idx: number) => (
-                                    <div key={img.id || idx} className="relative aspect-square">
-                                        <img src={img.url} alt="" className="w-full h-full object-cover" />
+                                    <button
+                                        type="button"
+                                        key={img.id || idx}
+                                        className="relative aspect-square overflow-hidden cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset focus:ring-indigo-500"
+                                        onClick={() => setLightboxIndex(idx)}
+                                    >
+                                        <ImageWithSkeleton src={img.url} alt="" className="w-full h-full object-cover" />
                                         {idx === 3 && parsedImages.length > 4 && (
                                             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
                                                 <span className="text-white text-lg font-bold">+{parsedImages.length - 4}</span>
                                             </div>
                                         )}
-                                    </div>
+                                    </button>
                                 ))}
                             </div>
                         )}
@@ -188,14 +301,14 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
 
                 {/* Вложения (без опросов — они рендерятся выше) */}
                 {attachments.filter(a => a.type !== 'poll').length > 0 && (
-                    <div className="px-3 py-2 space-y-1.5">
+                    <div className="px-3 py-2 space-y-1.5 opacity-0 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
                         {attachments.filter(a => a.type !== 'poll').map((att, idx) => (
                             att.type === 'video' ? (
                                 /* Видео-вложение с превью на всю ширину */
                                 <div key={idx} className="rounded-lg overflow-hidden bg-gray-50">
                                     {att.thumbnail_url ? (
                                         <div className="relative w-full aspect-video bg-black">
-                                            <img src={att.thumbnail_url} alt={att.description || 'Видео'} className="w-full h-full object-cover" />
+                                            <ImageWithSkeleton src={att.thumbnail_url} alt={att.description || 'Видео'} className="w-full h-full object-cover" />
                                             {/* Иконка Play по центру */}
                                             <div className="absolute inset-0 flex items-center justify-center">
                                                 <div className="w-10 h-10 bg-black/50 rounded-full flex items-center justify-center">
@@ -254,18 +367,21 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
 
             {/* Превью первого комментария */}
             {firstCommentText && firstCommentText.trim() && (
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden -mt-1">
+                <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden -mt-1 opacity-0 animate-fade-in-up" style={{ animationDelay: '150ms' }}>
                     <div className="px-3 py-2 border-b border-gray-100">
                         <span className="text-xs text-gray-400">Первый комментарий</span>
                     </div>
                     <div className="flex gap-2.5 p-3">
                         {/* Аватарка сообщества */}
                         {projectAvatar ? (
-                            <img
-                                src={projectAvatar}
-                                alt={projectName || 'Сообщество'}
-                                className="w-8 h-8 rounded-full object-cover flex-shrink-0"
-                            />
+                            <div className="relative w-8 h-8 rounded-full flex-shrink-0 overflow-hidden">
+                                <ImageWithSkeleton
+                                    src={projectAvatar}
+                                    alt={projectName || 'Сообщество'}
+                                    className="w-8 h-8 rounded-full object-cover"
+                                    skeletonClassName="rounded-full"
+                                />
+                            </div>
                         ) : (
                             <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
                                 <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -289,9 +405,19 @@ export const PostPreview: React.FC<PostPreviewProps> = ({
                 </div>
             )}
 
+            {/* Lightbox для просмотра всех изображений */}
+            {lightboxIndex !== null && parsedImages.length > 0 && (
+                <ImageLightbox
+                    images={parsedImages}
+                    currentIndex={lightboxIndex}
+                    onClose={closeLightbox}
+                    onNavigate={navigateLightbox}
+                />
+            )}
+
             {/* Подсказка если пусто */}
             {!hasContent && (
-                <div className="text-center py-6 text-gray-400">
+                <div className="text-center py-6 text-gray-400 opacity-0 animate-fade-in" style={{ animationDelay: '100ms' }}>
                     <svg className="w-10 h-10 mx-auto mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
